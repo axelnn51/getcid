@@ -39,6 +39,22 @@ app.post('/api/process-image', upload.single('image'), async (req, res) => {
 });
 
 // ============================================================
+// API: Solo OCR (extrae IID sin pedir CID)
+// ============================================================
+app.post('/api/ocr-only', upload.single('image'), async (req, res) => {
+    if (!req.file) return res.status(400).json({ success: false, error: 'No image' });
+    try {
+        const { ocrExtractOnly } = require('./ocr');
+        const result = await ocrExtractOnly(req.file.path);
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        return res.json(result);
+    } catch (e) {
+        if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ============================================================
 // API: Portal Web con créditos (por email)
 // ============================================================
 app.post('/api/portal/getcid', upload.single('screenshot'), async (req, res) => {

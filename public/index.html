@@ -11,7 +11,7 @@
 <body>
     <!-- Top bar -->
     <div class="top-bar">
-        <div class="top-bar-inner">
+        <div class="container">
             <span>📧 soporte@cdkeysperu.com</span>
             <span>⚡ Activación automática 24/7</span>
         </div>
@@ -19,7 +19,7 @@
 
     <!-- Header -->
     <header class="main-header">
-        <div class="header-inner">
+        <div class="container header-inner">
             <a href="https://cdkeysperu.com" class="logo-link">
                 <span class="logo-icon">🔑</span>
                 <span class="logo-text">CDKEYS<span class="logo-accent">PERÚ</span>.COM</span>
@@ -34,90 +34,120 @@
 
     <!-- Hero -->
     <section class="hero">
-        <div class="hero-inner">
+        <div class="container">
             <h1>Activación por Teléfono — <span class="gold">Get Your CID</span></h1>
             <p>Ingresa el email de tu compra y tu Installation ID. Obtendrás el Confirmation ID automáticamente.</p>
         </div>
     </section>
 
-    <!-- Main Content -->
+    <!-- Main 3-column layout -->
     <main class="content">
-        <div class="grid">
-            <!-- Form Card -->
-            <div class="card form-card">
-                <div class="card-header">
-                    <h2>📋 Obtener Confirmation ID</h2>
-                </div>
+        <div class="container layout-3col">
 
-                <div class="field">
-                    <label for="email">Email usado en tu compra</label>
-                    <input type="email" id="email" placeholder="ejemplo@email.com">
-                </div>
+            <!-- LEFT: Products -->
+            <aside class="products-col">
+                <h4 class="col-title">Recomendados</h4>
+                <a href="https://cdkeysperu.com/producto/windows-10-pro/" target="_blank" class="product-card">
+                    <div class="product-img">🪟</div>
+                    <h5>Windows 10 Pro</h5>
+                    <p>Licencia digital. Activación inmediata.</p>
+                </a>
+                <a href="https://cdkeysperu.com/producto/windows-11-pro/" target="_blank" class="product-card">
+                    <div class="product-img">🖥️</div>
+                    <h5>Windows 11 Pro</h5>
+                    <p>Último sistema operativo. Ideal para PCs modernos.</p>
+                </a>
+            </aside>
 
-                <div class="divider"><span>Ingresa el IID o sube una captura</span></div>
+            <!-- CENTER: Form -->
+            <div class="form-col">
+                <div class="card form-card">
+                    <div class="card-header"><h2>📋 Obtener Confirmation ID</h2></div>
 
-                <div class="field">
-                    <label for="iid">Installation ID <small>(9 × 7 dígitos)</small></label>
-                    <input type="text" id="iid" placeholder="0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000">
-                </div>
-
-                <div class="field">
-                    <label for="screenshot">Captura de pantalla <small>(opcional)</small></label>
-                    <div class="file-upload">
-                        <input type="file" id="screenshot" accept="image/*">
-                        <div class="file-label" id="file-label">📷 Seleccionar archivo o arrastrar aquí</div>
+                    <div class="field">
+                        <label for="email">Email usado en tu compra</label>
+                        <input type="email" id="email" placeholder="ejemplo@email.com">
                     </div>
-                </div>
 
-                <button class="btn-primary" id="btn-submit">
-                    <span class="btn-icon">⚡</span> Obtener Confirmation ID
-                </button>
+                    <div class="divider"><span>Ingresa el IID o sube una captura</span></div>
 
-                <!-- Result -->
-                <div id="result-area" class="hidden">
-                    <div class="result-box success-box">
-                        <div class="result-header">✅ ¡CID obtenido con éxito!</div>
-                        <div class="result-field">
-                            <label>Confirmation ID</label>
-                            <div class="cid-row">
-                                <input type="text" id="res-cid" readonly class="cid-input">
-                                <button class="btn-copy" id="btn-copy">📋 Copiar</button>
+                    <div class="field">
+                        <label for="iid">Installation ID <small>(9 × 7 dígitos)</small></label>
+                        <input type="text" id="iid" placeholder="0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000">
+                    </div>
+
+                    <div class="field">
+                        <label>Captura de pantalla <small>(auto-OCR)</small></label>
+                        <div class="file-upload" id="drop-zone">
+                            <input type="file" id="screenshot" accept="image/*">
+                            <div class="file-label" id="file-label">📷 Seleccionar o arrastrar imagen aquí</div>
+                        </div>
+                        <div id="ocr-status" class="hidden">
+                            <div class="ocr-indicator"><span class="spinner-small"></span> Leyendo dígitos de la imagen...</div>
+                        </div>
+                        <div id="ocr-success" class="hidden">
+                            <div class="ocr-ok">✅ IID detectado automáticamente</div>
+                        </div>
+                        <div id="ocr-fail" class="hidden">
+                            <div class="ocr-err">⚠️ No se detectó IID. Ingrésalo manualmente.</div>
+                        </div>
+                    </div>
+
+                    <button class="btn-primary" id="btn-submit">
+                        <span class="btn-icon">⚡</span> Obtener Confirmation ID
+                    </button>
+
+                    <!-- Result -->
+                    <div id="result-area" class="hidden">
+                        <div class="result-box success-box">
+                            <div class="result-header">✅ ¡CID obtenido con éxito!</div>
+                            <div class="result-field">
+                                <label>Confirmation ID</label>
+                                <div class="cid-row">
+                                    <input type="text" id="res-cid" readonly class="cid-input">
+                                    <button class="btn-copy" id="btn-copy">📋 Copiar</button>
+                                </div>
+                            </div>
+                            <div class="result-meta">
+                                <span>⏱ <span id="res-time">—</span></span>
+                                <span>💰 Restantes: <strong id="res-balance">—</strong></span>
                             </div>
                         </div>
-                        <div class="result-meta">
-                            <span>⏱ <span id="res-time">—</span></span>
-                            <span>💰 Restantes: <strong id="res-balance">—</strong></span>
-                        </div>
+                    </div>
+
+                    <div id="error-area" class="hidden">
+                        <div class="result-box error-box"><p id="error-msg"></p></div>
                     </div>
                 </div>
 
-                <div id="error-area" class="hidden">
-                    <div class="result-box error-box">
-                        <p id="error-msg"></p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Info Sidebar -->
-            <div class="sidebar">
-                <div class="card info-card">
+                <!-- How it works -->
+                <div class="card info-card-mobile">
                     <h3>¿Cómo funciona?</h3>
-                    <div class="steps">
-                        <div class="step"><span class="step-num">1</span><p>Compra una licencia en <a href="https://cdkeysperu.com" target="_blank">CdKeys Perú</a></p></div>
-                        <div class="step"><span class="step-num">2</span><p>Inicia la activación por teléfono y obtén el <strong>Installation ID</strong></p></div>
-                        <div class="step"><span class="step-num">3</span><p>Ingresa tu <strong>email</strong> y el <strong>IID</strong> aquí</p></div>
-                        <div class="step"><span class="step-num">4</span><p>Recibe el <strong>Confirmation ID</strong> al instante</p></div>
-                        <div class="step"><span class="step-num">5</span><p>Ingresa el CID en el asistente y ¡listo!</p></div>
+                    <div class="steps-row">
+                        <div class="step-mini"><span>1</span> Compra en CdKeys Perú</div>
+                        <div class="step-mini"><span>2</span> Obtén el Installation ID</div>
+                        <div class="step-mini"><span>3</span> Ingresa email + IID aquí</div>
+                        <div class="step-mini"><span>4</span> Recibe el CID al instante</div>
+                        <div class="step-mini"><span>5</span> Activa tu producto ¡listo!</div>
                     </div>
                 </div>
-
-                <div class="card trust-card">
-                    <div class="trust-item">🚀 <span>Entrega instantánea</span></div>
-                    <div class="trust-item">🔒 <span>Proceso 100% seguro</span></div>
-                    <div class="trust-item">🤖 <span>OCR automático de fotos</span></div>
-                    <div class="trust-item">💬 <span>También disponible por <a href="https://t.me/getcidcdkeysbot">Telegram</a></span></div>
-                </div>
             </div>
+
+            <!-- RIGHT: Products -->
+            <aside class="products-col">
+                <h4 class="col-title">Populares</h4>
+                <a href="https://cdkeysperu.com/producto/office-2024-pro-plus/" target="_blank" class="product-card">
+                    <div class="product-img">📊</div>
+                    <h5>Office 2024 Pro Plus</h5>
+                    <p>Suite completa. Activación por teléfono.</p>
+                </a>
+                <a href="https://cdkeysperu.com/producto/microsoft-365/" target="_blank" class="product-card">
+                    <div class="product-img">☁️</div>
+                    <h5>Microsoft 365</h5>
+                    <p>Office en la nube. 1TB OneDrive incluido.</p>
+                </a>
+            </aside>
+
         </div>
     </main>
 
@@ -130,28 +160,51 @@
     <script>
     const $ = id => document.getElementById(id);
 
-    // File upload label
-    $('screenshot').onchange = function() {
-        $('file-label').textContent = this.files[0] ? '📷 ' + this.files[0].name : '📷 Seleccionar archivo o arrastrar aquí';
+    // Auto-OCR al subir imagen
+    $('screenshot').onchange = async function() {
+        if (!this.files[0]) return;
+        $('file-label').textContent = '📷 ' + this.files[0].name;
+        $('ocr-status').classList.remove('hidden');
+        $('ocr-success').classList.add('hidden');
+        $('ocr-fail').classList.add('hidden');
+
+        const fd = new FormData();
+        fd.append('image', this.files[0]);
+
+        try {
+            const r = await fetch('/api/ocr-only', { method: 'POST', body: fd });
+            const d = await r.json();
+            $('ocr-status').classList.add('hidden');
+
+            if (d.success) {
+                const formatted = d.iid.match(/.{1,7}/g)?.join(' ') || d.iid;
+                $('iid').value = formatted;
+                $('ocr-success').classList.remove('hidden');
+            } else {
+                $('ocr-fail').classList.remove('hidden');
+            }
+        } catch(e) {
+            $('ocr-status').classList.add('hidden');
+            $('ocr-fail').classList.remove('hidden');
+        }
     };
 
+    // Submit
     $('btn-submit').onclick = async () => {
         const email = $('email').value.trim();
         const iid = $('iid').value.trim();
-        const file = $('screenshot').files[0];
 
         if (!email) return showError('Ingresa tu email de compra.');
-        if (!iid && !file) return showError('Ingresa el IID o sube una imagen.');
+        if (!iid) return showError('Ingresa el IID o sube una imagen.');
 
         $('btn-submit').disabled = true;
-        $('btn-submit').innerHTML = '<span class="spinner"></span> Procesando...';
+        $('btn-submit').innerHTML = '<span class="spinner"></span> Obteniendo CID...';
         $('result-area').classList.add('hidden');
         $('error-area').classList.add('hidden');
 
         const fd = new FormData();
         fd.append('email', email);
-        if (iid) fd.append('iid', iid);
-        if (file) fd.append('screenshot', file);
+        fd.append('iid', iid);
 
         try {
             const r = await fetch('/api/portal/getcid', { method: 'POST', body: fd });
@@ -174,7 +227,7 @@
                 showError(d.error);
             }
         } catch(e) {
-            showError('Error de conexión. Intenta de nuevo.');
+            showError('Error de conexión.');
         }
 
         $('btn-submit').disabled = false;

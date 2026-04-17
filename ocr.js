@@ -77,4 +77,25 @@ async function ocrAndGetCID(filePath, getCID) {
     return { success: false };
 }
 
-module.exports = { initWorker, extractIID, ocrAndGetCID, STRATEGIES };
+// Solo extraer IID de imagen (sin pedir CID)
+async function ocrExtractOnly(filePath) {
+    if (!workerReady) await initWorker();
+
+    for (let i = 0; i < STRATEGIES.length; i++) {
+        const s = STRATEGIES[i];
+        const processed = filePath + `_ocr${i}.png`;
+        try {
+            await s.process(filePath, processed);
+            const { data: { text } } = await worker.recognize(processed);
+            if (fs.existsSync(processed)) fs.unlinkSync(processed);
+
+            const result = extractIID(text);
+            if (result) return { success: true, iid: result.iid, method: result.method, strategy: s.name };
+        } catch (e) {
+            if (fs.existsSync(processed)) fs.unlinkSync(processed);
+        }
+    }
+    return { success: false };
+}
+
+module.exports = { initWorker, extractIID, ocrAndGetCID, ocrExtractOnly, STRATEGIES };
