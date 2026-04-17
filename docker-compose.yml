@@ -9,3 +9,10 @@ services:
       - ./data:/app/data
     environment:
       - NODE_ENV=production
+      - PORT=${PORT:-3000}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - WC_URL=${WC_URL}
+      - WC_CONSUMER_KEY=${WC_CONSUMER_KEY}
+      - WC_CONSUMER_SECRET=${WC_CONSUMER_SECRET}
