@@ -103,9 +103,14 @@ function startBot() {
             if (result.success) {
                 db.debitCredit(user.id);
                 const bal = db.getBalance(user.id);
-                db.logTransaction(user.id, 'telegram', result.iid, formatCID(result.cid), 'success', elapsed, result.strategy);
+                const cidStr = formatCID(result.cid);
+                db.logTransaction(user.id, 'telegram', result.iid, cidStr, 'success', elapsed, result.strategy);
                 await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
-                    `@CdKeysPeru\nIID:\n${formatIID(result.iid)}\n\nCID:\n${formatCID(result.cid)}\n\n(CID Debited : 1 CID) (CID Balance : ${bal}) (Time Taken : 00:${secs})`
+                    `🔑 <b>@CdKeysPeru</b>\n\n` +
+                    `<b>IID:</b>\n<code>${formatIID(result.iid)}</code>\n\n` +
+                    `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
+                    `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>`,
+                    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '📋 Copiar CID', callback_data: `copy_${cidStr.replace(/-/g, '')}` }]] } }
                 );
             } else {
                 db.logTransaction(user.id, 'telegram', null, null, 'ocr_failed', elapsed, null);
@@ -137,15 +142,29 @@ function startBot() {
             const secs = (elapsed / 1000).toFixed(0).padStart(2, '0');
             db.debitCredit(user.id);
             const bal = db.getBalance(user.id);
-            db.logTransaction(user.id, 'telegram', digits, formatCID(cid), 'success', elapsed, 'direct');
+            const cidStr = formatCID(cid);
+            db.logTransaction(user.id, 'telegram', digits, cidStr, 'success', elapsed, 'direct');
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
-                `@CdKeysPeru\nIID:\n${formatIID(digits)}\n\nCID:\n${formatCID(cid)}\n\n(CID Debited : 1 CID) (CID Balance : ${bal}) (Time Taken : 00:${secs})`
+                `🔑 <b>@CdKeysPeru</b>\n\n` +
+                `<b>IID:</b>\n<code>${formatIID(digits)}</code>\n\n` +
+                `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
+                `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>`,
+                { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '📋 Copiar CID', callback_data: `copy_${cidStr.replace(/-/g, '')}` }]] } }
             );
         } catch (err) {
             db.logTransaction(user.id, 'telegram', digits, null, 'error', Date.now() - startTime, null);
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
                 `❌ ${err.message === 'INVALID_CHECKSUM' ? 'Checksum inválido. Verifica el IID.' : err.message}`
             );
+        }
+    });
+
+    // CALLBACK: Copiar CID
+    bot.on('callback_query', async (ctx) => {
+        const data = ctx.callbackQuery.data;
+        if (data.startsWith('copy_')) {
+            const cid = data.replace('copy_', '');
+            await ctx.answerCbQuery(`CID copiado: ${cid}`, { show_alert: false });
         }
     });
 
