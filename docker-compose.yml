@@ -1,0 +1,13 @@
+services:
+  getcid:
+    build: .
+    container_name: getcid
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data   # Base de datos persistente
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production

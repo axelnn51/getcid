@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin — GETCID</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif}
+        :root{--bg:#080c14;--card:#111827;--border:#1f2937;--primary:#3b82f6;--green:#10b981;--red:#ef4444;--text:#f1f5f9;--muted:#6b7280}
+        body{background:var(--bg);color:var(--text);padding:20px}
+        .container{max-width:1000px;margin:0 auto}
+        h1{font-size:22px;margin-bottom:20px}
+        .login-box{background:var(--card);padding:30px;border-radius:12px;max-width:400px;margin:80px auto}
+        .login-box h2{margin-bottom:15px}
+        input,button,select{padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;width:100%}
+        button{background:var(--primary);border:none;cursor:pointer;font-weight:600;margin-top:8px}
+        button:hover{opacity:.9}
+
+        .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+        .stat{background:var(--card);padding:20px;border-radius:12px;text-align:center;border:1px solid var(--border)}
+        .stat .num{font-size:28px;font-weight:800;color:var(--primary)}
+        .stat .lbl{font-size:12px;color:var(--muted);margin-top:4px}
+
+        .panel{display:none}
+        .panel.active{display:block}
+
+        .tabs{display:flex;gap:8px;margin-bottom:20px}
+        .tab{padding:8px 16px;border-radius:8px;cursor:pointer;background:var(--card);border:1px solid var(--border);font-size:13px;font-weight:600;color:var(--muted)}
+        .tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th,td{padding:10px;text-align:left;border-bottom:1px solid var(--border)}
+        th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase}
+        .badge{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+        .badge.success{background:rgba(16,185,129,.15);color:var(--green)}
+        .badge.failed{background:rgba(239,68,68,.15);color:var(--red)}
+
+        .add-form{background:var(--card);padding:20px;border-radius:12px;margin-bottom:20px;display:flex;gap:10px;align-items:end;border:1px solid var(--border)}
+        .add-form .fg{flex:1}
+        .add-form label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+        .add-form button{width:auto;padding:10px 20px;margin-top:0}
+        .hidden{display:none}
+    </style>
+</head>
+<body>
+    <!-- Login -->
+    <div id="login-view" class="login-box">
+        <h2>🔒 Admin Panel</h2>
+        <input type="password" id="pw-input" placeholder="Contraseña">
+        <button onclick="login()">Entrar</button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dash" class="container hidden">
+        <h1>⚡ GETCID Admin</h1>
+
+        <div class="stats">
+            <div class="stat"><div class="num" id="s-users">0</div><div class="lbl">Usuarios</div></div>
+            <div class="stat"><div class="num" id="s-today">0</div><div class="lbl">CIDs Hoy</div></div>
+            <div class="stat"><div class="num" id="s-total">0</div><div class="lbl">CIDs Total</div></div>
+        </div>
+
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('users')">Usuarios</div>
+            <div class="tab" onclick="switchTab('txns')">Transacciones</div>
+        </div>
+
+        <!-- Users -->
+        <div class="panel active" id="panel-users">
+            <div class="add-form">
+                <div class="fg"><label>Email del cliente</label><input id="new-email" placeholder="cliente@email.com"></div>
+                <div class="fg"><label>Créditos</label><input id="new-credits" type="number" value="1" min="1"></div>
+                <button onclick="addUser()">+ Agregar</button>
+            </div>
+            <table>
+                <thead><tr><th>ID</th><th>Email</th><th>Telegram</th><th>Balance</th><th>Creado</th><th>Acción</th></tr></thead>
+                <tbody id="users-body"></tbody>
+            </table>
+        </div>
+
+        <!-- Transactions -->
+        <div class="panel" id="panel-txns">
+            <table>
+                <thead><tr><th>Fecha</th><th>Usuario</th><th>Fuente</th><th>IID</th><th>Estado</th><th>Tiempo</th></tr></thead>
+                <tbody id="txns-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+    let password = '';
+    const $ = id => document.getElementById(id);
+    const api = (path, opts) => fetch(`/api/admin/${path}?pw=${password}`, opts).then(r => r.json());
+
+    function login() {
+        password = $('pw-input').value;
+        api('stats').then(d => {
+            if (d.error) return alert('Contraseña incorrecta');
+            $('login-view').classList.add('hidden');
+            $('dash').classList.remove('hidden');
+            loadAll();
+        }).catch(() => alert('Error de conexión'));
+    }
+
+    $('pw-input').onkeydown = e => { if(e.key==='Enter') login(); };
+
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        event.target.classList.add('active');
+        $(`panel-${name}`).classList.add('active');
+    }
+
+    async function loadAll() {
+        const [stats, users, txns] = await Promise.all([api('stats'), api('users'), api('transactions')]);
+
+        $('s-users').textContent = stats.totalUsers;
+        $('s-today').textContent = stats.todayCids;
+        $('s-total').textContent = stats.totalCids;
+
+        $('users-body').innerHTML = users.map(u => `
+            <tr>
+                <td>${u.id}</td>
+                <td>${u.email || '—'}</td>
+                <td>${u.telegram_username || u.telegram_id || '—'}</td>
+                <td><strong>${u.balance}</strong></td>
+                <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                <td><button onclick="addCreditsPrompt(${u.id})" style="width:auto;padding:4px 12px;font-size:12px">+ Créditos</button></td>
+            </tr>
+        `).join('');
+
+        $('txns-body').innerHTML = txns.map(t => `
+            <tr>
+                <td>${new Date(t.created_at).toLocaleString()}</td>
+                <td>${t.email || t.telegram_username || '—'}</td>
+                <td>${t.source}</td>
+                <td style="font-family:monospace;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis">${t.iid || '—'}</td>
+                <td><span class="badge ${t.status}">${t.status}</span></td>
+                <td>${t.time_ms ? (t.time_ms/1000).toFixed(1)+'s' : '—'}</td>
+            </tr>
+        `).join('');
+    }
+
+    async function addUser() {
+        const email = $('new-email').value.trim();
+        const credits = parseInt($('new-credits').value) || 1;
+        if (!email) return alert('Email requerido');
+        await fetch(`/api/admin/add-user?pw=${password}`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ email, credits })
+        });
+        $('new-email').value = '';
+        loadAll();
+    }
+
+    async function addCreditsPrompt(userId) {
+        const amount = prompt('¿Cuántos créditos agregar?', '1');
+        if (!amount) return;
+        await fetch(`/api/admin/add-credits?pw=${password}`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ user_id: userId, amount: parseInt(amount) })
+        });
+        loadAll();
+    }
+    </script>
+</body>
+</html>

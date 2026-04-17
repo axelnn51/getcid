@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CdKeys Perú — Get Confirmation ID</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="app">
+        <header>
+            <div class="brand">
+                <div class="logo">⚡</div>
+                <div>
+                    <h1>CdKeys Perú</h1>
+                    <p class="tagline">Phone Activation — Get Your Confirmation ID (CID)</p>
+                </div>
+            </div>
+            <a href="/admin.html" class="admin-link">Admin</a>
+        </header>
+
+        <!-- PORTAL: Login por email -->
+        <div id="view-portal">
+            <div class="portal-card">
+                <div class="field">
+                    <label>Email de tu compra</label>
+                    <input type="email" id="email" placeholder="ejemplo@email.com">
+                </div>
+
+                <div class="separator"><span>Ingresa el IID o sube una imagen</span></div>
+
+                <div class="field">
+                    <label>Installation ID <small>(9 × 7 dígitos)</small></label>
+                    <input type="text" id="iid" placeholder="0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000">
+                </div>
+
+                <div class="field">
+                    <label>Screenshot / Foto <small>(opcional)</small></label>
+                    <input type="file" id="screenshot" accept="image/*">
+                    <small class="hint">También puedes pegar un screenshot directamente; detectaremos el IID automáticamente.</small>
+                </div>
+
+                <button class="btn-primary" id="btn-submit">Get Confirmation ID</button>
+
+                <!-- Resultado -->
+                <div id="result-area" class="hidden">
+                    <div class="result-row">
+                        <span class="result-label">Result</span>
+                        <span class="result-value" id="res-status">—</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Confirmation ID</span>
+                        <div class="cid-display">
+                            <input type="text" id="res-cid" readonly value="Will appear here after success">
+                            <button class="btn-copy" id="btn-copy">Copy</button>
+                        </div>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Remaining</span>
+                        <span class="result-value" id="res-balance">—</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">Time taken</span>
+                        <span class="result-value" id="res-time">—</span>
+                    </div>
+                </div>
+
+                <div id="error-area" class="hidden">
+                    <p id="error-msg"></p>
+                </div>
+            </div>
+
+            <!-- How it works -->
+            <div class="info-card">
+                <h3>¿Cómo funciona?</h3>
+                <ol>
+                    <li>Compra una licencia en <strong>CdKeys Perú</strong>.</li>
+                    <li>Inicia la activación por teléfono para obtener el Installation ID (9 grupos de 7 dígitos).</li>
+                    <li>Ingresa tu <strong>email de compra</strong> y el <strong>Installation ID</strong> aquí.</li>
+                    <li>Validamos tu compra y generamos el <strong>Confirmation ID (CID)</strong>.</li>
+                    <li>Ingresa el CID en el asistente de activación y listo.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const $ = id => document.getElementById(id);
+
+    $('btn-submit').onclick = async () => {
+        const email = $('email').value.trim();
+        const iid = $('iid').value.trim();
+        const file = $('screenshot').files[0];
+
+        if (!email) return alert('Ingresa tu email de compra.');
+        if (!iid && !file) return alert('Ingresa el IID o sube una imagen.');
+
+        $('btn-submit').disabled = true;
+        $('btn-submit').textContent = 'Procesando...';
+        $('result-area').classList.add('hidden');
+        $('error-area').classList.add('hidden');
+
+        const fd = new FormData();
+        fd.append('email', email);
+        if (iid) fd.append('iid', iid);
+        if (file) fd.append('screenshot', file);
+
+        try {
+            const r = await fetch('/api/portal/getcid', { method: 'POST', body: fd });
+            const d = await r.json();
+
+            if (d.success) {
+                const cidStr = Array.isArray(d.cid) ? d.cid.join('-') : d.cid;
+                $('res-status').textContent = '✅ Success';
+                $('res-status').className = 'result-value success';
+                $('res-cid').value = cidStr;
+                $('res-balance').textContent = d.balance + ' executions';
+                $('res-time').textContent = (d.time_ms / 1000).toFixed(2) + ' seconds';
+                $('result-area').classList.remove('hidden');
+
+                $('btn-copy').onclick = () => {
+                    navigator.clipboard.writeText(cidStr.replace(/-/g, ''));
+                    $('btn-copy').textContent = '¡Copiado!';
+                    setTimeout(() => $('btn-copy').textContent = 'Copy', 1500);
+                };
+            } else {
+                $('error-msg').textContent = d.error;
+                $('error-area').classList.remove('hidden');
+            }
+        } catch(e) {
+            $('error-msg').textContent = 'Error de conexión.';
+            $('error-area').classList.remove('hidden');
+        }
+
+        $('btn-submit').disabled = false;
+        $('btn-submit').textContent = 'Get Confirmation ID';
+    };
+    </script>
+</body>
+</html>
