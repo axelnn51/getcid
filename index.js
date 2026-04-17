@@ -109,6 +109,29 @@ app.post('/api/portal/getcid', upload.single('screenshot'), async (req, res) => 
 });
 
 // ============================================================
+// API: Verificar balance por email
+// ============================================================
+app.get('/api/check-balance', async (req, res) => {
+    const email = (req.query.email || '').trim().toLowerCase();
+    if (!email) return res.json({ found: false });
+
+    let user = db.findUserByEmail(email);
+
+    // Si no existe, verificar WooCommerce
+    if (!user && wc.isConfigured()) {
+        const wcResult = await wc.calculateCreditsForEmail(email);
+        if (wcResult.found && wcResult.credits > 0) {
+            user = db.createUser({ email });
+            db.addCredits(user.id, wcResult.credits, 'woocommerce_auto');
+            user = db.findUserByEmail(email);
+        }
+    }
+
+    if (!user) return res.json({ found: false });
+    return res.json({ found: true, balance: user.balance });
+});
+
+// ============================================================
 // ADMIN API
 // ============================================================
 function authAdmin(req, res, next) {

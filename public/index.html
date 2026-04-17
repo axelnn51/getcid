@@ -88,6 +88,15 @@
                     <div class="field">
                         <label for="email">Email usado en tu compra</label>
                         <input type="email" id="email" placeholder="ejemplo@email.com" autocomplete="email">
+                        <div id="balance-badge" class="hidden">
+                            <span class="badge-credits">💰 <strong id="badge-count">0</strong> CIDs disponibles</span>
+                        </div>
+                        <div id="balance-notfound" class="hidden">
+                            <span class="badge-none">No se encontró cuenta con este email</span>
+                        </div>
+                        <div id="balance-loading" class="hidden">
+                            <span class="badge-loading"><span class="spinner-small"></span> Verificando...</span>
+                        </div>
                     </div>
 
                     <div class="field">
@@ -176,6 +185,26 @@
         </div>
     </section>
 
+    <!-- Sección Técnicos / Mayoristas -->
+    <section class="tech-cta">
+        <div class="container tech-inner">
+            <div class="tech-text">
+                <h3>🔧 ¿Eres técnico o activás equipos con frecuencia?</h3>
+                <p>Ofrecemos <strong>paquetes de créditos CID</strong> para profesionales que necesitan activar múltiples equipos. Obtené precios especiales por volumen y acceso prioritario al portal.</p>
+                <ul class="tech-perks">
+                    <li>✅ Precios por volumen desde 50 activaciones</li>
+                    <li>✅ Panel de historial de activaciones</li>
+                    <li>✅ Soporte prioritario vía Telegram</li>
+                    <li>✅ Acceso al Bot automatizado 24/7</li>
+                </ul>
+            </div>
+            <div class="tech-action">
+                <a href="https://wa.me/51999999999?text=Hola%2C%20me%20interesa%20un%20paquete%20de%20cr%C3%A9ditos%20CID%20para%20t%C3%A9cnicos" target="_blank" class="btn-tech">💬 Consultar por WhatsApp</a>
+                <a href="mailto:soporte@cdkeysperu.com?subject=Paquete%20CID%20Técnicos" class="btn-tech-alt">📧 Escribir por correo</a>
+            </div>
+        </div>
+    </section>
+
     <!-- FOOTER cdkeysperu -->
     <footer class="site-footer">
         <div class="container footer-grid">
@@ -210,6 +239,31 @@
 
     <script>
     const $ = id => document.getElementById(id);
+
+    // Auto-check balance al escribir email
+    let balanceTimer = null;
+    $('email').addEventListener('input', () => {
+        clearTimeout(balanceTimer);
+        $('balance-badge').classList.add('hidden');
+        $('balance-notfound').classList.add('hidden');
+        $('balance-loading').classList.add('hidden');
+        const email = $('email').value.trim();
+        if (!email || !email.includes('@')) return;
+        balanceTimer = setTimeout(async () => {
+            $('balance-loading').classList.remove('hidden');
+            try {
+                const r = await fetch('/api/check-balance?email=' + encodeURIComponent(email));
+                const d = await r.json();
+                $('balance-loading').classList.add('hidden');
+                if (d.found) {
+                    $('badge-count').textContent = d.balance;
+                    $('balance-badge').classList.remove('hidden');
+                } else {
+                    $('balance-notfound').classList.remove('hidden');
+                }
+            } catch(e) { $('balance-loading').classList.add('hidden'); }
+        }, 600);
+    });
 
     $('screenshot').onchange = async function() {
         if (!this.files[0]) return;
