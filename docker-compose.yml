@@ -6,8 +6,6 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/app/data   # Base de datos persistente
-    env_file:
-      - .env
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
