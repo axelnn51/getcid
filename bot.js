@@ -8,7 +8,11 @@ const db = require('./db');
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim());
 
-if (!BOT_TOKEN) { console.error('❌ Falta BOT_TOKEN'); process.exit(1); }
+if (!BOT_TOKEN) {
+    console.error('❌ BOT_TOKEN vacío. Bot no iniciará.');
+    module.exports = {};
+    return;
+}
 
 const bot = new Telegraf(BOT_TOKEN);
 

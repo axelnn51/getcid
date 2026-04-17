@@ -1,4 +1,5 @@
-require('dotenv').config();
+// dotenv es opcional (en Docker las vars vienen del entorno)
+try { require('dotenv').config(); } catch(e) {}
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -130,11 +131,20 @@ process.on('unhandledRejection', (err) => console.error('[UNHANDLED]', err));
 initWorker().then(() => {
     app.listen(PORT, () => {
         console.log(`🌐 Web server en http://localhost:${PORT}`);
+        console.log(`📋 Variables detectadas:`);
+        console.log(`   BOT_TOKEN: ${process.env.BOT_TOKEN ? '✓ (' + process.env.BOT_TOKEN.substring(0, 10) + '...)' : '✗ NO ENCONTRADO'}`);
+        console.log(`   ADMIN_IDS: ${process.env.ADMIN_IDS || '✗'}`);
+        console.log(`   WC_URL: ${process.env.WC_URL || '✗'}`);
+        console.log(`   WC_CONSUMER_KEY: ${process.env.WC_CONSUMER_KEY ? '✓' : '✗'}`);
     });
 
-    if (process.env.BOT_TOKEN) {
-        require('./bot');
+    if (process.env.BOT_TOKEN && process.env.BOT_TOKEN !== 'TU_TOKEN_AQUI') {
+        try {
+            require('./bot');
+        } catch (err) {
+            console.error('❌ Error iniciando bot:', err.message);
+        }
     } else {
-        console.log('⚠️  BOT_TOKEN no configurado.');
+        console.log('⚠️  BOT_TOKEN no configurado. Bot desactivado.');
     }
 });
