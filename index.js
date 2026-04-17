@@ -140,7 +140,8 @@ initWorker().then(() => {
 
     if (process.env.BOT_TOKEN && process.env.BOT_TOKEN !== 'TU_TOKEN_AQUI') {
         try {
-            require('./bot');
+            const { startBot } = require('./bot');
+            startBot();
         } catch (err) {
             console.error('❌ Error iniciando bot:', err.message);
         }
