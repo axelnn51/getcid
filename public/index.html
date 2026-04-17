@@ -10,214 +10,239 @@
 </head>
 <body>
 
-    <!-- HEADER cdkeysperu -->
+    <!-- HEADER -->
     <header class="site-header">
         <div class="header-top">
             <div class="container htop">
-                <span>📧 soporte@cdkeysperu.com</span>
-                <span>⭐ 4.9/5 en Trustpilot</span>
-                <span>🇵🇪 Precios en PEN</span>
+                <div class="htop-left">
+                    <span>📧 soporte@cdkeysperu.com</span>
+                    <span class="htop-sep">•</span>
+                    <span>⭐ 4.9/5 Trustpilot</span>
+                </div>
+                <div class="htop-right">
+                    <span>⚡ Activación instantánea</span>
+                    <span class="htop-sep">•</span>
+                    <span>🇵🇪 PEN</span>
+                </div>
             </div>
         </div>
         <div class="header-main">
             <div class="container hmain">
                 <a href="https://cdkeysperu.com" class="logo-link">
-                    <span class="logo-icon">🔑</span>
-                    <span class="logo-text">CDKEYS<span class="gold">PERÚ</span>.COM</span>
+                    <img src="https://cdkeysperu.com/wp-content/uploads/2026/02/fianly.svg" alt="CdKeys Perú" class="logo-img">
                 </a>
                 <nav class="main-nav">
                     <a href="https://cdkeysperu.com">Inicio</a>
                     <a href="https://cdkeysperu.com/tienda/">Productos</a>
                     <a href="https://cdkeysperu.com/mi-cuenta/">Mi Cuenta</a>
                     <a href="https://cdkeysperu.com/blog/">Blog</a>
+                    <a href="/admin.html" class="nav-admin">⚙️</a>
                 </nav>
             </div>
         </div>
         <div class="header-cats">
             <div class="container hcats">
-                <a href="https://cdkeysperu.com/product-category/windows/">Windows</a>
-                <a href="https://cdkeysperu.com/product-category/office/">Office</a>
-                <a href="https://cdkeysperu.com/product-category/antivirus/">Antivirus</a>
-                <a href="https://cdkeysperu.com/contacto/">Contacto</a>
-                <a href="/admin.html" class="cat-admin">⚙️ Admin</a>
+                <a href="https://cdkeysperu.com/product-category/windows/">🪟 Windows</a>
+                <a href="https://cdkeysperu.com/product-category/office/">📊 Office</a>
+                <a href="https://cdkeysperu.com/product-category/antivirus/">🛡️ Antivirus</a>
+                <a href="https://cdkeysperu.com/contacto/">💬 Contacto</a>
             </div>
         </div>
     </header>
 
-    <!-- Flag Banner -->
+    <!-- Activation Banner -->
     <div class="activation-banner">
         <div class="container abn">
             <div class="abn-left">
-                <span class="abn-flag">🇵🇪</span>
+                <div class="abn-icon">🎯</div>
                 <div>
-                    <strong>CdKeys Perú — Portal de Activación</strong>
-                    <small>Activación por teléfono para clientes de cdkeysperu.com</small>
+                    <strong>Portal de Activación por Teléfono</strong>
+                    <small>Servicio exclusivo para clientes de cdkeysperu.com</small>
                 </div>
             </div>
-            <a href="https://cdkeysperu.com" class="abn-link">← Volver a la tienda</a>
+            <a href="https://cdkeysperu.com" class="abn-btn">← Volver a la tienda</a>
         </div>
     </div>
 
-    <!-- Main 3-column layout -->
+    <!-- MAIN -->
     <main class="content">
         <div class="container layout-3col">
 
-            <!-- LEFT: Products -->
+            <!-- LEFT Products -->
             <aside class="products-col">
                 <h4 class="col-title">Recomendados</h4>
                 <a href="https://cdkeysperu.com/product/windows-11-pro/" target="_blank" class="product-card">
+                    <div class="product-badge">Licencia</div>
                     <img src="https://cdkeysperu.com/wp-content/uploads/2026/02/5.png" alt="Windows 11 Pro">
                     <h5>Windows 11 Pro</h5>
-                    <p>Licencia digital (ESD). Ideal para PCs modernos.</p>
+                    <p>Licencia digital ESD</p>
+                    <div class="product-price"><small>Antes S/150</small><strong>S/ 25.00</strong></div>
                 </a>
                 <a href="https://cdkeysperu.com/product/windows-10-pro/" target="_blank" class="product-card">
+                    <div class="product-badge">Licencia</div>
                     <img src="https://cdkeysperu.com/wp-content/uploads/2026/02/3-1.png" alt="Windows 10 Pro">
                     <h5>Windows 10 Pro</h5>
-                    <p>Activación inmediata. Estable y confiable.</p>
+                    <p>Estable y confiable</p>
+                    <div class="product-price"><small>Antes S/130</small><strong>S/ 20.00</strong></div>
                 </a>
             </aside>
 
-            <!-- CENTER: Form -->
+            <!-- CENTER Form -->
             <div class="form-col">
                 <div class="card form-card">
-                    <div class="form-title">
-                        <h2>Phone Activation — <span class="gold">Get Your Confirmation ID (CID)</span></h2>
-                        <p>Ingresa el email de tu compra en cdkeysperu.com y el Installation ID del asistente de activación.</p>
+                    <div class="form-header">
+                        <div class="form-header-icon">🔐</div>
+                        <div>
+                            <h2>Phone Activation — <span class="gold">Get Your CID</span></h2>
+                            <p class="form-sub">Ingresa el email de tu compra y el Installation ID del asistente de activación de Microsoft.</p>
+                        </div>
                     </div>
 
                     <div class="field">
-                        <label for="email">Email usado en tu compra</label>
+                        <label for="email">📧 Email de tu compra</label>
                         <input type="email" id="email" placeholder="ejemplo@email.com" autocomplete="email">
                         <div id="balance-badge" class="hidden">
-                            <span class="badge-credits">💰 <strong id="badge-count">0</strong> CIDs disponibles</span>
+                            <div class="badge-credits">💰 <strong id="badge-count">0</strong> CIDs disponibles</div>
                         </div>
                         <div id="balance-notfound" class="hidden">
-                            <span class="badge-none">No se encontró cuenta con este email</span>
+                            <div class="badge-none">⚠️ No se encontró cuenta con este email</div>
                         </div>
                         <div id="balance-loading" class="hidden">
-                            <span class="badge-loading"><span class="spinner-small"></span> Verificando...</span>
+                            <div class="badge-loading"><span class="spinner-small"></span> Verificando...</div>
                         </div>
                     </div>
 
+                    <div class="separator"><span>Ingresa el IID o sube una captura</span></div>
+
                     <div class="field">
-                        <label for="iid">Installation ID <small>(9 × 7 dígitos)</small></label>
+                        <label for="iid">🔢 Installation ID <small>(9 × 7 dígitos)</small></label>
                         <input type="text" id="iid" placeholder="0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000">
                     </div>
 
                     <div class="field">
-                        <label>Screenshot / Foto <small>(opcional)</small></label>
-                        <div class="file-upload" id="drop-zone">
+                        <label>📷 Screenshot / Foto <small>(auto-OCR)</small></label>
+                        <div class="file-upload">
                             <input type="file" id="screenshot" accept="image/*">
-                            <div class="file-label" id="file-label">📷 Seleccionar archivo o pegar captura. Detectaremos el IID automáticamente.</div>
+                            <div class="file-label" id="file-label">
+                                <span class="file-icon">📁</span>
+                                <span>Arrastra una imagen o haz clic para seleccionar</span>
+                                <small>Detectaremos el IID automáticamente</small>
+                            </div>
                         </div>
-                        <div id="ocr-status" class="hidden">
-                            <div class="ocr-indicator"><span class="spinner-small"></span> Leyendo dígitos de la imagen...</div>
-                        </div>
-                        <div id="ocr-success" class="hidden">
-                            <div class="ocr-ok">✅ IID detectado automáticamente</div>
-                        </div>
-                        <div id="ocr-fail" class="hidden">
-                            <div class="ocr-err">⚠️ No se detectó IID. Ingrésalo manualmente.</div>
-                        </div>
+                        <div id="ocr-status" class="hidden"><div class="ocr-indicator"><span class="spinner-small"></span> Leyendo dígitos de la imagen...</div></div>
+                        <div id="ocr-success" class="hidden"><div class="ocr-ok">✅ IID detectado automáticamente</div></div>
+                        <div id="ocr-fail" class="hidden"><div class="ocr-err">⚠️ No se detectó IID. Ingrésalo manualmente.</div></div>
                     </div>
 
-                    <button class="btn-primary" id="btn-submit">Get Confirmation ID</button>
+                    <button class="btn-primary" id="btn-submit">
+                        <span class="btn-glow"></span>
+                        ⚡ Get Confirmation ID
+                    </button>
 
                     <!-- Result -->
                     <div id="result-area" class="hidden">
                         <div class="result-box">
-                            <div class="res-row"><span class="res-label">Result</span><span class="res-val success" id="res-status">✅ Success</span></div>
-                            <div class="res-row cid-main">
-                                <span class="res-label">Confirmation ID</span>
+                            <div class="result-header">✅ ¡Activación exitosa!</div>
+                            <div class="result-field">
+                                <label>Confirmation ID</label>
                                 <div class="cid-row">
                                     <input type="text" id="res-cid" readonly class="cid-input">
-                                    <button class="btn-copy" id="btn-copy">Copy</button>
+                                    <button class="btn-copy" id="btn-copy">📋 Copiar</button>
                                 </div>
                             </div>
-                            <div class="res-row"><span class="res-label">Remaining executions</span><span class="res-val" id="res-balance">—</span></div>
-                            <div class="res-row"><span class="res-label">Time taken</span><span class="res-val" id="res-time">—</span></div>
+                            <div class="result-meta">
+                                <span>⏱ <span id="res-time">—</span></span>
+                                <span>💰 Restantes: <strong id="res-balance">—</strong></span>
+                            </div>
                         </div>
                     </div>
-
                     <div id="error-area" class="hidden">
                         <div class="result-box error-box"><p id="error-msg"></p></div>
                     </div>
                 </div>
 
-                <!-- How it works -->
-                <div class="card how-card">
+                <!-- Steps -->
+                <div class="card steps-card">
                     <h3>¿Cómo funciona?</h3>
-                    <div class="steps-row">
-                        <div class="step-mini"><span>1</span> Compra en CdKeys Perú</div>
-                        <div class="step-mini"><span>2</span> Obtén el Installation ID</div>
-                        <div class="step-mini"><span>3</span> Ingresa email + IID aquí</div>
-                        <div class="step-mini"><span>4</span> Recibe el CID al instante</div>
-                        <div class="step-mini"><span>5</span> Activa tu producto ¡Listo!</div>
+                    <div class="steps-grid">
+                        <div class="step"><div class="step-n">1</div><span>Compra en<br><strong>CdKeys Perú</strong></span></div>
+                        <div class="step-arrow">→</div>
+                        <div class="step"><div class="step-n">2</div><span>Obtén el<br><strong>Installation ID</strong></span></div>
+                        <div class="step-arrow">→</div>
+                        <div class="step"><div class="step-n">3</div><span>Ingresa email<br><strong>+ IID aquí</strong></span></div>
+                        <div class="step-arrow">→</div>
+                        <div class="step"><div class="step-n">4</div><span>Obtén el CID<br><strong>al instante</strong></span></div>
+                        <div class="step-arrow">→</div>
+                        <div class="step"><div class="step-n">5</div><span>Activa tu<br><strong>producto ✅</strong></span></div>
                     </div>
                 </div>
             </div>
 
-            <!-- RIGHT: Products -->
+            <!-- RIGHT Products -->
             <aside class="products-col">
                 <h4 class="col-title">Populares</h4>
                 <a href="https://cdkeysperu.com/product/office-professional-plus-ltsc-2024/" target="_blank" class="product-card">
+                    <div class="product-badge hot">Más vendido</div>
                     <img src="https://cdkeysperu.com/wp-content/uploads/2026/02/8.png" alt="Office 2024 Pro Plus">
                     <h5>Office 2024 Pro Plus</h5>
-                    <p>Suite completa. Activación por teléfono.</p>
+                    <p>Suite completa. Pago único.</p>
+                    <div class="product-price"><small>Antes S/70</small><strong>S/ 35.00</strong></div>
                 </a>
                 <a href="https://cdkeysperu.com/product/cuenta-office-pro-plus-365/" target="_blank" class="product-card">
+                    <div class="product-badge hot">5 dispositivos</div>
                     <img src="https://cdkeysperu.com/wp-content/uploads/2025/12/Cuenta-Contrasena.png" alt="Office 365 Pro Plus">
                     <h5>Cuenta Office 365</h5>
-                    <p>5 dispositivos. 1TB OneDrive incluido.</p>
+                    <p>1TB OneDrive incluido</p>
+                    <div class="product-price"><small>Antes S/79</small><strong>S/ 40.00</strong></div>
                 </a>
             </aside>
-
         </div>
     </main>
 
-    <!-- Trust bar -->
+    <!-- Trust -->
     <section class="trust-bar">
         <div class="container trust-items">
-            <div class="trust-i">🚀 <span>Entrega en 5 minutos</span></div>
-            <div class="trust-i">✅ <span>Garantía de activación</span></div>
-            <div class="trust-i">🧾 <span>Emitimos boleta electrónica</span></div>
-            <div class="trust-i">💬 <span>Soporte por <a href="https://t.me/getcidcdkeysbot">Telegram</a></span></div>
+            <div class="trust-i">🚀 Entrega en 5 min</div>
+            <div class="trust-i">✅ Garantía de activación</div>
+            <div class="trust-i">🧾 Boleta electrónica</div>
+            <div class="trust-i">💬 Soporte por <a href="https://t.me/getcidcdkeysbot">Telegram</a></div>
         </div>
     </section>
 
-    <!-- Sección Técnicos / Mayoristas -->
+    <!-- CTA Técnicos -->
     <section class="tech-cta">
         <div class="container tech-inner">
             <div class="tech-text">
-                <h3>🔧 ¿Eres técnico o activás equipos con frecuencia?</h3>
-                <p>Ofrecemos <strong>paquetes de créditos CID</strong> para profesionales que necesitan activar múltiples equipos. Obtené precios especiales por volumen y acceso prioritario al portal.</p>
-                <ul class="tech-perks">
-                    <li>✅ Precios por volumen desde 50 activaciones</li>
-                    <li>✅ Panel de historial de activaciones</li>
-                    <li>✅ Soporte prioritario vía Telegram</li>
-                    <li>✅ Acceso al Bot automatizado 24/7</li>
-                </ul>
+                <h3>🔧 ¿Eres técnico o formateas equipos a tus clientes?</h3>
+                <p>Tenemos <strong>precios especiales por volumen</strong> en licencias de Windows y Office para profesionales de TI. Ahorra en cada instalación y ofrece un mejor servicio.</p>
+                <div class="tech-perks">
+                    <div class="perk">✅ Precios desde <strong>S/ 12</strong> por licencia</div>
+                    <div class="perk">✅ Créditos CID incluidos con cada compra</div>
+                    <div class="perk">✅ Soporte técnico prioritario 24/7</div>
+                    <div class="perk">✅ Panel de activaciones e historial</div>
+                </div>
             </div>
             <div class="tech-action">
-                <a href="https://wa.me/51999999999?text=Hola%2C%20me%20interesa%20un%20paquete%20de%20cr%C3%A9ditos%20CID%20para%20t%C3%A9cnicos" target="_blank" class="btn-tech">💬 Consultar por WhatsApp</a>
-                <a href="mailto:soporte@cdkeysperu.com?subject=Paquete%20CID%20Técnicos" class="btn-tech-alt">📧 Escribir por correo</a>
+                <a href="https://cdkeysperu.com/tienda/" target="_blank" class="btn-tech-main">🛒 Ver catálogo para técnicos</a>
+                <a href="https://wa.me/51999999999?text=Hola,%20soy%20técnico%20y%20me%20interesan%20los%20precios%20por%20volumen" target="_blank" class="btn-whatsapp">💬 Cotizar por WhatsApp</a>
+                <a href="mailto:soporte@cdkeysperu.com?subject=Precios%20por%20volumen%20para%20técnicos" class="btn-email">📧 Escribir por correo</a>
             </div>
         </div>
     </section>
 
-    <!-- FOOTER cdkeysperu -->
+    <!-- FOOTER -->
     <footer class="site-footer">
         <div class="container footer-grid">
             <div class="foot-col">
-                <h4>🔑 CDKEYS<span class="gold">PERÚ</span>.COM</h4>
+                <img src="https://cdkeysperu.com/wp-content/uploads/2026/02/fianly.svg" alt="CdKeys Perú" class="footer-logo">
                 <p>Licencias de software originales para Windows, Office y Antivirus. Entrega digital inmediata con garantía de activación.</p>
             </div>
             <div class="foot-col">
                 <h4>Productos</h4>
                 <a href="https://cdkeysperu.com/product/windows-10-pro/">Windows 10 Pro</a>
                 <a href="https://cdkeysperu.com/product/windows-11-pro/">Windows 11 Pro</a>
-                <a href="https://cdkeysperu.com/product/office-professional-plus-ltsc-2024/">Office 2024</a>
-                <a href="https://cdkeysperu.com/product/cuenta-office-pro-plus-365/">Office 365</a>
+                <a href="https://cdkeysperu.com/product/office-professional-plus-ltsc-2024/">Office 2024 Pro Plus</a>
+                <a href="https://cdkeysperu.com/product/cuenta-office-pro-plus-365/">Cuenta Office 365</a>
             </div>
             <div class="foot-col">
                 <h4>Soporte</h4>
@@ -240,83 +265,73 @@
     <script>
     const $ = id => document.getElementById(id);
 
-    // Auto-check balance al escribir email
-    let balanceTimer = null;
+    // Auto-check balance
+    let bt = null;
     $('email').addEventListener('input', () => {
-        clearTimeout(balanceTimer);
-        $('balance-badge').classList.add('hidden');
-        $('balance-notfound').classList.add('hidden');
-        $('balance-loading').classList.add('hidden');
+        clearTimeout(bt);
+        ['balance-badge','balance-notfound','balance-loading'].forEach(id => $(id).classList.add('hidden'));
         const email = $('email').value.trim();
         if (!email || !email.includes('@')) return;
-        balanceTimer = setTimeout(async () => {
+        bt = setTimeout(async () => {
             $('balance-loading').classList.remove('hidden');
             try {
                 const r = await fetch('/api/check-balance?email=' + encodeURIComponent(email));
                 const d = await r.json();
                 $('balance-loading').classList.add('hidden');
-                if (d.found) {
-                    $('badge-count').textContent = d.balance;
-                    $('balance-badge').classList.remove('hidden');
-                } else {
-                    $('balance-notfound').classList.remove('hidden');
-                }
+                if (d.found) { $('badge-count').textContent = d.balance; $('balance-badge').classList.remove('hidden'); }
+                else { $('balance-notfound').classList.remove('hidden'); }
             } catch(e) { $('balance-loading').classList.add('hidden'); }
         }, 600);
     });
 
+    // Auto-OCR
     $('screenshot').onchange = async function() {
         if (!this.files[0]) return;
-        $('file-label').textContent = '📷 ' + this.files[0].name;
+        $('file-label').innerHTML = '<span class="file-icon">✅</span><span>' + this.files[0].name + '</span>';
         $('ocr-status').classList.remove('hidden');
-        $('ocr-success').classList.add('hidden');
-        $('ocr-fail').classList.add('hidden');
-        const fd = new FormData();
-        fd.append('image', this.files[0]);
+        ['ocr-success','ocr-fail'].forEach(id => $(id).classList.add('hidden'));
+        const fd = new FormData(); fd.append('image', this.files[0]);
         try {
             const r = await fetch('/api/ocr-only', { method: 'POST', body: fd });
             const d = await r.json();
             $('ocr-status').classList.add('hidden');
-            if (d.success) {
-                $('iid').value = d.iid.match(/.{1,7}/g)?.join(' ') || d.iid;
-                $('ocr-success').classList.remove('hidden');
-            } else { $('ocr-fail').classList.remove('hidden'); }
+            if (d.success) { $('iid').value = d.iid.match(/.{1,7}/g)?.join(' ') || d.iid; $('ocr-success').classList.remove('hidden'); }
+            else { $('ocr-fail').classList.remove('hidden'); }
         } catch(e) { $('ocr-status').classList.add('hidden'); $('ocr-fail').classList.remove('hidden'); }
     };
 
+    // Submit
     $('btn-submit').onclick = async () => {
-        const email = $('email').value.trim();
-        const iid = $('iid').value.trim();
-        if (!email) return showError('Ingresa tu email de compra.');
-        if (!iid) return showError('Ingresa el IID o sube una imagen.');
+        const email = $('email').value.trim(), iid = $('iid').value.trim();
+        if (!email) return showErr('Ingresa tu email de compra.');
+        if (!iid) return showErr('Ingresa el IID o sube una imagen.');
         $('btn-submit').disabled = true;
-        $('btn-submit').innerHTML = '<span class="spinner"></span> Procesando...';
-        $('result-area').classList.add('hidden');
-        $('error-area').classList.add('hidden');
-        const fd = new FormData();
-        fd.append('email', email);
-        fd.append('iid', iid);
+        $('btn-submit').innerHTML = '<span class="spinner"></span> Obteniendo CID...';
+        ['result-area','error-area'].forEach(id => $(id).classList.add('hidden'));
+        const fd = new FormData(); fd.append('email', email); fd.append('iid', iid);
         try {
             const r = await fetch('/api/portal/getcid', { method: 'POST', body: fd });
             const d = await r.json();
             if (d.success) {
-                const cidStr = Array.isArray(d.cid) ? d.cid.join('-') : d.cid;
-                $('res-cid').value = cidStr;
-                $('res-balance').textContent = d.balance + ' executions';
-                $('res-time').textContent = (d.time_ms / 1000).toFixed(2) + ' seconds';
+                const c = Array.isArray(d.cid) ? d.cid.join('-') : d.cid;
+                $('res-cid').value = c;
+                $('res-balance').textContent = d.balance;
+                $('res-time').textContent = (d.time_ms/1000).toFixed(2)+'s';
                 $('result-area').classList.remove('hidden');
+                // Update balance badge too
+                $('badge-count').textContent = d.balance;
+                $('balance-badge').classList.remove('hidden');
                 $('btn-copy').onclick = () => {
-                    navigator.clipboard.writeText(cidStr.replace(/-/g, ''));
-                    $('btn-copy').textContent = '✅ Copied!';
-                    $('btn-copy').classList.add('copied');
-                    setTimeout(() => { $('btn-copy').textContent = 'Copy'; $('btn-copy').classList.remove('copied'); }, 2000);
+                    navigator.clipboard.writeText(c.replace(/-/g,''));
+                    $('btn-copy').textContent = '✅ ¡Copiado!'; $('btn-copy').classList.add('copied');
+                    setTimeout(() => { $('btn-copy').textContent = '📋 Copiar'; $('btn-copy').classList.remove('copied'); }, 2000);
                 };
-            } else { showError(d.error); }
-        } catch(e) { showError('Error de conexión.'); }
+            } else showErr(d.error);
+        } catch(e) { showErr('Error de conexión.'); }
         $('btn-submit').disabled = false;
-        $('btn-submit').innerHTML = 'Get Confirmation ID';
+        $('btn-submit').innerHTML = '⚡ Get Confirmation ID';
     };
-    function showError(msg) { $('error-msg').textContent = msg; $('error-area').classList.remove('hidden'); }
+    function showErr(m) { $('error-msg').textContent = m; $('error-area').classList.remove('hidden'); }
     </script>
 </body>
 </html>
