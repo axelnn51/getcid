@@ -58,7 +58,8 @@ app.post('/api/ocr-only', upload.single('image'), async (req, res) => {
 const apiLimiter = rateLimit({
     windowMs: 30 * 60 * 1000, 
     max: 5, 
-    message: { success: false, error: 'Demasiados intentos desde esta IP. Por favor espera 30 minutos antes de volver a intentar para evitar abuso.' }
+    skipSuccessfulRequests: true,
+    message: { success: false, error: 'Demasiados intentos fallidos desde esta IP. Por favor espera 30 minutos antes de volver a intentar.' }
 });
 
 async function syncAndGetUser(identifier) {
@@ -101,13 +102,13 @@ async function syncAndGetUser(identifier) {
 // ============================================================
 app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (req, res) => {
     const { email, iid } = req.body;
-    if (!email) return res.json({ success: false, error: 'Email o Nro de pedido requerido.' });
+    if (!email) return res.status(400).json({ success: false, error: 'Email o Nro de pedido requerido.' });
 
     const identifier = email.trim().toLowerCase();
     const user = await syncAndGetUser(identifier);
 
-    if (!user) return res.json({ success: false, error: 'No encontrado. Verifica que sea tu email de compra o número de pedido y que el pago esté Completado.' });
-    if (user.balance <= 0) return res.json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra en cdkeysperu.com.' });
+    if (!user) return res.status(400).json({ success: false, error: 'No encontrado. Verifica que sea tu email de compra o número de pedido y que el pago esté Completado.' });
+    if (user.balance <= 0) return res.status(400).json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra en cdkeysperu.com.' });
 
     const startTime = Date.now();
     try {
@@ -120,7 +121,7 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
             const cid = await getConfirmationID(cleanIid);
             cidResult = { success: true, iid: cleanIid, cid, strategy: 'direct', method: 'manual' };
         } else {
-            return res.json({ success: false, error: 'Envía un IID o una imagen.' });
+            return res.status(400).json({ success: false, error: 'Envía un IID o una imagen.' });
         }
 
         const elapsed = Date.now() - startTime;
@@ -132,11 +133,11 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
             return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: newBalance, time_ms: elapsed });
         } else {
             db.logTransaction(user.id, 'web', null, null, 'failed', elapsed, null);
-            return res.json({ success: false, error: 'No se pudo obtener el CID. Verifica tu IID.' });
+            return res.status(400).json({ success: false, error: 'No se pudo obtener el CID. Verifica tu IID.' });
         }
     } catch (e) {
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        return res.json({ success: false, error: e.message === 'INVALID_CHECKSUM' ? 'IID inválido (checksum).' : 'Error procesando solicitud.' });
+        return res.status(400).json({ success: false, error: e.message === 'INVALID_CHECKSUM' ? 'IID inválido (checksum).' : 'Error procesando solicitud.' });
     }
 });
 
