@@ -5,6 +5,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const rateLimit = require('express-rate-limit');
 const { getConfirmationID } = require('./cid_helper');
 const db = require('./db');
 const wc = require('./woocommerce');
@@ -54,28 +55,59 @@ app.post('/api/ocr-only', upload.single('image'), async (req, res) => {
     }
 });
 
-// ============================================================
-// API: Portal Web con créditos (por email)
-// ============================================================
-app.post('/api/portal/getcid', upload.single('screenshot'), async (req, res) => {
-    const { email, iid } = req.body;
-    if (!email) return res.json({ success: false, error: 'Email requerido.' });
+const apiLimiter = rateLimit({
+    windowMs: 30 * 60 * 1000, 
+    max: 5, 
+    message: { success: false, error: 'Demasiados intentos desde esta IP. Por favor espera 30 minutos antes de volver a intentar para evitar abuso.' }
+});
 
-    let user = db.findUserByEmail(email);
+async function syncAndGetUser(identifier) {
+    const isOrderNumber = /^\d+$/.test(identifier);
+    let resolvedEmail = identifier;
 
-    if (!user && wc.isConfigured()) {
-        console.log(`[WC] Verificando compras para ${email}...`);
-        const wcResult = await wc.calculateCreditsForEmail(email);
-        if (wcResult.found && wcResult.credits > 0) {
-            user = db.createUser({ email });
-            db.addCredits(user.id, wcResult.credits, 'woocommerce_auto');
-            user = db.findUserByEmail(email);
-            console.log(`[WC] ✓ ${email}: ${wcResult.credits} créditos`);
+    if (isOrderNumber && wc.isConfigured()) {
+        const order = await wc.getOrderById(identifier);
+        if (order && order.status === 'completed') {
+            resolvedEmail = order.billing?.email?.toLowerCase() || `order_${identifier}`;
+            if (!db.isOrderUsed(identifier)) {
+                let u = db.findUserByEmail(resolvedEmail);
+                if (!u) { u = db.createUser({ email: resolvedEmail }); }
+                db.markOrderUsed(identifier);
+                db.addCredits(u.id, 1, 'woocommerce_order_' + identifier);
+            }
         }
     }
 
-    if (!user) return res.json({ success: false, error: 'Email no encontrado. Verifica que sea el email de tu compra.' });
-    if (user.balance <= 0) return res.json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra.' });
+    let user = db.findUserByEmail(resolvedEmail);
+
+    if (resolvedEmail.includes('@') && wc.isConfigured()) {
+        const orders = await wc.getOrdersByEmail(resolvedEmail);
+        if (orders) {
+            for (const order of orders) {
+                if (order.status === 'completed' && !db.isOrderUsed(order.id)) {
+                    if (!user) { user = db.createUser({ email: resolvedEmail }); }
+                    db.markOrderUsed(order.id);
+                    db.addCredits(user.id, 1, 'woocommerce_order_' + order.id);
+                }
+            }
+        }
+    }
+
+    return db.findUserByEmail(resolvedEmail);
+}
+
+// ============================================================
+// API: Portal Web con créditos (por email o num de pedido)
+// ============================================================
+app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (req, res) => {
+    const { email, iid } = req.body;
+    if (!email) return res.json({ success: false, error: 'Email o Nro de pedido requerido.' });
+
+    const identifier = email.trim().toLowerCase();
+    const user = await syncAndGetUser(identifier);
+
+    if (!user) return res.json({ success: false, error: 'No encontrado. Verifica que sea tu email de compra o número de pedido y que el pago esté Completado.' });
+    if (user.balance <= 0) return res.json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra en cdkeysperu.com.' });
 
     const startTime = Date.now();
     try {
@@ -100,33 +132,22 @@ app.post('/api/portal/getcid', upload.single('screenshot'), async (req, res) => 
             return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: newBalance, time_ms: elapsed });
         } else {
             db.logTransaction(user.id, 'web', null, null, 'failed', elapsed, null);
-            return res.json({ success: false, error: 'No se pudo obtener el CID.' });
+            return res.json({ success: false, error: 'No se pudo obtener el CID. Verifica tu IID.' });
         }
     } catch (e) {
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        return res.json({ success: false, error: e.message === 'INVALID_CHECKSUM' ? 'IID inválido (checksum).' : e.message });
+        return res.json({ success: false, error: e.message === 'INVALID_CHECKSUM' ? 'IID inválido (checksum).' : 'Error procesando solicitud.' });
     }
 });
 
 // ============================================================
-// API: Verificar balance por email
+// API: Verificar balance por email o pedido
 // ============================================================
-app.get('/api/check-balance', async (req, res) => {
-    const email = (req.query.email || '').trim().toLowerCase();
-    if (!email) return res.json({ found: false });
+app.get('/api/check-balance', apiLimiter, async (req, res) => {
+    const identifier = (req.query.email || '').trim().toLowerCase();
+    if (!identifier) return res.json({ found: false });
 
-    let user = db.findUserByEmail(email);
-
-    // Si no existe, verificar WooCommerce
-    if (!user && wc.isConfigured()) {
-        const wcResult = await wc.calculateCreditsForEmail(email);
-        if (wcResult.found && wcResult.credits > 0) {
-            user = db.createUser({ email });
-            db.addCredits(user.id, wcResult.credits, 'woocommerce_auto');
-            user = db.findUserByEmail(email);
-        }
-    }
-
+    const user = await syncAndGetUser(identifier);
     if (!user) return res.json({ found: false });
     return res.json({ found: true, balance: user.balance });
 });

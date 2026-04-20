@@ -51,6 +51,11 @@ db.exec(`
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS used_orders (
+        order_id TEXT PRIMARY KEY,
+        claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
 `);
 
 // ============================================================
@@ -144,9 +149,18 @@ function getStats() {
     return { totalCids: total.c, todayCids: today.c, totalUsers: users.c };
 }
 
+function isOrderUsed(orderId) {
+    const row = db.prepare('SELECT order_id FROM used_orders WHERE order_id = ?').get(String(orderId));
+    return !!row;
+}
+function markOrderUsed(orderId) {
+    db.prepare('INSERT OR IGNORE INTO used_orders (order_id) VALUES (?)').run(String(orderId));
+}
+
 module.exports = {
     findUserByEmail, findUserByTelegram, createUser, setAdmin,
     getBalance, addCredits, debitCredit,
     logTransaction, getTransactions,
-    getAllUsers, getAllTransactions, getStats
+    getAllUsers, getAllTransactions, getStats,
+    isOrderUsed, markOrderUsed
 };

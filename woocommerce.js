@@ -39,6 +39,33 @@ async function getOrdersByEmail(email) {
     }
 }
 
+// Buscar un pedido por ID
+async function getOrderById(orderId) {
+    if (!isConfigured()) return null;
+
+    const url = `${WC_URL}/wp-json/wc/v3/orders/${encodeURIComponent(orderId)}`;
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Authorization': 'Basic ' + Buffer.from(`${WC_KEY}:${WC_SECRET}`).toString('base64')
+            },
+            signal: AbortSignal.timeout(10000)
+        });
+
+        if (!response.ok) {
+            console.error(`[WC] Error ${response.status}: ${await response.text()}`);
+            return null;
+        }
+
+        const order = await response.json();
+        return order;
+    } catch (err) {
+        console.error('[WC] Error consultando WooCommerce por ID:', err.message);
+        return null;
+    }
+}
+
 // Contar cuántos CIDs le corresponden al cliente según sus compras
 // Cada pedido completado = 1 CID (puedes ajustar esta lógica)
 async function calculateCreditsForEmail(email) {
@@ -82,4 +109,4 @@ async function calculateCreditsForEmail(email) {
     return { found: true, credits: totalCredits, orders: orderSummaries };
 }
 
-module.exports = { isConfigured, getOrdersByEmail, calculateCreditsForEmail };
+module.exports = { isConfigured, getOrdersByEmail, calculateCreditsForEmail, getOrderById };
