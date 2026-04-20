@@ -10,7 +10,7 @@
     --font:'Montserrat',sans-serif;
     --radius:14px;--shadow:0 1px 3px rgba(0,0,0,.04),0 6px 16px rgba(0,0,0,.04);
 }
-body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;-webkit-font-smoothing:antialiased;overflow-x:hidden}
 a{color:var(--primary);text-decoration:none}
 a:hover{text-decoration:underline}
 .hidden{display:none!important}
@@ -49,6 +49,7 @@ a:hover{text-decoration:underline}
 /* ===== LAYOUT ===== */
 .content{padding:24px 0}
 .layout-3col{display:grid;grid-template-columns:190px 1fr 190px;gap:20px}
+.products-col, .form-col { min-width: 0; }
 @media(max-width:960px){
     .layout-3col{grid-template-columns:1fr; gap:16px}
     .products-col{display:flex; gap:16px; overflow-x:auto; padding-bottom:12px; padding-top:4px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch}
@@ -67,10 +68,10 @@ a:hover{text-decoration:underline}
     .hcats a{white-space:nowrap}
     .abn{flex-direction:column; align-items:flex-start}
     .abn-btn{width:100%; text-align:center; padding:10px}
-    .steps-grid{flex-direction:column; align-items:flex-start; gap:12px}
-    .step{display:flex; align-items:center; text-align:left; gap:16px; width:100%}
+    .steps-grid{flex-direction:column; align-items:stretch; gap:16px}
+    .step{display:flex; align-items:center; justify-content:flex-start; text-align:left; gap:16px; width:100%; min-width:0; margin:0}
     .step-n{margin:0; flex-shrink:0}
-    .step span br{display:none} /* Quitar saltos de linea en móvil */
+    .step span{flex:1}
     .step-arrow{display:none} /* Ocultar flechas en móvil, ya es vertical */
     .tech-inner{flex-direction:column; text-align:center; gap:24px}
     .tech-perks{grid-template-columns:1fr; text-align:left}
