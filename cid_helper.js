@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { getCIDViaPuppeteer } = require('./cid_puppeteer');
 
 // ============================================================
 // CID Helper — Obtener Confirmation ID
@@ -270,24 +271,26 @@ async function getConfirmationID(iid) {
       { iid: cleanIid });
   }
 
-  // Modo 1: Worker Proxy (preferido)
-  if (WORKER_PROXY_URL) {
-    console.log('[CID] Usando Worker proxy:', WORKER_PROXY_URL);
-    try {
-      return await getCIDViaProxy(cleanIid);
-    } catch (err) {
-      // Si el proxy falla por network, intentar directo como fallback
-      if (err.code === 'PROXY_NETWORK_ERROR' || err.code === 'TIMEOUT') {
-        console.log('[CID] Proxy falló, intentando directo...');
-      } else {
-        throw err; // Errores de MS (checksum, blocked, etc.) no reintentar
+  // Modo 1: Puppeteer Headless (Gratis, sin login, predeterminado)
+  console.log('[CID] Usando motor Puppeteer en Ubuntu Server');
+  try {
+    return await getCIDViaPuppeteer(cleanIid);
+  } catch (err) {
+    // Si Puppeteer falla por un error interno de red/automatización, intentar Worker Proxy como fallback
+    if (err.code === 'NETWORK_ERROR' || err.code === 'TIMEOUT') {
+      console.log('[CID] Puppeteer falló por red/automatización, intentando Worker proxy como fallback...');
+      if (WORKER_PROXY_URL) {
+        try {
+          return await getCIDViaProxy(cleanIid);
+        } catch (proxyErr) {
+          console.log('[CID] Proxy falló, intentando directo como último recurso...');
+          return await getCIDDirect(cleanIid);
+        }
       }
+      return await getCIDDirect(cleanIid);
     }
+    throw err; // Errores de licencia (bloqueada, límite, expirada) se propagan directamente
   }
-
-  // Modo 2: Directo a Microsoft (fallback o si no hay proxy)
-  console.log('[CID] Usando conexión directa a Microsoft');
-  return await getCIDDirect(cleanIid);
 }
 
 module.exports = { getConfirmationID, CIDError };
