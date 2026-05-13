@@ -166,7 +166,9 @@
                         </div>
                     </div>
                     <div id="error-area" class="hidden">
-                        <div class="result-box error-box"><p id="error-msg"></p></div>
+                        <div class="result-box error-box"><p id="error-msg" style="white-space:pre-wrap;word-break:break-word;"></p>
+                        <div id="error-iid" class="hidden" style="margin-top:8px;padding:8px 12px;background:rgba(255,255,255,0.05);border-radius:6px;font-family:monospace;font-size:13px;word-break:break-all;"></div>
+                        </div>
                     </div>
                 </div>
 
@@ -350,12 +352,22 @@
                     $('btn-copy').textContent = '✅ ¡Copiado!'; $('btn-copy').classList.add('copied');
                     setTimeout(() => { $('btn-copy').textContent = '📋 Copiar'; $('btn-copy').classList.remove('copied'); }, 2000);
                 };
-            } else showErr(d.error);
+            } else showErr(d.error, d.iid, d.errorCode);
         } catch(e) { showErr('Error de conexión.'); }
         $('btn-submit').disabled = false;
         $('btn-submit').innerHTML = '⚡ Get Confirmation ID';
     };
-    function showErr(m) { $('error-msg').textContent = m; $('error-area').classList.remove('hidden'); }
+    function showErr(m, iid, code) { 
+        $('error-msg').textContent = m; 
+        $('error-area').classList.remove('hidden');
+        const iidEl = $('error-iid');
+        if (iid) {
+            iidEl.textContent = 'IID: ' + (iid.match(/.{1,7}/g)?.join(' ') || iid);
+            iidEl.classList.remove('hidden');
+        } else {
+            iidEl.classList.add('hidden');
+        }
+    }
     </script>
 </body>
 </html>

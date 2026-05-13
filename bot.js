@@ -1,12 +1,126 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs');
 const path = require('path');
-const { getConfirmationID } = require('./cid_helper');
+const { getConfirmationID, CIDError } = require('./cid_helper');
 const { ocrAndGetCID } = require('./ocr');
 const db = require('./db');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+
+// ============================================================
+// Rate limiting por usuario (máx 3 requests/minuto)
+// ============================================================
+const userCooldowns = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minuto
+const RATE_LIMIT_MAX = 3;
+
+function checkRateLimit(userId) {
+    const now = Date.now();
+    const key = String(userId);
+    if (!userCooldowns.has(key)) userCooldowns.set(key, []);
+    
+    const timestamps = userCooldowns.get(key).filter(t => now - t < RATE_LIMIT_WINDOW);
+    userCooldowns.set(key, timestamps);
+    
+    if (timestamps.length >= RATE_LIMIT_MAX) {
+        const waitSecs = Math.ceil((timestamps[0] + RATE_LIMIT_WINDOW - now) / 1000);
+        return { limited: true, waitSecs };
+    }
+    
+    timestamps.push(now);
+    return { limited: false };
+}
+
+// Limpiar cooldowns cada 5 minutos
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, timestamps] of userCooldowns) {
+        const valid = timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
+        if (valid.length === 0) userCooldowns.delete(key);
+        else userCooldowns.set(key, valid);
+    }
+}, 5 * 60 * 1000);
+
+// ============================================================
+// Formateo
+// ============================================================
+function formatIID(iid) { return iid.match(/.{1,7}/g)?.join('-') || iid; }
+function formatCID(cid) {
+    if (Array.isArray(cid)) return cid.join('-');
+    if (typeof cid === 'string') return cid.match(/.{1,6}/g)?.join('-') || cid;
+    return JSON.stringify(cid);
+}
+
+// ============================================================
+// Mensajes de error descriptivos
+// ============================================================
+function errorToMessage(error, detectedIID) {
+    const iid = error?.iid || detectedIID || null;
+    const iidBlock = iid ? `\n\n📝 IID detectado:\n<code>${formatIID(iid)}</code>` : '';
+
+    // CIDError con código específico
+    if (error instanceof CIDError || (error && error.code)) {
+        const code = error.code;
+        
+        switch(code) {
+            case 'INVALID_CHECKSUM':
+                return `❌ <b>IID con checksum inválido</b>\nUn dígito está incorrecto. Verifica cada bloque de 7 dígitos contra tu pantalla.${iidBlock}`;
+            
+            case 'KEY_BLOCKED':
+                return `🔒 <b>Clave bloqueada por Microsoft</b>\nEsta licencia ha sido bloqueada. Contacta a soporte para un reemplazo.${iidBlock}`;
+            
+            case 'TOO_MANY_ACTIVATIONS':
+                return `⚠️ <b>Límite de activaciones alcanzado</b>\nEsta licencia ya se activó en demasiados dispositivos. Contacta soporte.${iidBlock}`;
+            
+            case 'INVALID_PRODUCT':
+                return `❌ <b>Producto no soportado</b>\nEste IID corresponde a un producto que no se puede activar por teléfono.${iidBlock}`;
+            
+            case 'KEY_EXPIRED':
+                return `⏰ <b>Licencia expirada</b>\nEsta licencia ha expirado. Contacta soporte.${iidBlock}`;
+            
+            case 'KEY_NOT_GENUINE':
+                return `🚫 <b>Licencia no válida</b>\nMicrosoft no reconoce esta licencia como genuina.${iidBlock}`;
+            
+            case 'GRACE_PERIOD':
+                return `⏳ <b>Período de gracia</b>\nEl producto está en prueba. Instala una licencia válida primero.${iidBlock}`;
+            
+            case 'ACTIVATION_FAILED':
+                return `❌ <b>Activación rechazada</b>\nMicrosoft rechazó la activación de este IID.${iidBlock}`;
+            
+            case 'IID_TOO_SHORT':
+                return `❌ <b>IID demasiado corto</b>\nSe detectaron ${iid?.length || '?'} dígitos, se necesitan 54-63.${iidBlock}`;
+            
+            case 'IID_TOO_LONG':
+                return `❌ <b>IID demasiado largo</b>\nSe detectaron ${iid?.length || '?'} dígitos, el máximo es 63.${iidBlock}`;
+            
+            case 'TIMEOUT':
+                return `⏱ <b>Tiempo agotado</b>\nMicrosoft no respondió en 15s. Intenta de nuevo.${iidBlock}`;
+            
+            case 'NETWORK_ERROR':
+                return `🌐 <b>Error de conexión</b>\nNo se pudo conectar con Microsoft. Intenta más tarde.${iidBlock}`;
+            
+            case 'NO_CID_IN_RESPONSE':
+                return `❌ <b>Sin CID en respuesta</b>\nMicrosoft respondió pero no incluyó Confirmation ID.${iidBlock}`;
+            
+            default:
+                if (code.startsWith('MS_HTTP_')) {
+                    const status = code.replace('MS_HTTP_', '');
+                    if (status === '403') return `🔒 <b>Error 403 — Acceso denegado</b>\nMicrosoft rechazó la solicitud. El IID podría estar bloqueado o ser de un producto no soportado.${iidBlock}`;
+                    if (status === '429') return `⏳ <b>Error 429 — Demasiadas solicitudes</b>\nEspera 1-2 minutos e intenta de nuevo.${iidBlock}`;
+                    return `❌ <b>Error Microsoft ${status}</b>\n${error.userMessage || 'Error del servidor de activación.'}${iidBlock}`;
+                }
+                return `❌ <b>Error: ${code}</b>\n${error.userMessage || error.message || 'Error desconocido.'}${iidBlock}`;
+        }
+    }
+
+    // Error genérico de checksum (legado)
+    if (error?.message === 'INVALID_CHECKSUM') {
+        return `❌ <b>Checksum inválido</b>\nVerifica el IID.${iidBlock}`;
+    }
+
+    return `❌ <b>Error inesperado</b>\n${error?.message || 'Error desconocido.'}${iidBlock}`;
+}
 
 function startBot() {
     if (!BOT_TOKEN) {
@@ -18,13 +132,6 @@ function startBot() {
     console.log(`🔑 Admin IDs: ${ADMIN_IDS.join(', ') || 'NINGUNO'}`);
 
     const bot = new Telegraf(BOT_TOKEN);
-
-    function formatIID(iid) { return iid.match(/.{1,7}/g)?.join('-') || iid; }
-    function formatCID(cid) {
-        if (Array.isArray(cid)) return cid.join('-');
-        if (typeof cid === 'string') return cid.match(/.{1,6}/g)?.join('-') || cid;
-        return JSON.stringify(cid);
-    }
 
     function isAdmin(tgId) {
         return ADMIN_IDS.includes(String(tgId));
@@ -75,12 +182,18 @@ function startBot() {
         ctx.reply(`📊 Usuarios: ${s.totalUsers}\nCIDs hoy: ${s.todayCids}\nCIDs total: ${s.totalCids}`);
     });
 
-    // FOTOS
+    // ============================================================
+    // FOTOS — Con mensajes de error descriptivos
+    // ============================================================
     bot.on('photo', async (ctx) => {
         const tgId = String(ctx.from.id);
         let user = db.findUserByTelegram(tgId);
         if (!user) user = db.createUser({ telegram_id: tgId, telegram_username: ctx.from.username });
         if (user.balance <= 0) return ctx.reply('❌ Sin créditos. Contacta al admin.');
+
+        // Rate limit
+        const rl = checkRateLimit(tgId);
+        if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
 
         const startTime = Date.now();
         const msg = await ctx.reply('⏳ Procesando...');
@@ -105,33 +218,69 @@ function startBot() {
                 const bal = db.getBalance(user.id);
                 const cidStr = formatCID(result.cid);
                 db.logTransaction(user.id, 'telegram', result.iid, cidStr, 'success', elapsed, result.strategy);
+                
+                // Mensaje principal
                 await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
                     `🔑 <b>@CdKeysPeru</b>\n\n` +
                     `<b>IID:</b>\n<code>${formatIID(result.iid)}</code>\n\n` +
                     `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
                     `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>`,
-                    { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '📋 Copiar CID', callback_data: `copy_${cidStr.replace(/-/g, '')}` }]] } }
+                    { parse_mode: 'HTML' }
                 );
+                
+                // Enviar CID como texto separado para fácil copiado
+                await ctx.reply(`📋 CID para copiar:\n<code>${cidStr.replace(/-/g, '')}</code>`, { parse_mode: 'HTML' });
             } else {
-                db.logTransaction(user.id, 'telegram', null, null, 'ocr_failed', elapsed, null);
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ No se pudo leer el IID. Intenta con foto más nítida o envía el IID como texto.');
+                // OCR falló — mostrar dígitos detectados si hay
+                const detectedDigits = result.detectedDigits;
+                db.logTransaction(user.id, 'telegram', detectedDigits, null, 'ocr_failed', elapsed, null);
+                
+                let errorMsg = '❌ <b>No se pudo detectar el IID en la imagen</b>\n';
+                if (detectedDigits) {
+                    errorMsg += `\n📝 Dígitos detectados (${detectedDigits.length}):\n<code>${formatIID(detectedDigits)}</code>\n`;
+                    errorMsg += '\nVerifica contra tu pantalla. Si son correctos, envíalos como texto.';
+                } else {
+                    errorMsg += '\nIntenta con foto más nítida o envía el IID como texto.';
+                }
+                
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, errorMsg, { parse_mode: 'HTML' });
             }
         } catch (err) {
-            console.error('[BOT PHOTO ERROR]', err.message);
-            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ Error. Intenta de nuevo.').catch(() => {});
+            console.error('[BOT PHOTO ERROR]', err.code || err.message);
+            const elapsed = Date.now() - startTime;
+            db.logTransaction(user.id, 'telegram', err?.iid || null, null, err?.code || 'error', elapsed, null);
+            
+            const errorMsg = errorToMessage(err, err?.iid);
+            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, errorMsg, { parse_mode: 'HTML' }).catch(() => {});
         }
     });
 
-    // TEXTO (IID directo)
+    // ============================================================
+    // TEXTO (IID directo) — Con mensajes de error descriptivos
+    // ============================================================
     bot.on('text', async (ctx) => {
         if (ctx.message.text.startsWith('/')) return;
         const digits = ctx.message.text.replace(/\D/g, '');
-        if (digits.length < 54) return;
+        
+        // Feedback para texto que parece un IID pero es muy corto
+        if (digits.length >= 20 && digits.length < 54) {
+            return ctx.reply(
+                `⚠️ <b>IID incompleto</b>\nSe detectaron ${digits.length} dígitos, se necesitan al menos 54 (9 bloques de 6-7 dígitos).\n\n` +
+                `📝 Dígitos detectados:\n<code>${formatIID(digits)}</code>`,
+                { parse_mode: 'HTML' }
+            );
+        }
+        
+        if (digits.length < 54) return; // Ignorar mensajes no relevantes
 
         const tgId = String(ctx.from.id);
         let user = db.findUserByTelegram(tgId);
         if (!user) user = db.createUser({ telegram_id: tgId, telegram_username: ctx.from.username });
         if (user.balance <= 0) return ctx.reply('❌ Sin créditos.');
+
+        // Rate limit
+        const rl = checkRateLimit(tgId);
+        if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
 
         const startTime = Date.now();
         const msg = await ctx.reply('⏳ Obteniendo CID...');
@@ -144,28 +293,30 @@ function startBot() {
             const bal = db.getBalance(user.id);
             const cidStr = formatCID(cid);
             db.logTransaction(user.id, 'telegram', digits, cidStr, 'success', elapsed, 'direct');
+            
+            // Mensaje principal
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
                 `🔑 <b>@CdKeysPeru</b>\n\n` +
                 `<b>IID:</b>\n<code>${formatIID(digits)}</code>\n\n` +
                 `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
                 `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>`,
-                { parse_mode: 'HTML', reply_markup: { inline_keyboard: [[{ text: '📋 Copiar CID', callback_data: `copy_${cidStr.replace(/-/g, '')}` }]] } }
+                { parse_mode: 'HTML' }
             );
+            
+            // CID como texto separado para copiar
+            await ctx.reply(`📋 CID para copiar:\n<code>${cidStr.replace(/-/g, '')}</code>`, { parse_mode: 'HTML' });
         } catch (err) {
-            db.logTransaction(user.id, 'telegram', digits, null, 'error', Date.now() - startTime, null);
-            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
-                `❌ ${err.message === 'INVALID_CHECKSUM' ? 'Checksum inválido. Verifica el IID.' : err.message}`
-            );
+            const elapsed = Date.now() - startTime;
+            db.logTransaction(user.id, 'telegram', digits, null, err?.code || 'error', elapsed, null);
+            
+            const errorMsg = errorToMessage(err, digits);
+            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, errorMsg, { parse_mode: 'HTML' });
         }
     });
 
-    // CALLBACK: Copiar CID
+    // CALLBACK: info
     bot.on('callback_query', async (ctx) => {
-        const data = ctx.callbackQuery.data;
-        if (data.startsWith('copy_')) {
-            const cid = data.replace('copy_', '');
-            await ctx.answerCbQuery(`CID copiado: ${cid}`, { show_alert: false });
-        }
+        await ctx.answerCbQuery('ℹ️', { show_alert: false });
     });
 
     // ARRANCAR
