@@ -1,21 +1,28 @@
 const puppeteer = require('puppeteer');
 
-async function getCIDViaPuppeteer(cleanIid) {
-  const { CIDError } = require('./cid_helper');
-  let browser;
-  try {
-    console.log('[Puppeteer] Fetching dynamic govUrlID...');
-    const configResp = await fetch('https://visualsupport.microsoft.com/api/configuration/govUrlID');
-    if (!configResp.ok) {
-      throw new Error(`Failed to fetch govUrlID: HTTP ${configResp.status}`);
-    }
-    const config = await configResp.json();
-    const govId = config.govUrlID;
-    if (!govId) {
-      throw new Error('govUrlID not found in configuration response');
-    }
-    console.log('[Puppeteer] dynamic govUrlID retrieved:', govId);
+// Global Cache to eliminate startup overhead
+let globalBrowser = null;
+let globalGovUrlID = null;
+let lastGovUrlFetchTime = 0;
 
+async function getCachedGovUrlID() {
+  const now = Date.now();
+  // Fetch a new ID if we don't have one or if it's older than 3 hours
+  if (!globalGovUrlID || now - lastGovUrlFetchTime > 3 * 60 * 60 * 1000) {
+    console.log('[Puppeteer] Fetching new dynamic govUrlID...');
+    const configResp = await fetch('https://visualsupport.microsoft.com/api/configuration/govUrlID');
+    if (!configResp.ok) throw new Error(`Failed to fetch govUrlID: HTTP ${configResp.status}`);
+    const config = await configResp.json();
+    globalGovUrlID = config.govUrlID;
+    lastGovUrlFetchTime = now;
+    console.log('[Puppeteer] dynamic govUrlID cached:', globalGovUrlID);
+  }
+  return globalGovUrlID;
+}
+
+async function getCachedBrowser() {
+  if (!globalBrowser || !globalBrowser.isConnected()) {
+    console.log('[Puppeteer] Launching persistent headless browser instance...');
     const launchOptions = {
       headless: true,
       args: [
@@ -29,31 +36,72 @@ async function getCIDViaPuppeteer(cleanIid) {
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
       launchOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     }
-    browser = await puppeteer.launch(launchOptions);
+    globalBrowser = await puppeteer.launch(launchOptions);
+    
+    // Handle unexpected disconnections
+    globalBrowser.on('disconnected', () => {
+      console.log('[Puppeteer] Persistent browser disconnected. Will relaunch on next request.');
+      globalBrowser = null;
+    });
+  }
+  return globalBrowser;
+}
 
-    const page = await browser.newPage();
+async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
+  const { CIDError } = require('./cid_helper');
+  const govId = await getCachedGovUrlID();
+  const browser = await getCachedBrowser();
+
+  const page = await browser.newPage();
+  try {
     await page.setViewport({ width: 1280, height: 900 });
-
-    // Set user agent to avoid basic blocks
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
     const govUrl = `https://visualsupport.microsoft.com/${govId}`;
-    console.log('[Puppeteer] STEP 1: Navigating to portal:', govUrl);
-    await page.goto(govUrl, { waitUntil: 'networkidle2', timeout: 40000 });
+    console.log(`[Puppeteer] Navigating to portal (${productHint === 'office' ? 'Office' : 'Windows'} path)...`);
+    // Reduced timeout and faster waitUntil since base browser is warm
+    await page.goto(govUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
-    console.log('[Puppeteer] STEP 2: Clicking "Activate a Microsoft Product"');
-    await page.waitForSelector('text/Activate a Microsoft Product', { timeout: 15000 });
+    // Step 2: Click Activate a Microsoft Product
+    await page.waitForSelector('text/Activate a Microsoft Product', { timeout: 10000 });
     await page.click('text/Activate a Microsoft Product');
-    await new Promise(r => setTimeout(r, 2000));
+    // Minimal reliable wait
+    await new Promise(r => setTimeout(r, 600));
 
-    console.log('[Puppeteer] STEP 3: Selecting product option (Windows)');
-    await page.waitForSelector('img[alt="Windows"]', { timeout: 15000 });
-    await page.click('img[alt="Windows"]');
-    await new Promise(r => setTimeout(r, 2000));
+    // Step 3: Select Product Option
+    if (productHint === 'office') {
+      console.log('[Puppeteer] Selecting product option: Microsoft Office');
+      // Look for Office image or text
+      const clickedOffice = await page.evaluate(() => {
+        const imgs = Array.from(document.querySelectorAll('img'));
+        const officeImg = imgs.find(img => img.alt && img.alt.toLowerCase().includes('office'));
+        if (officeImg && officeImg.offsetParent !== null) {
+          officeImg.click();
+          return true;
+        }
+        const els = Array.from(document.querySelectorAll('*'));
+        for (const el of els) {
+          if (el.textContent.trim() === 'Microsoft Office' && el.offsetParent !== null) {
+            el.click();
+            return true;
+          }
+        }
+        return false;
+      });
+      if (!clickedOffice) {
+        // Fallback selector
+        await page.click('img[alt*="Office"]').catch(() => page.click('text/Microsoft Office'));
+      }
+    } else {
+      console.log('[Puppeteer] Selecting product option: Windows');
+      await page.waitForSelector('img[alt="Windows"]', { timeout: 10000 });
+      await page.click('img[alt="Windows"]');
+    }
+    await new Promise(r => setTimeout(r, 600));
 
+    // Step 4: Select block length (6 vs 7 Digits)
     const is6Digits = cleanIid.length <= 54;
     const digitOption = is6Digits ? '6 Digits' : '7 Digits';
-    console.log(`[Puppeteer] STEP 4: Clicking "${digitOption}" option`);
     
     const clickedDigits = await page.evaluate((optionText) => {
       const els = Array.from(document.querySelectorAll('*'));
@@ -69,11 +117,10 @@ async function getCIDViaPuppeteer(cleanIid) {
     if (!clickedDigits) {
       await page.click(`text/${digitOption}`);
     }
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 600));
 
-    console.log('[Puppeteer] STEP 5: Entering complete Installation ID');
-    await page.waitForSelector('input[type="text"]', { timeout: 15000 });
-
+    // Step 5: Enter complete Installation ID
+    await page.waitForSelector('input[type="text"]', { timeout: 10000 });
     const focusedInput = await page.evaluate(() => {
       const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
       const mainInput = inputs.find(i => i.placeholder && i.placeholder.toLowerCase().includes('complete')) || inputs[0];
@@ -85,54 +132,42 @@ async function getCIDViaPuppeteer(cleanIid) {
     });
 
     if (focusedInput) {
-      await page.keyboard.type(cleanIid, { delay: 5 });
+      // Extremely fast typing
+      await page.keyboard.type(cleanIid, { delay: 1 });
     } else {
       throw new Error('Could not focus Installation ID input field');
     }
 
-    // Wait for validation to occur inline
-    await new Promise(r => setTimeout(r, 2500));
+    // Wait for inline JS validation to unlock submit button
+    await new Promise(r => setTimeout(r, 1500));
 
-    // Check if submit button is available/enabled, or if there are validation warnings
-    console.log('[Puppeteer] STEP 6: Checking validation and submitting');
+    // Step 6: Check validation & Submit
     const state = await page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll('button'));
       const submitBtn = btns.find(b => b.textContent.trim() === 'Submit');
       const isDisabled = !submitBtn || submitBtn.disabled;
       
-      // Look for warning triangles or error texts
-      const pageText = document.body.innerText.toLowerCase();
-      const hasChecksumWarning = isDisabled && (document.querySelectorAll('svg').length > 10 || pageText.includes('invalid') || pageText.includes('check'));
-      
       if (submitBtn && !submitBtn.disabled) {
         submitBtn.click();
         return { success: true };
       }
-      return { success: false, isDisabled, hasChecksumWarning, pageText: document.body.innerText };
+      return { success: false, isDisabled };
     });
 
     if (!state.success) {
-      console.log('[Puppeteer] Submit disabled or warning detected. State:', JSON.stringify(state));
-      await browser.close();
+      await page.close().catch(() => {});
       throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
     }
 
-    console.log('[Puppeteer] STEP 7: Waiting for activation result...');
-    // Wait up to 25 seconds for response page to load
-    await new Promise(r => setTimeout(r, 6000));
-    
-    // Let's poll for CID blocks or error text
+    // Step 7: Fast polling for CID result blocks or rejection
     let cidBlocks = null;
     let msErrorText = '';
-    
-    for (let attempt = 0; attempt < 10; attempt++) {
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await new Promise(r => setTimeout(r, 1000));
       const result = await page.evaluate(() => {
         const text = document.body.innerText;
-        // Look for blocks of 6 digits in the confirmation view
-        // Usually presented as 8 or 9 blocks labeled A, B, C...
         const matches = text.match(/\b\d{6}\b/g) || [];
-        // Filter out common non-CID 6-digit sequences if any, but in confirmation screen mostly CID digits exist
-        // If we find at least 8 blocks of 6 digits, it's our CID!
         if (matches.length >= 8) {
           return { found: true, blocks: matches.slice(0, 8), fullText: text };
         }
@@ -141,24 +176,30 @@ async function getCIDViaPuppeteer(cleanIid) {
 
       if (result.found) {
         cidBlocks = result.blocks;
-        console.log('[Puppeteer] Successful activation! CID retrieved.');
         break;
       } else {
         msErrorText = result.fullText;
-        await new Promise(r => setTimeout(r, 2000));
+        // If response explicitly loaded with rejection, break early to save polling time
+        const lowerText = msErrorText.toLowerCase();
+        if (lowerText.includes('displayed in your product') || lowerText.includes('enter installation id')) {
+          // Still on input page loading
+          continue;
+        }
+        if (lowerText.length > 50 && (lowerText.includes('reject') || lowerText.includes('rechaz') || lowerText.includes('unsuccessful') || lowerText.includes('failed') || lowerText.includes('not genuine') || lowerText.includes('blocked') || lowerText.includes('exceeded'))) {
+          break;
+        }
       }
     }
 
-    await browser.close();
+    await page.close().catch(() => {});
 
     if (cidBlocks) {
-      return cidBlocks.join('-');
+      return { success: true, cid: cidBlocks.join('-') };
     }
 
-    // If no CID found, parse the error text from the page
-    console.log('[Puppeteer] Activation failed or no CID blocks found. Page text:', msErrorText.substring(0, 500));
     const lowerText = msErrorText.toLowerCase();
     
+    // Check critical MS non-retryable errors
     if (lowerText.includes('blocked') || lowerText.includes('bloqueada')) {
       throw new CIDError('KEY_BLOCKED', '🔒 *Clave bloqueada por Microsoft*\nEsta licencia ha sido bloqueada. Contacta soporte para un reemplazo.', { iid: cleanIid });
     }
@@ -175,15 +216,42 @@ async function getCIDViaPuppeteer(cleanIid) {
       throw new CIDError('INVALID_PRODUCT', '❌ *Producto no soportado para activación telefónica.*', { iid: cleanIid });
     }
 
-    throw new CIDError('ACTIVATION_FAILED', `❌ *Activación rechazada por Microsoft*\nNo se pudo generar el Confirmation ID para este IID.\n\nDetalles:\n${msErrorText.substring(0, 200)}`, { iid: cleanIid });
+    return { success: false, errorText: msErrorText };
 
   } catch (err) {
-    if (browser) {
-      try { await browser.close(); } catch (_) {}
+    await page.close().catch(() => {});
+    if (err instanceof CIDError) throw err;
+    throw new Error(err.message);
+  }
+}
+
+async function getCIDViaPuppeteer(cleanIid, productHint = 'windows') {
+  const { CIDError } = require('./cid_helper');
+  try {
+    // Attempt 1 using provided or inferred hint
+    console.log(`[Puppeteer] Execution attempt 1 starting (Hint: ${productHint})`);
+    const result1 = await executePuppeteerAttempt(cleanIid, productHint, false);
+    if (result1.success) {
+      console.log('[Puppeteer] Success on attempt 1!');
+      return result1.cid;
     }
-    if (err instanceof CIDError) {
-      throw err;
+
+    // If attempt 1 failed with generic rejection (e.g. submitted Office under Windows path),
+    // automatically execute extremely fast retry using the OPPOSITE path!
+    const oppositeHint = productHint === 'office' ? 'windows' : 'office';
+    console.log(`[Puppeteer] Attempt 1 rejected generic activation. Retrying automatically with opposite path: ${oppositeHint}...`);
+    
+    const result2 = await executePuppeteerAttempt(cleanIid, oppositeHint, true);
+    if (result2.success) {
+      console.log('[Puppeteer] Success on retry attempt!');
+      return result2.cid;
     }
+
+    // Both paths rejected it
+    throw new CIDError('ACTIVATION_FAILED', `❌ *Activación rechazada por Microsoft*\nNo se pudo generar el Confirmation ID para este IID en ninguna de las rutas (Windows/Office).\n\nDetalles:\n${result2.errorText?.substring(0, 200) || 'Sin detalles'}`, { iid: cleanIid });
+
+  } catch (err) {
+    if (err instanceof CIDError) throw err;
     throw new CIDError('NETWORK_ERROR', `❌ *Error interno de automatización:* ${err.message}`, { iid: cleanIid });
   }
 }

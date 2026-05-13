@@ -254,7 +254,7 @@ async function getCIDDirect(cleanIid) {
 // ============================================================
 // Función principal — Intenta proxy primero, directo como fallback
 // ============================================================
-async function getConfirmationID(iid) {
+async function getConfirmationID(iid, productHint = 'windows') {
   // Validación
   if (!iid || typeof iid !== 'string') {
     throw new CIDError('INVALID_IID', '❌ *IID vacío o inválido*', { iid });
@@ -272,9 +272,9 @@ async function getConfirmationID(iid) {
   }
 
   // Modo 1: Puppeteer Headless (Gratis, sin login, predeterminado)
-  console.log('[CID] Usando motor Puppeteer en Ubuntu Server');
+  console.log(`[CID] Usando motor Puppeteer en Ubuntu Server (hint: ${productHint})`);
   try {
-    return await getCIDViaPuppeteer(cleanIid);
+    return await getCIDViaPuppeteer(cleanIid, productHint);
   } catch (err) {
     // Si Puppeteer falla por un error interno de red/automatización, intentar Worker Proxy como fallback
     if (err.code === 'NETWORK_ERROR' || err.code === 'TIMEOUT') {

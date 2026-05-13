@@ -30,29 +30,33 @@ const STRATEGIES = [
 
 // Extraer IID del texto OCR
 function extractIID(rawText) {
+    const lowerText = rawText.toLowerCase();
+    const isOffice = lowerText.includes('office') || lowerText.includes('word') || lowerText.includes('excel') || lowerText.includes('visio') || lowerText.includes('project') || lowerText.includes('proplus') || lowerText.includes('ltsc');
+    const productHint = isOffice ? 'office' : 'windows';
+
     // Directo: 9 bloques de 7 dígitos
     const d7 = rawText.match(/\b\d{7}\b/g);
-    if (d7 && d7.length >= 9) { const iid = d7.slice(-9).join(''); if (iid.length === 63) return { iid, method: 'direct' }; }
+    if (d7 && d7.length >= 9) { const iid = d7.slice(-9).join(''); if (iid.length === 63) return { iid, method: 'direct', productHint }; }
 
     // Normalizado: corregir letras confundidas
     const norm = rawText.toUpperCase()
         .replace(/[OQ]/g, '0').replace(/[ILJ|]/g, '1').replace(/Z/g, '2')
         .replace(/[S$]/g, '5').replace(/G/g, '6').replace(/[TY]/g, '7').replace(/B/g, '8');
     const n7 = norm.match(/\b\d{7}\b/g);
-    if (n7 && n7.length >= 9) { const iid = n7.slice(-9).join(''); if (iid.length === 63) return { iid, method: 'normalized' }; }
+    if (n7 && n7.length >= 9) { const iid = n7.slice(-9).join(''); if (iid.length === 63) return { iid, method: 'normalized', productHint }; }
 
     // Word scan
     const words = norm.split(/[\s\n\r,;:]+/);
     let sevens = [];
     for (const w of words) { const d = w.replace(/\D/g, ''); if (d.length === 7) sevens.push(d); }
-    if (sevens.length >= 9) return { iid: sevens.slice(-9).join(''), method: 'word-scan' };
+    if (sevens.length >= 9) return { iid: sevens.slice(-9).join(''), method: 'word-scan', productHint };
 
     // Fallback
     const all = norm.replace(/\D/g, '');
-    if (all.length >= 63) return { iid: all.slice(-63), method: 'fallback' };
+    if (all.length >= 63) return { iid: all.slice(-63), method: 'fallback', productHint };
 
     // Retornar dígitos parciales para diagnóstico (si hay al menos algo)
-    if (all.length > 0) return { iid: all, method: 'partial', partial: true };
+    if (all.length > 0) return { iid: all, method: 'partial', partial: true, productHint };
 
     return null;
 }
@@ -85,7 +89,7 @@ async function ocrAndGetCID(filePath, getCID) {
                     continue;
                 }
                 try {
-                    const cid = await getCID(result.iid);
+                    const cid = await getCID(result.iid, result.productHint);
                     return { success: true, iid: result.iid, cid, strategy: s.name, method: result.method };
                 } catch (e) {
                     lastError = e;
