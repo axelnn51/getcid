@@ -1,0 +1,7 @@
+name = "getcid-proxy"
+main = "worker_proxy.js"
+compatibility_date = "2024-01-01"
+
+# Variables secretas (configurar con: wrangler secret put WORKER_API_KEY)
+# [vars]
+# WORKER_API_KEY = "tu_api_key_secreta"

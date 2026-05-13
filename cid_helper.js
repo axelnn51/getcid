@@ -1,37 +1,11 @@
 const crypto = require('crypto');
 
 // ============================================================
-// CID Helper — Obtener Confirmation ID de Microsoft
-// Con detección completa de errores de activación
+// CID Helper — Obtener Confirmation ID
+// ARQUITECTURA: Bot/Web → Cloudflare Worker → Microsoft
+// El Worker proxy es necesario porque Microsoft bloquea
+// peticiones directas desde IPs de VPS/residenciales.
 // ============================================================
-
-// Base64URL Encoding
-function eI(t) {
-  let e = typeof t === 'string' ? new TextEncoder().encode(t) : t;
-  return Buffer.from(e).toString('base64').replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-// Generar una clave ECDSA P-256 en webcrypto
-let tI = null;
-async function yT() {
-  if (!tI) {
-    tI = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-  }
-  return tI;
-}
-
-// Generar DPoP Token
-async function generateDPoPToken(htu, htm) {
-  const { privateKey, publicKey } = await yT();
-  const jwk = await crypto.subtle.exportKey("jwk", publicKey);
-  const header = { alg: "ES256", typ: "dpop+jwt", jwk };
-  const payload = { htu, htm, jti: crypto.randomUUID(), iat: Math.floor(Date.now() / 1000) };
-  const s = eI(JSON.stringify(header));
-  const l = eI(JSON.stringify(payload));
-  const u = `${s}.${l}`;
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, new TextEncoder().encode(u));
-  return `${u}.${eI(signature)}`;
-}
 
 // ============================================================
 // Error personalizado con código y contexto
@@ -49,168 +23,161 @@ class CIDError extends Error {
 }
 
 // ============================================================
-// Clasificar errores de Microsoft
-// REGLA CLAVE: Solo clasificar si NO hay un CID válido.
-// Solo buscar en campos de error específicos, NUNCA en todo el JSON.
+// URL del Worker Proxy en Cloudflare
+// Configura WORKER_PROXY_URL en .env con la URL de tu worker
+// Ejemplo: https://getcid-proxy.tu-usuario.workers.dev
 // ============================================================
-function classifyMicrosoftError(data, httpStatus, iid) {
-  // 1. Checksum inválido — siempre verificar primero
-  if (data.validChecksum === false) {
-    return new CIDError(
-      'INVALID_CHECKSUM',
-      '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque de 7 dígitos contra tu pantalla.',
-      { iid, httpStatus, msResponse: data }
-    );
+const WORKER_PROXY_URL = process.env.WORKER_PROXY_URL || '';
+const WORKER_API_KEY = process.env.WORKER_API_KEY || '';
+
+// ============================================================
+// Base64URL Encoding (para modo directo/fallback)
+// ============================================================
+function eI(t) {
+  let e = typeof t === 'string' ? new TextEncoder().encode(t) : t;
+  return Buffer.from(e).toString('base64').replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+let tI = null;
+async function yT() {
+  if (!tI) {
+    tI = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   }
+  return tI;
+}
 
-  // 2. Si hay un CID válido en la respuesta → NO ES UN ERROR, retornar null
-  const cidValue = data.cid || data.CID;
-  if (cidValue && typeof cidValue === 'string' && cidValue.length >= 48) {
-    return null; // ¡ÉXITO! No clasificar como error
-  }
-
-  // 3. Si activationSuccessful es true → NO ES UN ERROR
-  if (data.activationSuccessful === true) {
-    return null;
-  }
-
-  // ============================================================
-  // Solo llegar aquí si NO hay CID y NO fue exitoso
-  // Ahora sí clasificar el error usando SOLO campos de error
-  // ============================================================
-
-  // Extraer campos de error específicos de Microsoft
-  const errorCode = (data.errorCode || data.ErrorCode || data.error_code || data.statusCode || '').toString().toLowerCase();
-  const errorMessage = (data.errorMessage || data.ErrorMessage || data.error_message || 
-                        data.message || data.Message || data.statusMessage || 
-                        data.description || data.Description || data.reason || '').toString().toLowerCase();
-  const errorDetail = (data.detail || data.Detail || data.details || '').toString().toLowerCase();
-  
-  // Combinar solo campos de error (NO todo el JSON)
-  const errorText = `${errorCode} ${errorMessage} ${errorDetail}`;
-
-  // Key bloqueada
-  if (errorText.includes('blocked') || errorText.includes('block') || 
-      errorCode === 'blocked' || errorCode === 'key_blocked') {
-    return new CIDError(
-      'KEY_BLOCKED',
-      '🔒 *Clave bloqueada por Microsoft*\nEsta licencia ha sido bloqueada. Contacta a soporte para un reemplazo.',
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // Demasiadas activaciones
-  if (errorText.includes('too many activation') || errorText.includes('activation limit') ||
-      errorText.includes('max activation') || errorText.includes('limit reached') ||
-      errorCode === 'too_many_activations' || errorCode === 'activation_limit') {
-    return new CIDError(
-      'TOO_MANY_ACTIVATIONS',
-      '⚠️ *Límite de activaciones alcanzado*\nEsta licencia ya se activó en demasiados dispositivos. Contacta soporte.',
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // Producto no soportado / inválido
-  if (errorText.includes('invalid product') || errorText.includes('not supported') ||
-      errorText.includes('unsupported product') || errorText.includes('unknown product') ||
-      errorCode === 'invalid_product' || errorCode === 'unsupported') {
-    return new CIDError(
-      'INVALID_PRODUCT',
-      '❌ *Producto no soportado*\nEste IID corresponde a un producto que no se puede activar por teléfono.',
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // Key expirada — SOLO en campos de error, NO en todo el JSON
-  if (errorText.includes('key expired') || errorText.includes('license expired') || 
-      errorText.includes('product expired') || errorText.includes('subscription expired') ||
-      errorCode === 'expired' || errorCode === 'key_expired' || errorCode === 'license_expired') {
-    return new CIDError(
-      'KEY_EXPIRED',
-      '⏰ *Licencia expirada*\nEsta licencia ha expirado y ya no se puede activar.',
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // Key pirata / no genuina
-  if (errorText.includes('not genuine') || errorText.includes('counterfeit') ||
-      errorText.includes('pirated') || errorText.includes('blacklisted') ||
-      errorCode === 'not_genuine' || errorCode === 'blacklisted') {
-    return new CIDError(
-      'KEY_NOT_GENUINE',
-      '🚫 *Licencia no válida*\nMicrosoft no reconoce esta licencia como genuina. Contacta soporte.',
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // Grace period — SOLO si es explícito en error, no en campos genéricos
-  if (errorText.includes('grace period') || errorText.includes('trial period') ||
-      errorCode === 'grace_period' || errorCode === 'trial') {
-    return new CIDError(
-      'GRACE_PERIOD',
-      '⏳ *Período de gracia*\nEl producto está en período de prueba. Instala una licencia válida primero.',
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // Error genérico con errorCode del API
-  if (data.errorCode || data.ErrorCode) {
-    const code = data.errorCode || data.ErrorCode;
-    const msg = data.errorMessage || data.ErrorMessage || data.message || '';
-    return new CIDError(
-      `MS_${code}`,
-      `❌ *Error de Microsoft (${code})*\n${msg || 'Error desconocido durante la activación.'}`,
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  // activationSuccessful explícitamente false (sin CID)
-  if (data.activationSuccessful === false) {
-    // Incluir el mensaje de error si hay uno
-    const reason = data.errorMessage || data.message || data.reason || 'Motivo no especificado';
-    return new CIDError(
-      'ACTIVATION_FAILED',
-      `❌ *Activación rechazada por Microsoft*\n${reason}`,
-      { iid, httpStatus, msResponse: data }
-    );
-  }
-
-  return null; // No error detectado
+async function generateDPoPToken(htu, htm) {
+  const { privateKey, publicKey } = await yT();
+  const jwk = await crypto.subtle.exportKey("jwk", publicKey);
+  const header = { alg: "ES256", typ: "dpop+jwt", jwk };
+  const payload = { htu, htm, jti: crypto.randomUUID(), iat: Math.floor(Date.now() / 1000) };
+  const s = eI(JSON.stringify(header));
+  const l = eI(JSON.stringify(payload));
+  const u = `${s}.${l}`;
+  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, new TextEncoder().encode(u));
+  return `${u}.${eI(signature)}`;
 }
 
 // ============================================================
-// Función principal para obtener el CID desde el IID
+// Clasificar errores de Microsoft
+// Solo buscar en campos de error específicos, NUNCA en todo el JSON
+// Solo clasificar si NO hay CID válido
 // ============================================================
-async function getConfirmationID(iid) {
-  // Validación previa
-  if (!iid || typeof iid !== 'string') {
-    throw new CIDError('INVALID_IID', '❌ *IID vacío o inválido*\nNo se proporcionó un IID válido.', { iid });
+function classifyError(data, httpStatus, iid) {
+  // Si hay CID válido → NO es error
+  const cidValue = data?.cid || data?.CID;
+  if (cidValue && typeof cidValue === 'string' && cidValue.length >= 48) return null;
+  if (data?.activationSuccessful === true) return null;
+
+  // Checksum inválido
+  if (data?.validChecksum === false) {
+    return new CIDError('INVALID_CHECKSUM',
+      '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.',
+      { iid, httpStatus, msResponse: data });
   }
 
-  const cleanIid = iid.replace(/\D/g, '');
+  // Campos de error específicos
+  const errorCode = (data?.errorCode || data?.ErrorCode || data?.error || '').toString().toLowerCase();
+  const errorMsg = (data?.errorMessage || data?.ErrorMessage || data?.message || data?.Message || '').toString().toLowerCase();
+  const errorText = `${errorCode} ${errorMsg}`;
 
-  if (cleanIid.length < 54) {
+  if (errorText.includes('blocked') || errorCode === 'blocked') {
+    return new CIDError('KEY_BLOCKED', '🔒 *Clave bloqueada por Microsoft*\nContacta soporte para un reemplazo.', { iid, httpStatus, msResponse: data });
+  }
+  if (errorText.includes('too many activation') || errorText.includes('activation limit')) {
+    return new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nContacta soporte.', { iid, httpStatus, msResponse: data });
+  }
+  if (errorText.includes('invalid product') || errorText.includes('not supported')) {
+    return new CIDError('INVALID_PRODUCT', '❌ *Producto no soportado para activación telefónica.*', { iid, httpStatus, msResponse: data });
+  }
+  if (errorText.includes('key expired') || errorText.includes('license expired') || errorCode === 'expired') {
+    return new CIDError('KEY_EXPIRED', '⏰ *Licencia expirada.*\nContacta soporte.', { iid, httpStatus, msResponse: data });
+  }
+  if (errorText.includes('not genuine') || errorText.includes('blacklist')) {
+    return new CIDError('KEY_NOT_GENUINE', '🚫 *Licencia no válida.*\nContacta soporte.', { iid, httpStatus, msResponse: data });
+  }
+  if (data?.errorCode || data?.ErrorCode) {
+    const code = data.errorCode || data.ErrorCode;
+    return new CIDError(`MS_${code}`, `❌ *Error Microsoft (${code})*\n${data.errorMessage || data.message || ''}`, { iid, httpStatus, msResponse: data });
+  }
+  if (data?.activationSuccessful === false) {
+    return new CIDError('ACTIVATION_FAILED', `❌ *Activación rechazada*\n${data.message || data.errorMessage || ''}`, { iid, httpStatus, msResponse: data });
+  }
+
+  return null;
+}
+
+// ============================================================
+// MODO 1: Via Worker Proxy (Cloudflare) — PREFERIDO
+// ============================================================
+async function getCIDViaProxy(cleanIid) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (WORKER_API_KEY) headers['X-API-Key'] = WORKER_API_KEY;
+
+    const response = await fetch(WORKER_PROXY_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers,
+      body: JSON.stringify({ iid: cleanIid })
+    });
+
+    clearTimeout(timeout);
+    const data = await response.json();
+
+    // Worker proxy ya extrae el CID
+    if (data.success && data.cid) {
+      return data.cid; // Array de bloques de 6 dígitos o string
+    }
+
+    if (data.cidRaw && typeof data.cidRaw === 'string' && data.cidRaw.length >= 48) {
+      return data.cidRaw.match(/\d{6}/g) || data.cidRaw;
+    }
+
+    // Worker devolvió error
+    if (data.error === 'INVALID_CHECKSUM') {
+      throw new CIDError('INVALID_CHECKSUM',
+        '❌ *IID con checksum inválido*\nUn dígito está incorrecto.',
+        { iid: cleanIid, httpStatus: data.httpStatus, msResponse: data.msResponse });
+    }
+
+    // Clasificar el error basado en msResponse del worker
+    if (data.msResponse) {
+      const msErr = classifyError(data.msResponse, data.httpStatus, cleanIid);
+      if (msErr) throw msErr;
+    }
+
+    // Error genérico del worker
     throw new CIDError(
-      'IID_TOO_SHORT',
-      `❌ *IID demasiado corto*\nSe detectaron ${cleanIid.length} dígitos, se necesitan al menos 54 (9 bloques de 6+).`,
-      { iid: cleanIid }
+      `PROXY_ERROR`,
+      `❌ *Error del servidor de activación*\n${data.message || data.error || 'Sin respuesta válida.'}`,
+      { iid: cleanIid, httpStatus: data.httpStatus, msResponse: data }
     );
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof CIDError) throw err;
+    if (err.name === 'AbortError') {
+      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl proxy no respondió en 20s.', { iid: cleanIid });
+    }
+    throw new CIDError('PROXY_NETWORK_ERROR',
+      `❌ *Error conectando con proxy*\n${err.message}`,
+      { iid: cleanIid });
   }
+}
 
-  if (cleanIid.length > 63) {
-    throw new CIDError(
-      'IID_TOO_LONG',
-      `❌ *IID demasiado largo*\nSe detectaron ${cleanIid.length} dígitos, el máximo es 63.`,
-      { iid: cleanIid }
-    );
-  }
-
+// ============================================================
+// MODO 2: Directo a Microsoft — FALLBACK
+// (solo funciona desde IPs que Microsoft acepte)
+// ============================================================
+async function getCIDDirect(cleanIid) {
   const endpoint = "https://visualsupport.microsoft.com/api/productActivation/validateIID";
   const dpopToken = await generateDPoPToken("/api/productActivation/validateIID", "POST");
   const sid = `app_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
   const digits = Math.floor(cleanIid.length / 9);
 
-  // Timeout de 15 segundos
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
 
@@ -225,115 +192,102 @@ async function getConfirmationID(iid) {
         "x-session-id": sid
       },
       body: JSON.stringify({
-        IID: cleanIid,
-        ProductType: "windows",
-        productGroup: "Windows",
-        productName: "Windows 11",
-        numberOfDigits: digits,
-        Country: "CHN",
-        Region: "APAC",
-        InstalledDevices: 1,
-        OverrideStatusCode: "MUL",
-        InitialReasonCode: "45164"
+        IID: cleanIid, ProductType: "windows", productGroup: "Windows", productName: "Windows 11",
+        numberOfDigits: digits, Country: "CHN", Region: "APAC", InstalledDevices: 1,
+        OverrideStatusCode: "MUL", InitialReasonCode: "45164"
       })
     });
 
     clearTimeout(timeout);
-
     const text = await response.text();
     let data;
     try { data = JSON.parse(text); } catch { data = { raw: text }; }
 
-    // Log para diagnóstico (solo en desarrollo)
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[CID] Microsoft response:', JSON.stringify(data, null, 2));
-    }
-
-    // ============================================================
-    // PASO 1: ¿Hay un CID válido? → ÉXITO INMEDIATO
-    // SIEMPRE verificar esto PRIMERO, antes de cualquier clasificación de error
-    // ============================================================
+    // PASO 1: ¿Hay CID? → ÉXITO
     const cidValue = data.cid || data.CID;
     if (cidValue && typeof cidValue === 'string' && cidValue.length >= 48) {
       return cidValue.match(/\d{6}/g) || cidValue;
     }
-
-    // Si activationSuccessful pero CID en formato no estándar
-    if (data.activationSuccessful === true || data.activationSuccessful === 'true') {
-      // Intentar extraer CID de otros campos posibles
-      const altCid = data.confirmationId || data.ConfirmationId || data.confirmation_id;
+    if (data.activationSuccessful === true) {
+      const altCid = data.confirmationId || data.ConfirmationId;
       if (altCid && typeof altCid === 'string' && altCid.length >= 48) {
         return altCid.match(/\d{6}/g) || altCid;
       }
-      // Éxito pero sin CID en formato conocido, devolver la data completa
       return data;
     }
 
-    // ============================================================
-    // PASO 2: No hay CID → Verificar checksum inválido (para OCR retry)
-    // ============================================================
-    if (data.validChecksum === false) {
-      throw new CIDError(
-        'INVALID_CHECKSUM',
-        '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque de 7 dígitos contra tu pantalla.',
-        { iid: cleanIid, httpStatus: response.status, msResponse: data }
-      );
-    }
-
-    // ============================================================
-    // PASO 3: No hay CID, checksum OK → Clasificar error de Microsoft
-    // ============================================================
-    const msError = classifyMicrosoftError(data, response.status, cleanIid);
+    // PASO 2: Clasificar error
+    const msError = classifyError(data, response.status, cleanIid);
     if (msError) throw msError;
 
-    // ============================================================
-    // PASO 4: HTTP error sin clasificar
-    // ============================================================
+    // PASO 3: HTTP error
     if (!response.ok) {
-      const statusMessages = {
-        400: 'Solicitud inválida. Verifica el formato del IID.',
-        401: 'Error de autenticación con Microsoft. Intenta más tarde.',
-        403: 'Microsoft rechazó la solicitud. El IID podría ser para un producto no soportado o bloqueado.',
-        404: 'Endpoint de Microsoft no encontrado. Intenta más tarde.',
-        429: 'Demasiadas solicitudes a Microsoft. Espera 1-2 minutos e intenta de nuevo.',
-        500: 'Error interno de Microsoft. Intenta más tarde.',
-        502: 'Servidor de Microsoft no disponible. Intenta más tarde.',
-        503: 'Servicio de Microsoft temporalmente no disponible. Intenta en unos minutos.',
+      const statusMsgs = {
+        400: 'Solicitud inválida.',
+        401: 'Error de autenticación.',
+        403: 'Microsoft rechazó la solicitud (403). Necesitas activar el proxy Cloudflare Worker.',
+        429: 'Demasiadas solicitudes. Espera 1-2 min.',
+        500: 'Error interno de Microsoft.',
+        502: 'Servidor no disponible.',
+        503: 'Servicio temporalmente no disponible.',
       };
-      const msg = statusMessages[response.status] || `Error HTTP ${response.status} de Microsoft.`;
-      throw new CIDError(
-        `MS_HTTP_${response.status}`,
-        `❌ *Error ${response.status}*\n${msg}`,
-        { iid: cleanIid, httpStatus: response.status, msResponse: data }
-      );
+      throw new CIDError(`MS_HTTP_${response.status}`,
+        `❌ *Error ${response.status}*\n${statusMsgs[response.status] || 'Error HTTP de Microsoft.'}`,
+        { iid: cleanIid, httpStatus: response.status, msResponse: data });
     }
 
-    // ============================================================
-    // PASO 5: Response OK pero sin CID — Error inesperado
-    // ============================================================
-    throw new CIDError(
-      'NO_CID_IN_RESPONSE',
-      '❌ *Sin CID en la respuesta*\nMicrosoft respondió OK pero no incluyó un Confirmation ID.',
-      { iid: cleanIid, msResponse: data }
-    );
+    throw new CIDError('NO_CID_IN_RESPONSE',
+      '❌ *Sin CID en la respuesta*',
+      { iid: cleanIid, msResponse: data });
 
   } catch (err) {
     clearTimeout(timeout);
     if (err instanceof CIDError) throw err;
     if (err.name === 'AbortError') {
-      throw new CIDError(
-        'TIMEOUT',
-        '⏱ *Tiempo agotado*\nMicrosoft no respondió en 15 segundos. Intenta de nuevo.',
-        { iid: cleanIid }
-      );
+      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado (15s)*', { iid: cleanIid });
     }
-    // Error de red
-    throw new CIDError(
-      'NETWORK_ERROR',
-      `❌ *Error de conexión*\nNo se pudo conectar con Microsoft: ${err.message}`,
-      { iid: cleanIid }
-    );
+    throw new CIDError('NETWORK_ERROR', `❌ *Error de red:* ${err.message}`, { iid: cleanIid });
   }
+}
+
+// ============================================================
+// Función principal — Intenta proxy primero, directo como fallback
+// ============================================================
+async function getConfirmationID(iid) {
+  // Validación
+  if (!iid || typeof iid !== 'string') {
+    throw new CIDError('INVALID_IID', '❌ *IID vacío o inválido*', { iid });
+  }
+  const cleanIid = iid.replace(/\D/g, '');
+  if (cleanIid.length < 54) {
+    throw new CIDError('IID_TOO_SHORT',
+      `❌ *IID demasiado corto*\n${cleanIid.length} dígitos detectados, se necesitan 54-63.`,
+      { iid: cleanIid });
+  }
+  if (cleanIid.length > 63) {
+    throw new CIDError('IID_TOO_LONG',
+      `❌ *IID demasiado largo*\n${cleanIid.length} dígitos, máximo 63.`,
+      { iid: cleanIid });
+  }
+
+  // Modo 1: Worker Proxy (preferido)
+  if (WORKER_PROXY_URL) {
+    console.log('[CID] Usando Worker proxy:', WORKER_PROXY_URL);
+    try {
+      return await getCIDViaProxy(cleanIid);
+    } catch (err) {
+      // Si el proxy falla por network, intentar directo como fallback
+      if (err.code === 'PROXY_NETWORK_ERROR' || err.code === 'TIMEOUT') {
+        console.log('[CID] Proxy falló, intentando directo...');
+      } else {
+        throw err; // Errores de MS (checksum, blocked, etc.) no reintentar
+      }
+    }
+  }
+
+  // Modo 2: Directo a Microsoft (fallback o si no hay proxy)
+  console.log('[CID] Usando conexión directa a Microsoft');
+  return await getCIDDirect(cleanIid);
 }
 
 module.exports = { getConfirmationID, CIDError };
