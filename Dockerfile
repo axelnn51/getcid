@@ -1,11 +1,18 @@
 FROM node:20-slim
 
-# Instalar dependencias del sistema para sharp, better-sqlite3 y Puppeteer (chromium)
+# Instalar dependencias del sistema para sharp, better-sqlite3 y Puppeteer (chromium + librerías)
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
     g++ \
     chromium \
+    fonts-liberation \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libx11-xcb1 \
+    libxcb1 \
+    libgbm1 \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \

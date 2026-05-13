@@ -5,21 +5,6 @@ let globalBrowser = null;
 let globalGovUrlID = null;
 let lastGovUrlFetchTime = 0;
 
-async function getCachedGovUrlID() {
-  const now = Date.now();
-  // Fetch a new ID if we don't have one or if it's older than 3 hours
-  if (!globalGovUrlID || now - lastGovUrlFetchTime > 3 * 60 * 60 * 1000) {
-    console.log('[Puppeteer] Fetching new dynamic govUrlID...');
-    const configResp = await fetch('https://visualsupport.microsoft.com/api/configuration/govUrlID');
-    if (!configResp.ok) throw new Error(`Failed to fetch govUrlID: HTTP ${configResp.status}`);
-    const config = await configResp.json();
-    globalGovUrlID = config.govUrlID;
-    lastGovUrlFetchTime = now;
-    console.log('[Puppeteer] dynamic govUrlID cached:', globalGovUrlID);
-  }
-  return globalGovUrlID;
-}
-
 async function getCachedBrowser() {
   if (!globalBrowser || !globalBrowser.isConnected()) {
     console.log('[Puppeteer] Launching persistent headless browser instance...');
@@ -30,6 +15,9 @@ async function getCachedBrowser() {
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
         '--disable-gpu',
+        '--disable-accelerated-2d-canvas',
+        '--disable-sys-info',
+        '--hide-scrollbars',
         '--disable-blink-features=AutomationControlled'
       ]
     };
@@ -47,10 +35,32 @@ async function getCachedBrowser() {
   return globalBrowser;
 }
 
+async function getCachedGovUrlID(browser) {
+  const now = Date.now();
+  // Fetch a new ID if we don't have one or if it's older than 3 hours
+  if (!globalGovUrlID || now - lastGovUrlFetchTime > 3 * 60 * 60 * 1000) {
+    console.log('[Puppeteer] Fetching dynamic govUrlID via headless browser page to bypass WAF blocks...');
+    const page = await browser.newPage();
+    try {
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      await page.goto('https://visualsupport.microsoft.com/api/configuration/govUrlID', { waitUntil: 'domcontentloaded', timeout: 25000 });
+      const text = await page.evaluate(() => document.body.innerText);
+      const config = JSON.parse(text.trim());
+      if (!config.govUrlID) throw new Error('govUrlID missing from configuration response');
+      globalGovUrlID = config.govUrlID;
+      lastGovUrlFetchTime = now;
+      console.log('[Puppeteer] dynamic govUrlID cached successfully via browser:', globalGovUrlID);
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+  return globalGovUrlID;
+}
+
 async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
   const { CIDError } = require('./cid_helper');
-  const govId = await getCachedGovUrlID();
   const browser = await getCachedBrowser();
+  const govId = await getCachedGovUrlID(browser);
 
   const page = await browser.newPage();
   try {
@@ -59,18 +69,17 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
 
     const govUrl = `https://visualsupport.microsoft.com/${govId}`;
     console.log(`[Puppeteer] Navigating to portal (${productHint === 'office' ? 'Office' : 'Windows'} path)...`);
-    // Reduced timeout and faster waitUntil since base browser is warm
-    await page.goto(govUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    await page.goto(govUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
     // Step 2: Click Activate a Microsoft Product
-    await page.waitForSelector('text/Activate a Microsoft Product', { timeout: 10000 });
+    await page.waitForSelector('text/Activate a Microsoft Product', { timeout: 15000 });
     await page.click('text/Activate a Microsoft Product');
-    // Minimal reliable wait
     await new Promise(r => setTimeout(r, 600));
 
     // Step 3: Select Product Option
     if (productHint === 'office') {
       console.log('[Puppeteer] Selecting product option: Microsoft Office');
+      await page.waitForSelector('img', { timeout: 15000 }).catch(() => {});
       // Look for Office image or text
       const clickedOffice = await page.evaluate(() => {
         const imgs = Array.from(document.querySelectorAll('img'));
@@ -89,12 +98,17 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
         return false;
       });
       if (!clickedOffice) {
-        // Fallback selector
-        await page.click('img[alt*="Office"]').catch(() => page.click('text/Microsoft Office'));
+        // Safe fallback selector using $$
+        const imgs = await page.$$('img[alt*="Office"]');
+        if (imgs.length > 0) await imgs[0].click();
+        else {
+          const txts = await page.$$('text/Microsoft Office');
+          if (txts.length > 0) await txts[0].click();
+        }
       }
     } else {
       console.log('[Puppeteer] Selecting product option: Windows');
-      await page.waitForSelector('img[alt="Windows"]', { timeout: 10000 });
+      await page.waitForSelector('img[alt="Windows"]', { timeout: 15000 });
       await page.click('img[alt="Windows"]');
     }
     await new Promise(r => setTimeout(r, 600));
@@ -115,12 +129,13 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
     }, digitOption);
 
     if (!clickedDigits) {
-      await page.click(`text/${digitOption}`);
+      const opts = await page.$$(`text/${digitOption}`);
+      if (opts.length > 0) await opts[0].click();
     }
     await new Promise(r => setTimeout(r, 600));
 
     // Step 5: Enter complete Installation ID
-    await page.waitForSelector('input[type="text"]', { timeout: 10000 });
+    await page.waitForSelector('input[type="text"]', { timeout: 15000 });
     const focusedInput = await page.evaluate(() => {
       const inputs = Array.from(document.querySelectorAll('input[type="text"]'));
       const mainInput = inputs.find(i => i.placeholder && i.placeholder.toLowerCase().includes('complete')) || inputs[0];
@@ -132,13 +147,12 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
     });
 
     if (focusedInput) {
-      // Extremely fast typing
       await page.keyboard.type(cleanIid, { delay: 1 });
     } else {
       throw new Error('Could not focus Installation ID input field');
     }
 
-    // Wait for inline JS validation to unlock submit button
+    // Wait for inline validation to unlock submit button
     await new Promise(r => setTimeout(r, 1500));
 
     // Step 6: Check validation & Submit
@@ -163,7 +177,7 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
     let cidBlocks = null;
     let msErrorText = '';
 
-    for (let attempt = 0; attempt < 12; attempt++) {
+    for (let attempt = 0; attempt < 15; attempt++) {
       await new Promise(r => setTimeout(r, 1000));
       const result = await page.evaluate(() => {
         const text = document.body.innerText;
@@ -179,10 +193,8 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
         break;
       } else {
         msErrorText = result.fullText;
-        // If response explicitly loaded with rejection, break early to save polling time
         const lowerText = msErrorText.toLowerCase();
         if (lowerText.includes('displayed in your product') || lowerText.includes('enter installation id')) {
-          // Still on input page loading
           continue;
         }
         if (lowerText.length > 50 && (lowerText.includes('reject') || lowerText.includes('rechaz') || lowerText.includes('unsuccessful') || lowerText.includes('failed') || lowerText.includes('not genuine') || lowerText.includes('blocked') || lowerText.includes('exceeded'))) {
@@ -228,7 +240,6 @@ async function executePuppeteerAttempt(cleanIid, productHint, isRetry = false) {
 async function getCIDViaPuppeteer(cleanIid, productHint = 'windows') {
   const { CIDError } = require('./cid_helper');
   try {
-    // Attempt 1 using provided or inferred hint
     console.log(`[Puppeteer] Execution attempt 1 starting (Hint: ${productHint})`);
     const result1 = await executePuppeteerAttempt(cleanIid, productHint, false);
     if (result1.success) {
@@ -236,8 +247,6 @@ async function getCIDViaPuppeteer(cleanIid, productHint = 'windows') {
       return result1.cid;
     }
 
-    // If attempt 1 failed with generic rejection (e.g. submitted Office under Windows path),
-    // automatically execute extremely fast retry using the OPPOSITE path!
     const oppositeHint = productHint === 'office' ? 'windows' : 'office';
     console.log(`[Puppeteer] Attempt 1 rejected generic activation. Retrying automatically with opposite path: ${oppositeHint}...`);
     
@@ -247,11 +256,12 @@ async function getCIDViaPuppeteer(cleanIid, productHint = 'windows') {
       return result2.cid;
     }
 
-    // Both paths rejected it
     throw new CIDError('ACTIVATION_FAILED', `❌ *Activación rechazada por Microsoft*\nNo se pudo generar el Confirmation ID para este IID en ninguna de las rutas (Windows/Office).\n\nDetalles:\n${result2.errorText?.substring(0, 200) || 'Sin detalles'}`, { iid: cleanIid });
 
   } catch (err) {
+    console.error('[Puppeteer Internal Failure]', err);
     if (err instanceof CIDError) throw err;
+    // Log complete stack/details to console but show clean message to user
     throw new CIDError('NETWORK_ERROR', `❌ *Error interno de automatización:* ${err.message}`, { iid: cleanIid });
   }
 }

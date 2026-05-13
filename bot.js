@@ -106,7 +106,7 @@ function errorToMessage(error, detectedIID) {
             default:
                 if (code.startsWith('MS_HTTP_')) {
                     const status = code.replace('MS_HTTP_', '');
-                    if (status === '403') return `🔒 <b>Error 403 — Acceso denegado</b>\nMicrosoft rechazó la solicitud. El IID podría estar bloqueado o ser de un producto no soportado.${iidBlock}`;
+                    if (status === '403') return `🔒 <b>Error 403 — Acceso denegado</b>\nMicrosoft rechazó la solicitud. El IID podría estar bloqueado o ser de un producto no soportado.${error.userMessage ? '\n\n<i>' + error.userMessage + '</i>' : ''}${iidBlock}`;
                     if (status === '429') return `⏳ <b>Error 429 — Demasiadas solicitudes</b>\nEspera 1-2 minutos e intenta de nuevo.${iidBlock}`;
                     return `❌ <b>Error Microsoft ${status}</b>\n${error.userMessage || 'Error del servidor de activación.'}${iidBlock}`;
                 }

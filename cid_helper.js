@@ -278,16 +278,29 @@ async function getConfirmationID(iid, productHint = 'windows') {
   } catch (err) {
     // Si Puppeteer falla por un error interno de red/automatización, intentar Worker Proxy como fallback
     if (err.code === 'NETWORK_ERROR' || err.code === 'TIMEOUT') {
-      console.log('[CID] Puppeteer falló por red/automatización, intentando Worker proxy como fallback...');
+      const pupErrorMsg = err.userMessage || err.message;
+      console.log('[CID] Puppeteer falló por red/automatización:', pupErrorMsg);
       if (WORKER_PROXY_URL) {
         try {
           return await getCIDViaProxy(cleanIid);
         } catch (proxyErr) {
           console.log('[CID] Proxy falló, intentando directo como último recurso...');
-          return await getCIDDirect(cleanIid);
+          try {
+            return await getCIDDirect(cleanIid);
+          } catch (directErr) {
+            if (directErr.userMessage) directErr.userMessage += `\n\n*(Fallo primario Puppeteer:* ${err.message}*)*`;
+            else directErr.userMessage = `*(Fallo primario Puppeteer:* ${err.message}*)*`;
+            throw directErr;
+          }
         }
       }
-      return await getCIDDirect(cleanIid);
+      try {
+        return await getCIDDirect(cleanIid);
+      } catch (directErr) {
+        if (directErr.userMessage) directErr.userMessage += `\n\n*(Fallo primario Puppeteer:* ${err.message}*)*`;
+        else directErr.userMessage = `*(Fallo primario Puppeteer:* ${err.message}*)*`;
+        throw directErr;
+      }
     }
     throw err; // Errores de licencia (bloqueada, límite, expirada) se propagan directamente
   }
