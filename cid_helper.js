@@ -1,10 +1,9 @@
 const crypto = require('crypto');
+const initCycleTLS = require('cycletls');
 
 // ============================================================
 // CID Helper — Obtener Confirmation ID
-// ARQUITECTURA: Bot/Web → Cloudflare Worker → Microsoft
-// El Worker proxy es necesario porque Microsoft bloquea
-// peticiones directas desde IPs de VPS/residenciales.
+// ARQUITECTURA: Conexión Directa (TLS Spoofing + DPoP) → Cloudflare Worker Proxy
 // ============================================================
 
 // ============================================================
@@ -31,13 +30,26 @@ const WORKER_PROXY_URL = process.env.WORKER_PROXY_URL || '';
 const WORKER_API_KEY = process.env.WORKER_API_KEY || '';
 
 // ============================================================
-// Base64URL Encoding (para modo directo/fallback)
+// Cliente CycleTLS — suplantar huella TLS (JA3) de Chrome real
+// Evita bloqueos WAF de Azure Front Door en servidores Linux
+// ============================================================
+let cycleTLS;
+async function getCycleTLS() {
+  if (!cycleTLS) {
+    cycleTLS = await initCycleTLS();
+  }
+  return cycleTLS;
+}
+
+// ============================================================
+// Base64URL Encoding (para DPoP)
 // ============================================================
 function eI(t) {
   let e = typeof t === 'string' ? new TextEncoder().encode(t) : t;
   return Buffer.from(e).toString('base64').replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
+// Par de claves ECDSA reutilizable durante toda la vida del proceso
 let tI = null;
 async function yT() {
   if (!tI) {
@@ -46,15 +58,49 @@ async function yT() {
   return tI;
 }
 
-async function generateDPoPToken(htu, htm) {
+/**
+ * Genera un token DPoP (Demonstrating Proof-of-Possession) — RFC 9449
+ *
+ * Lógica criptográfica:
+ * 1. Par de claves ECDSA P-256 generado una sola vez y reutilizado por proceso.
+ * 2. JWK Thumbprint (jkt) calculado según RFC 7638: hash SHA-256 de las
+ *    propiedades canónicas de la clave pública (crv, kty, x, y en orden).
+ * 3. El header del JWT incluye la clave pública completa (jwk) para que el
+ *    servidor pueda verificar la firma sin un directorio externo.
+ * 4. El payload vincula el token a la petición exacta: método (htm),
+ *    URL (htu), identificador único (jti) y timestamp (iat).
+ * 5. Si el servidor devuelve un DPoP-Nonce, se incluye en el payload para
+ *    prevenir ataques de replay.
+ */
+async function generateDPoPToken(htu, htm, nonce = null) {
   const { privateKey, publicKey } = await yT();
   const jwk = await crypto.subtle.exportKey("jwk", publicKey);
+
+  // JWK Thumbprint — vincula de forma única la clave pública a este token
+  const canonicalJwk = JSON.stringify({ crv: jwk.crv, kty: jwk.kty, x: jwk.x, y: jwk.y });
+  const jktHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalJwk));
+  const jkt = eI(new Uint8Array(jktHash));
+
   const header = { alg: "ES256", typ: "dpop+jwt", jwk };
-  const payload = { htu, htm, jti: crypto.randomUUID(), iat: Math.floor(Date.now() / 1000) };
+  const payload = {
+    htu,
+    htm,
+    jti: crypto.randomUUID(),
+    iat: Math.floor(Date.now() / 1000),
+    jkt
+  };
+  if (nonce) payload.nonce = nonce;
+
   const s = eI(JSON.stringify(header));
   const l = eI(JSON.stringify(payload));
   const u = `${s}.${l}`;
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, new TextEncoder().encode(u));
+
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    privateKey,
+    new TextEncoder().encode(u)
+  );
+
   return `${u}.${eI(signature)}`;
 }
 
@@ -108,7 +154,102 @@ function classifyError(data, httpStatus, iid) {
 }
 
 // ============================================================
-// MODO 1: Via Worker Proxy (Cloudflare) — PREFERIDO
+// MODO 1: Directo a Microsoft con TLS Spoofing + DPoP — PREFERIDO
+// Suplanta huella JA3 de Chrome/Windows y resuelve el desafío
+// DPoP-Nonce dinámicamente para evadir el WAF de Azure Front Door.
+// ============================================================
+async function getCIDDirect(cleanIid) {
+  const endpoint = "https://visualsupport.microsoft.com/api/productActivation/validateIID";
+  const htu = "/api/productActivation/validateIID";
+  const htm = "POST";
+
+  const client = await getCycleTLS();
+  const sid = `app_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  const digits = Math.floor(cleanIid.length / 9);
+
+  const payloadData = {
+    IID: cleanIid,
+    ProductType: "windows",
+    productGroup: "Windows",
+    productName: "Windows 11",
+    numberOfDigits: digits,
+    Country: "CHN",
+    Region: "APAC",
+    InstalledDevices: 1,
+    OverrideStatusCode: "MUL",
+    InitialReasonCode: "45164"
+  };
+
+  // Función interna que ejecuta la petición con el DPoP token correcto
+  async function performRequest(nonce = null) {
+    const dpopToken = await generateDPoPToken(htu, htm, nonce);
+    return await client(endpoint, {
+      method: htm,
+      body: JSON.stringify(payloadData),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer govUrlID",
+        "DPoP": dpopToken,
+        "x-session-id": sid,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://visualsupport.microsoft.com",
+        "Referer": "https://visualsupport.microsoft.com/"
+      },
+      // JA3 Fingerprint de Chrome 120 en Windows 10/11
+      ja3: "771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43-27-17513-21,29-23-24,0",
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }, 15000);
+  }
+
+  try {
+    // Petición inicial sin Nonce
+    console.log('[DPoP] Iniciando desafío de autenticación...');
+    let response = await performRequest();
+
+    // Si el servidor devuelve un DPoP-Nonce, reintenta con él para completar el handshake
+    const dpopNonce = response.headers?.["dpop-nonce"] || response.headers?.["DPoP-Nonce"];
+    if (dpopNonce) {
+      console.log('[DPoP] Nonce detectado, reintentando con firma completa...');
+      response = await performRequest(dpopNonce);
+    }
+
+    // cycleTLS parsea el body automáticamente si es JSON
+    const data = typeof response.body === 'string' ? JSON.parse(response.body) : response.body;
+
+    // PASO 1: ¿Hay CID? → ÉXITO
+    const cidValue = data?.cid || data?.CID || data?.confirmationId || data?.ConfirmationId;
+    if (cidValue && typeof cidValue === 'string' && cidValue.length >= 48) {
+      return cidValue.match(/\d{6}/g) || cidValue;
+    }
+    if (data?.activationSuccessful === true) {
+      return data.cid || data.confirmationId || data;
+    }
+
+    // PASO 2: Clasificar error de Microsoft
+    const msError = classifyError(data, response.status, cleanIid);
+    if (msError) throw msError;
+
+    // PASO 3: Errores HTTP
+    if (response.status !== 200) {
+      throw new CIDError(`MS_HTTP_${response.status}`,
+        `❌ *Error ${response.status}*\nAcceso denegado persistente o IID bloqueado.`,
+        { iid: cleanIid, httpStatus: response.status, msResponse: data });
+    }
+
+    throw new CIDError('NO_CID_IN_RESPONSE',
+      '❌ *Sin CID en la respuesta de Microsoft*',
+      { iid: cleanIid, msResponse: data });
+
+  } catch (err) {
+    if (err instanceof CIDError) throw err;
+    throw new CIDError('NETWORK_ERROR', `❌ *Error de red (TLS/DPoP):* ${err.message}`, { iid: cleanIid });
+  }
+}
+
+// ============================================================
+// MODO 2: Via Worker Proxy (Cloudflare) — FALLBACK
+// Se activa si la conexión directa falla por red o firma
 // ============================================================
 async function getCIDViaProxy(cleanIid) {
   const controller = new AbortController();
@@ -128,34 +269,26 @@ async function getCIDViaProxy(cleanIid) {
     clearTimeout(timeout);
     const data = await response.json();
 
-    // Worker proxy ya extrae el CID
     if (data.success && data.cid) {
-      return data.cid; // Array de bloques de 6 dígitos o string
+      return data.cid;
     }
-
     if (data.cidRaw && typeof data.cidRaw === 'string' && data.cidRaw.length >= 48) {
       return data.cidRaw.match(/\d{6}/g) || data.cidRaw;
     }
-
-    // Worker devolvió error
     if (data.error === 'INVALID_CHECKSUM') {
       throw new CIDError('INVALID_CHECKSUM',
         '❌ *IID con checksum inválido*\nUn dígito está incorrecto.',
         { iid: cleanIid, httpStatus: data.httpStatus, msResponse: data.msResponse });
     }
-
-    // Clasificar el error basado en msResponse del worker
     if (data.msResponse) {
       const msErr = classifyError(data.msResponse, data.httpStatus, cleanIid);
       if (msErr) throw msErr;
     }
 
-    // Error genérico del worker
-    throw new CIDError(
-      `PROXY_ERROR`,
+    throw new CIDError('PROXY_ERROR',
       `❌ *Error del servidor de activación*\n${data.message || data.error || 'Sin respuesta válida.'}`,
-      { iid: cleanIid, httpStatus: data.httpStatus, msResponse: data }
-    );
+      { iid: cleanIid, httpStatus: data.httpStatus, msResponse: data });
+
   } catch (err) {
     clearTimeout(timeout);
     if (err instanceof CIDError) throw err;
@@ -169,92 +302,11 @@ async function getCIDViaProxy(cleanIid) {
 }
 
 // ============================================================
-// MODO 2: Directo a Microsoft — FALLBACK
-// (solo funciona desde IPs que Microsoft acepte)
-// ============================================================
-async function getCIDDirect(cleanIid) {
-  const endpoint = "https://visualsupport.microsoft.com/api/productActivation/validateIID";
-  const dpopToken = await generateDPoPToken("/api/productActivation/validateIID", "POST");
-  const sid = `app_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-  const digits = Math.floor(cleanIid.length / 9);
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer govUrlID",
-        "DPoP": dpopToken,
-        "x-session-id": sid
-      },
-      body: JSON.stringify({
-        IID: cleanIid, ProductType: "windows", productGroup: "Windows", productName: "Windows 11",
-        numberOfDigits: digits, Country: "CHN", Region: "APAC", InstalledDevices: 1,
-        OverrideStatusCode: "MUL", InitialReasonCode: "45164"
-      })
-    });
-
-    clearTimeout(timeout);
-    const text = await response.text();
-    let data;
-    try { data = JSON.parse(text); } catch { data = { raw: text }; }
-
-    // PASO 1: ¿Hay CID? → ÉXITO
-    const cidValue = data.cid || data.CID;
-    if (cidValue && typeof cidValue === 'string' && cidValue.length >= 48) {
-      return cidValue.match(/\d{6}/g) || cidValue;
-    }
-    if (data.activationSuccessful === true) {
-      const altCid = data.confirmationId || data.ConfirmationId;
-      if (altCid && typeof altCid === 'string' && altCid.length >= 48) {
-        return altCid.match(/\d{6}/g) || altCid;
-      }
-      return data;
-    }
-
-    // PASO 2: Clasificar error
-    const msError = classifyError(data, response.status, cleanIid);
-    if (msError) throw msError;
-
-    // PASO 3: HTTP error
-    if (!response.ok) {
-      const statusMsgs = {
-        400: 'Solicitud inválida.',
-        401: 'Error de autenticación.',
-        403: 'Microsoft rechazó la solicitud (403). Necesitas activar el proxy Cloudflare Worker.',
-        429: 'Demasiadas solicitudes. Espera 1-2 min.',
-        500: 'Error interno de Microsoft.',
-        502: 'Servidor no disponible.',
-        503: 'Servicio temporalmente no disponible.',
-      };
-      throw new CIDError(`MS_HTTP_${response.status}`,
-        `❌ *Error ${response.status}*\n${statusMsgs[response.status] || 'Error HTTP de Microsoft.'}`,
-        { iid: cleanIid, httpStatus: response.status, msResponse: data });
-    }
-
-    throw new CIDError('NO_CID_IN_RESPONSE',
-      '❌ *Sin CID en la respuesta*',
-      { iid: cleanIid, msResponse: data });
-
-  } catch (err) {
-    clearTimeout(timeout);
-    if (err instanceof CIDError) throw err;
-    if (err.name === 'AbortError') {
-      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado (15s)*', { iid: cleanIid });
-    }
-    throw new CIDError('NETWORK_ERROR', `❌ *Error de red:* ${err.message}`, { iid: cleanIid });
-  }
-}
-
-// ============================================================
-// Función principal — Intenta proxy primero, directo como fallback
+// Función principal — Orquestación de doble respaldo:
+// 1. Conexión Directa (TLS Spoofing + DPoP)
+// 2. Cloudflare Worker Proxy (si la directa falla por red)
 // ============================================================
 async function getConfirmationID(iid) {
-  // Validación
   if (!iid || typeof iid !== 'string') {
     throw new CIDError('INVALID_IID', '❌ *IID vacío o inválido*', { iid });
   }
@@ -270,24 +322,31 @@ async function getConfirmationID(iid) {
       { iid: cleanIid });
   }
 
-  // Modo 1: Worker Proxy (preferido)
-  if (WORKER_PROXY_URL) {
-    console.log('[CID] Usando Worker proxy:', WORKER_PROXY_URL);
-    try {
-      return await getCIDViaProxy(cleanIid);
-    } catch (err) {
-      // Si el proxy falla por network, intentar directo como fallback
-      if (err.code === 'PROXY_NETWORK_ERROR' || err.code === 'TIMEOUT') {
-        console.log('[CID] Proxy falló, intentando directo...');
-      } else {
-        throw err; // Errores de MS (checksum, blocked, etc.) no reintentar
+  // INTENTO 1: Conexión directa avanzada
+  console.log('[CID] Intento 1: Conexión Directa (TLS Spoofing + DPoP)...');
+  try {
+    return await getCIDDirect(cleanIid);
+  } catch (err) {
+    // Errores reales de licencia → no reintentar
+    const nonRetryable = ['KEY_BLOCKED', 'TOO_MANY_ACTIVATIONS', 'INVALID_PRODUCT', 'KEY_EXPIRED', 'INVALID_CHECKSUM', 'KEY_NOT_GENUINE'];
+    if (nonRetryable.includes(err.code)) throw err;
+
+    console.log(`[CID] Directa falló (${err.code}). Intento 2: Cloudflare Worker Proxy...`);
+
+    // INTENTO 2: Fallback al proxy de Cloudflare
+    if (WORKER_PROXY_URL) {
+      try {
+        return await getCIDViaProxy(cleanIid);
+      } catch (proxyErr) {
+        console.error('[CID] Proxy también falló:', proxyErr.message);
+        // Relanzar el error más descriptivo para el usuario
+        if (proxyErr.code && proxyErr.code !== 'PROXY_NETWORK_ERROR') throw proxyErr;
+        throw err; // Si ambos fallaron por red, lanzar el primero
       }
     }
-  }
 
-  // Modo 2: Directo a Microsoft (fallback o si no hay proxy)
-  console.log('[CID] Usando conexión directa a Microsoft');
-  return await getCIDDirect(cleanIid);
+    throw err;
+  }
 }
 
 module.exports = { getConfirmationID, CIDError };
