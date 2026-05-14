@@ -98,7 +98,7 @@ function errorToMessage(error, detectedIID) {
                 return `⏱ <b>Tiempo agotado</b>\nMicrosoft no respondió en 15s. Intenta de nuevo.${iidBlock}`;
             
             case 'NETWORK_ERROR':
-                return `🌐 <b>Error de conexión</b>\nNo se pudo conectar con Microsoft. Intenta más tarde.${iidBlock}`;
+                return `🌐 <b>Error de conexión</b>\n${error.userMessage || 'No se pudo conectar con Microsoft.'}\nIntenta más tarde.${iidBlock}`;
             
             case 'NO_CID_IN_RESPONSE':
                 return `❌ <b>Sin CID en respuesta</b>\nMicrosoft respondió pero no incluyó Confirmation ID.${iidBlock}`;

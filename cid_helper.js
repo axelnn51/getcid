@@ -70,11 +70,12 @@ async function getConfirmationID(iid) {
 
   } catch (err) {
     clearTimeout(timeout);
+    console.error('[CID_HELPER ERROR] Falló la petición a getcid_python:', err);
     if (err instanceof CIDError) throw err;
     if (err.name === 'AbortError') {
       throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl servicio Python tardó más de 45 segundos.', { iid: cleanIid });
     }
-    throw new CIDError('NETWORK_ERROR', `❌ *Error de conexión interna:* No se pudo alcanzar getcid_python.`, { iid: cleanIid });
+    throw new CIDError('NETWORK_ERROR', `❌ *Error de conexión interna:* No se pudo alcanzar getcid_python. Detalle: ${err.message}`, { iid: cleanIid });
   }
 }
 
