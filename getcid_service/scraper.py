@@ -1,6 +1,6 @@
 import asyncio
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import Stealth
 import os
 from dotenv import load_dotenv
 import logging
@@ -65,7 +65,8 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
     page = await context.new_page()
     
     # Inyectar Stealth para evadir detección antibot de Microsoft
-    await stealth_async(page)
+    stealth = Stealth()
+    await stealth.apply_stealth_async(page)
     
     captured_token = None
 
