@@ -7,6 +7,7 @@ const db = require('./db');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_python:8000';
 
 // ============================================================
 // Rate limiting por usuario (máx 3 requests/minuto)
