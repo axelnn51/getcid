@@ -11,6 +11,24 @@ const db = require('./db');
 const wc = require('./woocommerce');
 const { initWorker, ocrAndGetCID } = require('./ocr');
 
+// Lazy-load para evitar circular dependency
+let _notifyAdmin = null;
+function notifyAdmin(msg) {
+    if (!_notifyAdmin) {
+        try { _notifyAdmin = require('./bot').notifyAdmin; } catch(e) { _notifyAdmin = () => {}; }
+    }
+    _notifyAdmin(msg);
+}
+let _formatCID = null;
+function fmtCID(cid) {
+    if (!_formatCID) {
+        try { _formatCID = require('./bot').formatCID; } catch(e) {
+            _formatCID = (c) => { const d = String(c).replace(/\D/g, ''); return d.match(/.{1,6}/g)?.join('-') || d; };
+        }
+    }
+    return _formatCID(cid);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
@@ -196,6 +214,17 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
     if (!user) return res.status(400).json({ success: false, error: 'No encontrado. Verifica que sea tu email de compra o número de pedido y que el pago esté Completado.' });
     if (user.balance <= 0) return res.status(400).json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra en cdkeysperu.com.' });
 
+    // Seguridad: si usó número de pedido, verificar que pertenece a su email registrado
+    const isOrderNumber = /^\d+$/.test(identifier);
+    if (isOrderNumber && user.email) {
+        try {
+            const order = await wc.getOrderById(identifier);
+            if (order && order.billing?.email?.toLowerCase() !== user.email.toLowerCase()) {
+                return res.status(403).json({ success: false, error: '❌ Este pedido no pertenece a tu cuenta.' });
+            }
+        } catch(e) { /* continue */ }
+    }
+
     const startTime = Date.now();
     try {
         let cidResult;
@@ -216,6 +245,17 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
             const newBalance = db.getBalance(user.id);
             const cidStr = Array.isArray(cidResult.cid) ? cidResult.cid.join('-') : cidResult.cid;
             db.logTransaction(user.id, 'web', cidResult.iid, cidStr, 'success', elapsed, cidResult.strategy);
+            
+            // Notificar al admin por Telegram
+            const cidFormatted = fmtCID(cidStr);
+            notifyAdmin(
+                `🌐 <b>CID desde Web</b>\n\n` +
+                `👤 ${user.email || identifier}\n` +
+                `📝 IID: <code>${cidResult.iid}</code>\n` +
+                `🔑 CID: <code>${cidFormatted}</code>\n` +
+                `💰 Balance: ${newBalance}`
+            );
+            
             return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: newBalance, time_ms: elapsed });
         } else {
             // OCR falló completamente

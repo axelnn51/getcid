@@ -9,6 +9,9 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_python:8000';
 
+// Bot instance global para notificaciones desde web
+let botInstance = null;
+
 // ============================================================
 // Rate limiting por usuario (máx 3 requests/minuto)
 // ============================================================
@@ -49,7 +52,11 @@ setInterval(() => {
 function formatIID(iid) { return iid.match(/.{1,7}/g)?.join('-') || iid; }
 function formatCID(cid) {
     if (Array.isArray(cid)) return cid.join('-');
-    if (typeof cid === 'string') return cid.match(/.{1,6}/g)?.join('-') || cid;
+    if (typeof cid === 'string') {
+        // Limpiar todo excepto dígitos, luego formatear en bloques de 6
+        const digits = cid.replace(/\D/g, '');
+        return digits.match(/.{1,6}/g)?.join('-') || digits;
+    }
     return JSON.stringify(cid);
 }
 
@@ -448,6 +455,65 @@ function startBot() {
         await ctx.answerCbQuery('ℹ️', { show_alert: false });
     });
 
+    // Guardar referencia global para notificaciones
+    botInstance = bot;
+
+    // ============================================================
+    // HEALTH CHECK DIARIO — 3:00 PM hora Perú (UTC-5)
+    // ============================================================
+    let lastHealthDay = '';
+    setInterval(async () => {
+        const now = new Date();
+        // Convertir a hora Perú (UTC-5)
+        const peruTime = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+        const hour = peruTime.getUTCHours();
+        const minute = peruTime.getUTCMinutes();
+        const today = peruTime.toISOString().split('T')[0];
+        
+        // Disparar a las 15:00 (3PM), solo una vez por día
+        if (hour === 15 && minute === 0 && lastHealthDay !== today) {
+            lastHealthDay = today;
+            
+            try {
+                // Verificar estado del token
+                let tokenStatus = '❓ Desconocido';
+                let refreshStatus = '❓ Desconocido';
+                try {
+                    const tokenResp = await fetch(`${GETCID_SERVICE_URL}/api/token-status`);
+                    const tokenData = await tokenResp.json();
+                    if (tokenData.status === 'valid') tokenStatus = `🟢 Válido (${tokenData.remaining_minutes} min)`;
+                    else if (tokenData.status === 'expired') tokenStatus = '🔴 Expirado';
+                    else tokenStatus = '⚪ Sin token';
+                    
+                    const refreshResp = await fetch(`${GETCID_SERVICE_URL}/api/refreshtoken-status`);
+                    const refreshData = await refreshResp.json();
+                    if (refreshData.status === 'valid') refreshStatus = `🟢 OK (${refreshData.remaining_days} días restantes)`;
+                    else if (refreshData.status === 'expired') refreshStatus = '🔴 EXPIRADO - Renovar!';
+                    else refreshStatus = '⚪ No configurado';
+                } catch(e) { /* ignore */ }
+                
+                const stats = db.getStats();
+                const uptime = Math.floor(process.uptime() / 3600);
+                
+                for (const adminId of ADMIN_IDS) {
+                    bot.telegram.sendMessage(adminId,
+                        `📊 *Reporte Diario GetCID*\n` +
+                        `📅 ${today} | 3:00 PM\n\n` +
+                        `🔑 Access Token: ${tokenStatus}\n` +
+                        `🔄 Refresh Token: ${refreshStatus}\n\n` +
+                        `📈 CIDs hoy: *${stats.todayCids}*\n` +
+                        `📈 CIDs total: *${stats.totalCids}*\n` +
+                        `👥 Usuarios: *${stats.totalUsers}*\n` +
+                        `⏱ Uptime: ${uptime}h`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(() => {});
+                }
+            } catch(e) {
+                console.error('[HEALTH CHECK ERROR]', e.message);
+            }
+        }
+    }, 60 * 1000); // Verificar cada minuto
+
     // ARRANCAR
     bot.launch()
         .then(() => {
@@ -461,7 +527,12 @@ function startBot() {
                     `Motor OCR: ✅ Cargado\n` +
                     `Web: ✅ Puerto ${process.env.PORT || 3000}\n` +
                     `WooCommerce: ${process.env.WC_CONSUMER_KEY ? '✅' : '❌'}\n\n` +
-                    `Comandos admin:\n/addcredits <id> <n>\n/stats`,
+                    `Comandos admin:\n` +
+                    `/addcredits <id> <n>\n` +
+                    `/stats\n` +
+                    `/tokenstatus\n` +
+                    `/settoken <token>\n` +
+                    `/setrefreshtoken <json>`,
                     { parse_mode: 'Markdown' }
                 ).catch(err => console.log(`⚠️ No se pudo notificar al admin ${adminId}: ${err.message}`));
             }
@@ -477,5 +548,14 @@ function startBot() {
     process.once('SIGTERM', () => bot.stop('SIGTERM'));
 }
 
+// Función para notificar al admin desde otros módulos (ej: index.js para web)
+function notifyAdmin(message) {
+    if (!botInstance || !ADMIN_IDS.length) return;
+    for (const adminId of ADMIN_IDS) {
+        botInstance.telegram.sendMessage(adminId, message, { parse_mode: 'HTML' })
+            .catch(() => {});
+    }
+}
+
 // Exportar la función
-module.exports = { startBot };
+module.exports = { startBot, notifyAdmin, formatCID };
