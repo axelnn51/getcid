@@ -28,7 +28,6 @@ services:
 
   getcid_python:
     build: ./getcid_service
-    image: getcid_python:v2
     container_name: getcid_python
     restart: unless-stopped
     volumes:
