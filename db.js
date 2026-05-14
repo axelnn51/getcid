@@ -52,6 +52,16 @@ db.exec(`
         FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    -- NUEVO: Créditos por pedido (1 licencia = 1 crédito)
+    CREATE TABLE IF NOT EXISTS order_credits (
+        order_id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        total_credits INTEGER NOT NULL DEFAULT 0,
+        used_credits INTEGER NOT NULL DEFAULT 0,
+        synced_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Mantener tabla legacy para compatibilidad
     CREATE TABLE IF NOT EXISTS used_orders (
         order_id TEXT PRIMARY KEY,
         claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -84,7 +94,7 @@ function setAdmin(userId) {
 }
 
 // ============================================================
-// FUNCIONES DE CRÉDITOS
+// FUNCIONES DE CRÉDITOS (Telegram - balance manual por admin)
 // ============================================================
 
 function getBalance(userId) {
@@ -112,6 +122,99 @@ function debitCredit(userId) {
         INSERT INTO credits (user_id, amount, type, reason) VALUES (?, -1, 'debit', 'getcid')
     `).run(userId);
     return true;
+}
+
+// ============================================================
+// NUEVO: CRÉDITOS POR PEDIDO (Web - basado en WooCommerce)
+// ============================================================
+
+/**
+ * Sincroniza un pedido de WooCommerce en la tabla order_credits.
+ * Si ya existe, no lo sobrescribe.
+ * @param {string} orderId - ID del pedido
+ * @param {string} email - Email de facturación
+ * @param {number} totalLicenses - Cantidad total de licencias en el pedido
+ */
+function syncOrderCredits(orderId, email, totalLicenses) {
+    const existing = db.prepare('SELECT * FROM order_credits WHERE order_id = ?').get(String(orderId));
+    if (!existing) {
+        db.prepare(`
+            INSERT INTO order_credits (order_id, email, total_credits, used_credits)
+            VALUES (?, ?, ?, 0)
+        `).run(String(orderId), email.toLowerCase(), totalLicenses);
+    }
+}
+
+/**
+ * Obtiene los créditos restantes de un pedido específico.
+ * @returns {{ total: number, used: number, remaining: number } | null}
+ */
+function getOrderBalance(orderId) {
+    const row = db.prepare('SELECT * FROM order_credits WHERE order_id = ?').get(String(orderId));
+    if (!row) return null;
+    return {
+        total: row.total_credits,
+        used: row.used_credits,
+        remaining: row.total_credits - row.used_credits,
+        email: row.email
+    };
+}
+
+/**
+ * Obtiene el saldo global de un email (suma de créditos restantes de todos sus pedidos).
+ * @returns {number}
+ */
+function getEmailBalance(email) {
+    const row = db.prepare(`
+        SELECT COALESCE(SUM(total_credits - used_credits), 0) as remaining
+        FROM order_credits WHERE email = ?
+    `).get(email.toLowerCase());
+    return row ? row.remaining : 0;
+}
+
+/**
+ * Consume 1 crédito de un pedido específico.
+ * @returns {boolean} true si se pudo consumir
+ */
+function consumeOrderCredit(orderId) {
+    const order = db.prepare('SELECT * FROM order_credits WHERE order_id = ?').get(String(orderId));
+    if (!order || order.used_credits >= order.total_credits) return false;
+    
+    db.prepare('UPDATE order_credits SET used_credits = used_credits + 1 WHERE order_id = ?')
+        .run(String(orderId));
+    return true;
+}
+
+/**
+ * Consume 1 crédito del pedido más antiguo con saldo disponible para un email.
+ * @returns {boolean} true si se pudo consumir
+ */
+function consumeEmailCredit(email) {
+    const order = db.prepare(`
+        SELECT * FROM order_credits 
+        WHERE email = ? AND used_credits < total_credits
+        ORDER BY synced_at ASC
+        LIMIT 1
+    `).get(email.toLowerCase());
+    
+    if (!order) return false;
+    
+    db.prepare('UPDATE order_credits SET used_credits = used_credits + 1 WHERE order_id = ?')
+        .run(order.order_id);
+    return true;
+}
+
+/**
+ * Obtiene todos los pedidos de un email con sus saldos.
+ */
+function getOrdersByEmail(email) {
+    return db.prepare(`
+        SELECT order_id, total_credits, used_credits, 
+               (total_credits - used_credits) as remaining,
+               synced_at
+        FROM order_credits WHERE email = ?
+        ORDER BY synced_at DESC
+    `).all(email.toLowerCase());
 }
 
 // ============================================================
@@ -149,6 +252,7 @@ function getStats() {
     return { totalCids: total.c, todayCids: today.c, totalUsers: users.c };
 }
 
+// Legacy - mantener compatibilidad
 function isOrderUsed(orderId) {
     const row = db.prepare('SELECT order_id FROM used_orders WHERE order_id = ?').get(String(orderId));
     return !!row;
@@ -160,6 +264,10 @@ function markOrderUsed(orderId) {
 module.exports = {
     findUserByEmail, findUserByTelegram, createUser, setAdmin,
     getBalance, addCredits, debitCredit,
+    // Nuevo sistema de créditos por pedido
+    syncOrderCredits, getOrderBalance, getEmailBalance,
+    consumeOrderCredit, consumeEmailCredit, getOrdersByEmail,
+    // Transacciones
     logTransaction, getTransactions,
     getAllUsers, getAllTransactions, getStats,
     isOrderUsed, markOrderUsed

@@ -146,19 +146,32 @@ const apiLimiter = rateLimit({
 // SISTEMA DE TOKENS CORREGIDO
 // ============================================================
 // Regla: 1 pedido completado = 1 token, NUNCA se duplica
-// - Por número de pedido: solo acredita ese pedido específico
-// - Por email: sincroniza todos los pedidos NO usados de ese email
-// - NUNCA hace ambas cosas en cascada
+// - Por número de pedido: sincroniza créditos de ESE pedido (total_items = créditos)
+// - Por email: sincroniza TODOS los pedidos del email
 // ============================================================
+
+/**
+ * Cuenta el total de licencias en un pedido de WooCommerce.
+ * Cada item × cantidad = 1 licencia.
+ */
+function countLicenses(order) {
+    if (!order.line_items || !order.line_items.length) return 1; // fallback
+    return order.line_items.reduce((sum, item) => sum + (item.quantity || 1), 0);
+}
+
+/**
+ * Sincroniza créditos y retorna datos contextuales.
+ * @returns {{ user, email, balance, isOrder, orderId } | null}
+ */
 async function syncAndGetUser(identifier) {
     const isOrderNumber = /^\d+$/.test(identifier);
 
     if (isOrderNumber && wc.isConfigured()) {
-        // ===== MODO PEDIDO: Solo acreditar este pedido específico =====
+        // ===== MODO PEDIDO =====
         const order = await wc.getOrderById(identifier);
         
-        if (!order) return null; // Pedido no existe
-        if (order.status !== 'completed') return null; // No completado
+        if (!order) return null;
+        if (order.status !== 'completed') return null;
 
         const resolvedEmail = order.billing?.email?.toLowerCase();
         if (!resolvedEmail) return null;
@@ -167,17 +180,23 @@ async function syncAndGetUser(identifier) {
         let user = db.findUserByEmail(resolvedEmail);
         if (!user) user = db.createUser({ email: resolvedEmail });
 
-        // Acreditar SOLO este pedido si no fue usado
-        if (!db.isOrderUsed(identifier)) {
-            db.markOrderUsed(identifier);
-            db.addCredits(user.id, 1, 'woocommerce_order_' + identifier);
-        }
+        // Sincronizar créditos del pedido (cuenta licencias reales)
+        const totalLicenses = countLicenses(order);
+        db.syncOrderCredits(identifier, resolvedEmail, totalLicenses);
 
-        // Retornar usuario actualizado — NO consultar más pedidos por email
-        return db.findUserByEmail(resolvedEmail);
+        // Obtener saldo de ESTE pedido
+        const orderBalance = db.getOrderBalance(identifier);
+        
+        return {
+            user,
+            email: resolvedEmail,
+            balance: orderBalance ? orderBalance.remaining : 0,
+            isOrder: true,
+            orderId: identifier
+        };
     }
 
-    // ===== MODO EMAIL: Sincronizar todos los pedidos del email =====
+    // ===== MODO EMAIL =====
     if (identifier.includes('@') && wc.isConfigured()) {
         const orders = await wc.getOrdersByEmail(identifier);
         
@@ -186,19 +205,32 @@ async function syncAndGetUser(identifier) {
         if (orders && orders.length > 0) {
             if (!user) user = db.createUser({ email: identifier });
             
+            // Sincronizar TODOS los pedidos del email
             for (const order of orders) {
-                if (order.status === 'completed' && !db.isOrderUsed(order.id)) {
-                    db.markOrderUsed(order.id);
-                    db.addCredits(user.id, 1, 'woocommerce_order_' + order.id);
+                if (order.status === 'completed') {
+                    const totalLicenses = countLicenses(order);
+                    db.syncOrderCredits(order.id, identifier, totalLicenses);
                 }
             }
         }
 
-        return user ? db.findUserByEmail(identifier) : null;
+        if (!user) return null;
+
+        // Obtener saldo global (todos los pedidos)
+        const globalBalance = db.getEmailBalance(identifier);
+        
+        return {
+            user,
+            email: identifier,
+            balance: globalBalance,
+            isOrder: false,
+            orderId: null
+        };
     }
 
     // Sin WooCommerce o formato no reconocido
-    return db.findUserByEmail(identifier);
+    const user = db.findUserByEmail(identifier);
+    return user ? { user, email: identifier, balance: 0, isOrder: false, orderId: null } : null;
 }
 
 // ============================================================
@@ -209,21 +241,10 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
     if (!email) return res.status(400).json({ success: false, error: 'Email o Nro de pedido requerido.' });
 
     const identifier = email.trim().toLowerCase();
-    const user = await syncAndGetUser(identifier);
+    const result = await syncAndGetUser(identifier);
 
-    if (!user) return res.status(400).json({ success: false, error: 'No encontrado. Verifica que sea tu email de compra o número de pedido y que el pago esté Completado.' });
-    if (user.balance <= 0) return res.status(400).json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra en cdkeysperu.com.' });
-
-    // Seguridad: si usó número de pedido, verificar que pertenece a su email registrado
-    const isOrderNumber = /^\d+$/.test(identifier);
-    if (isOrderNumber && user.email) {
-        try {
-            const order = await wc.getOrderById(identifier);
-            if (order && order.billing?.email?.toLowerCase() !== user.email.toLowerCase()) {
-                return res.status(403).json({ success: false, error: '❌ Este pedido no pertenece a tu cuenta.' });
-            }
-        } catch(e) { /* continue */ }
-    }
+    if (!result) return res.status(400).json({ success: false, error: 'No encontrado. Verifica que sea tu email de compra o número de pedido y que el pago esté Completado.' });
+    if (result.balance <= 0) return res.status(400).json({ success: false, error: 'Sin créditos. Contacta soporte o realiza una nueva compra en cdkeysperu.com.' });
 
     const startTime = Date.now();
     try {
@@ -241,28 +262,42 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
 
         const elapsed = Date.now() - startTime;
         if (cidResult.success) {
-            db.debitCredit(user.id);
-            const newBalance = db.getBalance(user.id);
+            // Consumir crédito según método usado
+            let consumed = false;
+            if (result.isOrder) {
+                consumed = db.consumeOrderCredit(result.orderId);
+            } else {
+                consumed = db.consumeEmailCredit(result.email);
+            }
+            
+            if (!consumed) {
+                return res.status(400).json({ success: false, error: 'Error al consumir crédito. Contacta soporte.' });
+            }
+            
+            // Calcular nuevo balance
+            const newBalance = result.isOrder 
+                ? db.getOrderBalance(result.orderId)?.remaining || 0
+                : db.getEmailBalance(result.email);
+            
             const cidStr = Array.isArray(cidResult.cid) ? cidResult.cid.join('-') : cidResult.cid;
-            db.logTransaction(user.id, 'web', cidResult.iid, cidStr, 'success', elapsed, cidResult.strategy);
+            db.logTransaction(result.user.id, 'web', cidResult.iid, cidStr, 'success', elapsed, cidResult.strategy);
             
             // Notificar al admin por Telegram
             const cidFormatted = fmtCID(cidStr);
+            const balanceLabel = result.isOrder ? `Pedido #${result.orderId}: ${newBalance}` : `Global: ${newBalance}`;
             notifyAdmin(
                 `🌐 <b>CID desde Web</b>\n\n` +
-                `👤 ${user.email || identifier}\n` +
+                `👤 ${result.email || identifier}\n` +
                 `📝 IID: <code>${cidResult.iid}</code>\n` +
                 `🔑 CID: <code>${cidFormatted}</code>\n` +
-                `💰 Balance: ${newBalance}`
+                `💰 Balance: ${balanceLabel}`
             );
             
-            // Balance a mostrar: si usó pedido, mostrar 0 ("pase usado"); si usó email, mostrar real
-            const displayBalance = /^\d+$/.test(identifier) ? 0 : newBalance;
-            return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: displayBalance, time_ms: elapsed });
+            return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: newBalance, time_ms: elapsed });
         } else {
             // OCR falló completamente
             const detectedIID = cidResult.detectedDigits || null;
-            db.logTransaction(user.id, 'web', detectedIID, null, 'failed', elapsed, null);
+            db.logTransaction(result.user.id, 'web', detectedIID, null, 'failed', elapsed, null);
             
             let errorMsg = '❌ No se pudo detectar el IID en la imagen.';
             if (detectedIID) {
@@ -277,7 +312,7 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         const elapsed = Date.now() - startTime;
         const iidForLog = e?.iid || iid?.replace(/\D/g, '') || null;
-        db.logTransaction(user.id, 'web', iidForLog, null, e?.code || 'error', elapsed, null);
+        db.logTransaction(result.user.id, 'web', iidForLog, null, e?.code || 'error', elapsed, null);
         return res.status(400).json(buildErrorResponse(e, iidForLog));
     }
 });
@@ -289,27 +324,15 @@ app.get('/api/check-balance', apiLimiter, async (req, res) => {
     const identifier = (req.query.email || '').trim().toLowerCase();
     if (!identifier) return res.json({ found: false });
 
-    const isOrderNumber = /^\d+$/.test(identifier);
-
-    // Si es número de pedido: mostrar 1 si no fue usado, 0 si ya fue usado
-    if (isOrderNumber) {
-        // Verificar si el pedido ya fue usado
-        if (db.isOrderUsed(identifier)) {
-            return res.json({ found: true, balance: 0, isOrder: true, orderUsed: true });
-        }
-        
-        // Sincronizar para verificar que el pedido existe en WooCommerce
-        const user = await syncAndGetUser(identifier);
-        if (!user) return res.json({ found: false });
-        
-        // Pedido válido y no usado = 1 CID disponible
-        return res.json({ found: true, balance: 1, isOrder: true, orderUsed: false });
-    }
-
-    // Si es email: mostrar balance real total
-    const user = await syncAndGetUser(identifier);
-    if (!user) return res.json({ found: false });
-    return res.json({ found: true, balance: user.balance, isOrder: false });
+    const result = await syncAndGetUser(identifier);
+    if (!result) return res.json({ found: false });
+    
+    return res.json({ 
+        found: true, 
+        balance: result.balance, 
+        isOrder: result.isOrder,
+        email: result.email
+    });
 });
 
 // ============================================================
