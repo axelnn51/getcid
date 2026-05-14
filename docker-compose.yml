@@ -30,8 +30,6 @@ services:
     build: ./getcid_service
     container_name: getcid_python
     restart: unless-stopped
-    volumes:
-      - ./getcid_service/states:/app/states
     environment:
       - MS_ACCOUNTS=${MS_ACCOUNTS}
       - MS_EMAIL=${MS_EMAIL}
