@@ -12,11 +12,16 @@ class IIDRequest(BaseModel):
 @app.post("/api/getcid")
 async def api_getcid(req: IIDRequest):
     """Endpoint de la API para procesar el IID."""
-    result = await process_iid(req.iid)
-    if result.get("success"):
-        return JSONResponse(status_code=200, content=result)
-    else:
-        return JSONResponse(status_code=400, content=result)
+    try:
+        import traceback
+        result = await process_iid(req.iid)
+        if result.get("success"):
+            return JSONResponse(status_code=200, content=result)
+        else:
+            return JSONResponse(status_code=400, content=result)
+    except Exception as e:
+        error_trace = traceback.format_exc()
+        return JSONResponse(status_code=500, content={"success": False, "error": f"CRITICAL PYTHON ERROR: {str(e)}\n{error_trace}"})
 
 @app.get("/api/health")
 async def health_check():

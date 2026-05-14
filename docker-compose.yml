@@ -36,3 +36,4 @@ services:
       - MS_ACCOUNTS=${MS_ACCOUNTS}
       - MS_EMAIL=${MS_EMAIL}
       - MS_PASSWORD=${MS_PASSWORD}
+      - FORCE_HEADLESS=true

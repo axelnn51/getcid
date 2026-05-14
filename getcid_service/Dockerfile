@@ -9,6 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el resto del código
 COPY . .
 
+# Asegurar que el directorio de sesiones existe dentro de la imagen
+RUN mkdir -p /app/states
+
 # Exponer el puerto de FastAPI
 EXPOSE 8000
 

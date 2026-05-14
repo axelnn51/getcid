@@ -40,15 +40,17 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
     
     needs_ui = not os.path.exists(state_file)
     
-    # En Ubuntu Server, forzar headless siempre, o solo UI si es la primera cuenta y estamos local
-    # Para rotación automática segura, intentaremos headless primero si se puede.
-    # Pero si needs_ui es True y estamos en un server (asumido si hay multiples cuentas), 
-    # la rotación intentará loguearse vía UI automática. Si pide captcha, fallará rápido.
+    # FORCE_HEADLESS=true en Docker/servidor para NUNCA intentar abrir ventana
+    # En local (sin esa variable), permite ventana para login manual con CAPTCHA
+    force_headless = os.getenv("FORCE_HEADLESS", "false").lower() == "true"
     is_headless = True
     
-    if needs_ui and is_first_account and len(ACCOUNTS) == 1:
-        # Modo interactivo solo si es la única cuenta y primera vez (para PC local)
+    if needs_ui and is_first_account and len(ACCOUNTS) == 1 and not force_headless:
+        # Modo interactivo solo en PC local (nunca en servidor Docker)
         is_headless = False
+    
+    if force_headless and needs_ui:
+        logger.warning(f"[{email}] No hay sesión guardada y estamos en modo servidor. Se intentará headless (puede fallar por CAPTCHA).")
 
     logger.info(f"Probando cuenta: {email} (Headless: {is_headless})")
     
