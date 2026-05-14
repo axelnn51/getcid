@@ -256,7 +256,9 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
                 `💰 Balance: ${newBalance}`
             );
             
-            return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: newBalance, time_ms: elapsed });
+            // Balance a mostrar: si usó pedido, mostrar 0 ("pase usado"); si usó email, mostrar real
+            const displayBalance = /^\d+$/.test(identifier) ? 0 : newBalance;
+            return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: displayBalance, time_ms: elapsed });
         } else {
             // OCR falló completamente
             const detectedIID = cidResult.detectedDigits || null;
@@ -287,9 +289,27 @@ app.get('/api/check-balance', apiLimiter, async (req, res) => {
     const identifier = (req.query.email || '').trim().toLowerCase();
     if (!identifier) return res.json({ found: false });
 
+    const isOrderNumber = /^\d+$/.test(identifier);
+
+    // Si es número de pedido: mostrar 1 si no fue usado, 0 si ya fue usado
+    if (isOrderNumber) {
+        // Verificar si el pedido ya fue usado
+        if (db.isOrderUsed(identifier)) {
+            return res.json({ found: true, balance: 0, isOrder: true, orderUsed: true });
+        }
+        
+        // Sincronizar para verificar que el pedido existe en WooCommerce
+        const user = await syncAndGetUser(identifier);
+        if (!user) return res.json({ found: false });
+        
+        // Pedido válido y no usado = 1 CID disponible
+        return res.json({ found: true, balance: 1, isOrder: true, orderUsed: false });
+    }
+
+    // Si es email: mostrar balance real total
     const user = await syncAndGetUser(identifier);
     if (!user) return res.json({ found: false });
-    return res.json({ found: true, balance: user.balance });
+    return res.json({ found: true, balance: user.balance, isOrder: false });
 });
 
 // ============================================================
