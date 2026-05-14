@@ -16,8 +16,10 @@ import logging
 
 logger = logging.getLogger("TokenRefresher")
 
-REFRESH_TOKEN_FILE = "ms_refresh_token.json"
-TOKEN_CACHE_FILE = "ms_token.json"
+# Usar directorio persistente si existe (Docker volume)
+PERSIST_DIR = "/app/persist" if os.path.isdir("/app/persist") else "."
+REFRESH_TOKEN_FILE = os.path.join(PERSIST_DIR, "ms_refresh_token.json")
+TOKEN_CACHE_FILE = "ms_token.json"  # Este puede ser efímero, se regenera con refresh
 
 
 async def refresh_access_token() -> str:

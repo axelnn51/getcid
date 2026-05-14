@@ -30,6 +30,8 @@ services:
     build: ./getcid_service
     container_name: getcid_python
     restart: unless-stopped
+    volumes:
+      - ./python_data:/app/persist
     environment:
       - MS_ACCOUNTS=${MS_ACCOUNTS}
       - MS_EMAIL=${MS_EMAIL}
