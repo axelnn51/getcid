@@ -40,21 +40,21 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
     
     needs_ui = not os.path.exists(state_file)
     
-    # FORCE_HEADLESS=true en Docker/servidor para NUNCA intentar abrir ventana
-    # En local (sin esa variable), permite ventana para login manual con CAPTCHA
-    force_headless = os.getenv("FORCE_HEADLESS", "false").lower() == "true"
-    is_headless = True
+    # IS_SERVER=true en Docker → login 100% automatizado (Xvfb provee pantalla virtual)
+    # En local (sin esa variable) → login manual si no hay sesión (ventana visible para el usuario)
+    # CLAVE: headless=False SIEMPRE. En servidor, Xvfb simula la pantalla.
+    # Microsoft NO puede distinguir esto de un navegador real → no lanza CAPTCHA.
+    is_server = os.getenv("IS_SERVER", "false").lower() == "true"
+    is_headless = False  # NUNCA headless. Xvfb en servidor, pantalla real en local.
     
-    if needs_ui and is_first_account and len(ACCOUNTS) == 1 and not force_headless:
-        # Modo interactivo solo en PC local (nunca en servidor Docker)
-        is_headless = False
-    
-    if force_headless and needs_ui:
-        logger.warning(f"[{email}] No hay sesión guardada y estamos en modo servidor. Se intentará headless (puede fallar por CAPTCHA).")
+    if needs_ui and not is_server:
+        logger.warning(f"[{email}] No hay sesión guardada. Abriendo Chrome para login manual...")
+    elif needs_ui and is_server:
+        logger.warning(f"[{email}] No hay sesión guardada en servidor. Intentando login automatizado con Xvfb...")
 
-    logger.info(f"Probando cuenta: {email} (Headless: {is_headless})")
+    logger.info(f"Probando cuenta: {email} (Headless: {is_headless}, Server: {is_server})")
     
-    browser = await p.chromium.launch(headless=is_headless, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'])
+    browser = await p.chromium.launch(headless=is_headless, args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage'])
     
     context_options = {}
     if not needs_ui:
@@ -86,7 +86,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
         await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
 
-        if needs_ui and not is_headless:
+        if needs_ui and not is_server:
             # Login manual guiado
             logger.warning(f"[{email}] Esperando que completes el login interactivo/CAPTCHA...")
             for _ in range(60):
@@ -129,7 +129,12 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                     break
                 
                 # Si pide Captcha explícito en la URL o DOM
-                if "captchaa" in page.url.lower():
+                page_url = page.url.lower()
+                try:
+                    page_text = await page.locator("body").inner_text(timeout=2000)
+                except:
+                    page_text = ""
+                if "captcha" in page_url or "challenge" in page_url or "HIP" in page_text:
                     logger.error(f"[{email}] Microsoft detectó bot y pide CAPTCHA. Abandonando cuenta.")
                     return None
                     

@@ -35,3 +35,4 @@ services:
       - MS_EMAIL=${MS_EMAIL}
       - MS_PASSWORD=${MS_PASSWORD}
       - FORCE_HEADLESS=true
+      - IS_SERVER=true
