@@ -12,12 +12,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar el resto del código (incluye states/ con sesión pre-guardada)
 COPY . .
 
-# Asegurar que el directorio de sesiones existe dentro de la imagen
-RUN mkdir -p /app/states
+# Asegurar que el directorio de sesiones existe y el script de arranque es ejecutable
+RUN mkdir -p /app/states && chmod +x /app/start.sh
 
 # Exponer el puerto de FastAPI
 EXPOSE 8000
 
-# Usar xvfb-run para crear pantalla virtual → Chrome corre en modo "normal" (no headless)
-# Microsoft ve un navegador real y no lanza CAPTCHA
-CMD ["xvfb-run", "--auto-servernum", "--server-args=-screen 0 1280x720x24", "python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Usar script de arranque que inicia Xvfb + uvicorn
+CMD ["/bin/bash", "/app/start.sh"]
