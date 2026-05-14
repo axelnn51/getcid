@@ -81,6 +81,44 @@ async def token_status():
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+    client_id: str
+    scopes: str = ""
+
+@app.post("/api/setrefreshtoken")
+async def set_refresh_token(req: RefreshTokenRequest):
+    """Recibe un refresh token de Microsoft para auto-renovación."""
+    try:
+        from token_refresher import save_refresh_token
+        save_refresh_token(req.refresh_token, req.client_id, req.scopes)
+        
+        # Intentar obtener un access token inmediatamente
+        from token_refresher import refresh_access_token
+        new_token = await refresh_access_token()
+        
+        if new_token:
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "message": "Refresh token guardado y access token generado. Renovación automática activa por ~90 días."
+            })
+        else:
+            return JSONResponse(status_code=200, content={
+                "success": True,
+                "message": "Refresh token guardado, pero no se pudo generar access token inmediatamente. Se intentará en la próxima solicitud."
+            })
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+@app.get("/api/refreshtoken-status")
+async def refresh_token_status():
+    """Estado del refresh token."""
+    try:
+        from token_refresher import get_refresh_token_status
+        return get_refresh_token_status()
+    except ImportError:
+        return {"status": "error", "message": "Módulo token_refresher no disponible."}
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}

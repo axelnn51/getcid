@@ -266,32 +266,105 @@ async def extract_ms_token() -> str:
         logger.error("No hay cuentas configuradas en .env (MS_ACCOUNTS o MS_EMAIL)")
         return None
 
+    # 1. Verificar si hay un access token vigente en caché
     if os.path.exists(TOKEN_CACHE_FILE):
         try:
             with open(TOKEN_CACHE_FILE, 'r') as f:
                 data = json.load(f)
                 if data.get('expires_at', 0) > time.time():
+                    logger.info("Access token en caché aún válido.")
                     return data.get('token')
         except Exception as e:
             logger.warning(f"Error leyendo caché de token: {e}")
 
+    # 2. Intentar renovar con Refresh Token (sin navegador, sin CAPTCHA)
+    try:
+        from token_refresher import refresh_access_token
+        logger.info("Intentando renovar access token con refresh token...")
+        new_token = await refresh_access_token()
+        if new_token:
+            logger.info("Access token renovado exitosamente via refresh token. Sin CAPTCHA!")
+            return new_token
+        else:
+            logger.warning("Refresh token no disponible o expirado. Cayendo a Playwright...")
+    except ImportError:
+        logger.warning("Módulo token_refresher no disponible.")
+    except Exception as e:
+        logger.warning(f"Error en refresh token: {e}")
+
+    # 3. Último recurso: Playwright (solo funciona en local o con CAPTCHA solver)
     logger.info("Iniciando motor Playwright Stealth para rotación de cuentas...")
     
     async with async_playwright() as p:
         for index, account in enumerate(ACCOUNTS):
             token = await attempt_login_for_account(p, account, is_first_account=(index == 0))
             if token:
+                # Guardar access token
                 with open(TOKEN_CACHE_FILE, 'w') as f:
                     json.dump({
                         'token': token,
                         'expires_at': time.time() + 3000
                     }, f)
+                
+                # Extraer y guardar refresh token para uso futuro
+                await extract_refresh_token_from_cache(account['email'])
+                
                 return token
             else:
                 logger.warning(f"Cuenta {account['email']} falló. Pasando a la siguiente...")
                 
         logger.error("¡ALERTA CRÍTICA! Todas las cuentas fallaron o pidieron CAPTCHA.")
-        # Aquí se podría integrar la alerta de Telegram
+        return None
+
+
+async def extract_refresh_token_from_cache(email: str):
+    """
+    Extrae el Refresh Token del caché MSAL guardado en sessionStorage/localStorage
+    durante el login con Playwright. Lo guarda para uso futuro en el servidor.
+    """
+    state_file = os.path.join(STATE_DIR, f"state_{email.replace('@', '_').replace('.', '_')}.json")
+    
+    if not os.path.exists(state_file):
+        return
+    
+    try:
+        with open(state_file, 'r') as f:
+            state_data = json.load(f)
+        
+        # Buscar refresh token en los origins del storage state
+        for origin_data in state_data.get('origins', []):
+            for item in origin_data.get('localStorage', []):
+                value = item.get('value', '')
+                name = item.get('name', '')
+                
+                # Buscar entradas MSAL con RefreshToken
+                if 'RefreshToken' in name or 'refreshtoken' in name.lower():
+                    try:
+                        token_data = json.loads(value)
+                        if 'secret' in token_data:
+                            # Buscar client_id en la misma storage
+                            client_id = token_data.get('client_id', '')
+                            if not client_id:
+                                # Extraer de otras entradas
+                                for other_item in origin_data.get('localStorage', []):
+                                    if 'client_id' in other_item.get('name', '').lower():
+                                        client_id = other_item.get('value', '')
+                                        break
+                            
+                            from token_refresher import save_refresh_token
+                            save_refresh_token(
+                                refresh_token=token_data['secret'],
+                                client_id=client_id,
+                                scopes=token_data.get('target', '')
+                            )
+                            logger.info(f"Refresh token extraído y guardado. Válido por ~90 días.")
+                            return
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+        
+        logger.warning("No se encontró refresh token en el storage state.")
+    except Exception as e:
+        logger.warning(f"Error extrayendo refresh token: {e}")
         return None
 
 if __name__ == "__main__":

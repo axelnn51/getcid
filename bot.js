@@ -249,6 +249,69 @@ function startBot() {
     });
 
     // ============================================================
+    // /setrefreshtoken — Token permanente (90 días) para auto-renovación
+    // ============================================================
+    bot.command('setrefreshtoken', async (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+        
+        const text = ctx.message.text.replace('/setrefreshtoken', '').trim();
+        
+        if (!text) {
+            return ctx.reply(
+                '🔑 *Cómo usar /setrefreshtoken:*\n\n' +
+                '1️⃣ En tu PC, ejecuta el scraper:\n' +
+                '`cd NUEVOGETCID && .\\venv\\Scripts\\python.exe scraper.py`\n\n' +
+                '2️⃣ Inicia sesión en Chrome\n\n' +
+                '3️⃣ Abre `ms_refresh_token.json` y copia TODO el contenido\n\n' +
+                '4️⃣ Envía: `/setrefreshtoken {contenido_del_json}`\n\n' +
+                '⏱ El refresh token dura ~90 días. Solo necesitas hacer esto UNA VEZ cada 3 meses.',
+                { parse_mode: 'Markdown' }
+            );
+        }
+        
+        try {
+            // Intentar parsear como JSON
+            const data = JSON.parse(text);
+            
+            if (!data.refresh_token || !data.client_id) {
+                return ctx.reply('❌ JSON inválido. Necesita `refresh_token` y `client_id`.');
+            }
+            
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/setrefreshtoken`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    refresh_token: data.refresh_token,
+                    client_id: data.client_id,
+                    scopes: data.scopes || ''
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                ctx.reply(
+                    `✅ *Refresh Token configurado*\n\n` +
+                    `🔄 Auto-renovación activa por ~90 días\n` +
+                    `🤖 El servidor renovará tokens automáticamente\n` +
+                    `📅 Próxima renovación manual: ~${new Date(Date.now() + 90*24*60*60*1000).toLocaleDateString()}\n\n` +
+                    `${result.message}`,
+                    { parse_mode: 'Markdown' }
+                );
+            } else {
+                ctx.reply(`❌ Error: ${result.error}`);
+            }
+        } catch (err) {
+            if (err instanceof SyntaxError) {
+                ctx.reply('❌ El texto no es JSON válido. Copia el contenido COMPLETO del archivo `ms_refresh_token.json`.');
+            } else {
+                ctx.reply(`❌ Error: ${err.message}`);
+            }
+        }
+    });
+
+    // ============================================================
     // FOTOS — Con mensajes de error descriptivos
     // ============================================================
     bot.on('photo', async (ctx) => {
