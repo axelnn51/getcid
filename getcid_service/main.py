@@ -1,24 +1,13 @@
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 from core import process_iid
 
-app = FastAPI(title="GetCID Server", description="Servidor autoalojado para obtener Confirmation IDs")
-
-# Montar recursos estáticos y plantillas
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app = FastAPI(title="GetCID API Server", description="Servidor interno para obtener Confirmation IDs")
 
 class IIDRequest(BaseModel):
     iid: str
-
-@app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    """Renderiza la interfaz web principal."""
-    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/api/getcid")
 async def api_getcid(req: IIDRequest):
@@ -29,5 +18,9 @@ async def api_getcid(req: IIDRequest):
     else:
         return JSONResponse(status_code=400, content=result)
 
+@app.get("/api/health")
+async def health_check():
+    return {"status": "ok"}
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)
