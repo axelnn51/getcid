@@ -183,6 +183,71 @@ function startBot() {
     });
 
     // ============================================================
+    // /settoken — Admin envía token de Microsoft generado localmente
+    // ============================================================
+    bot.command('settoken', async (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+        
+        const args = ctx.message.text.split(' ').slice(1);
+        if (args.length < 1) {
+            return ctx.reply(
+                '🔑 *Cómo usar /settoken:*\n\n' +
+                '1️⃣ En tu PC local, abre `NUEVOGETCID`\n' +
+                '2️⃣ Ejecuta: `python scraper.py`\n' +
+                '3️⃣ Inicia sesión en Chrome cuando se abra\n' +
+                '4️⃣ Copia el token del archivo `ms_token.json`\n' +
+                '5️⃣ Envía: `/settoken EL_TOKEN_AQUI`\n\n' +
+                '⏱ El token dura ~1 hora.',
+                { parse_mode: 'Markdown' }
+            );
+        }
+        
+        const token = args.join(' ').trim();
+        
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/settoken`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token, duration: 3600 })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                ctx.reply(`✅ *Token actualizado exitosamente*\n⏱ Válido por 60 minutos.\n\n💡 Usa /tokenstatus para verificar.`, { parse_mode: 'Markdown' });
+            } else {
+                ctx.reply(`❌ Error: ${data.error}`);
+            }
+        } catch (err) {
+            ctx.reply(`❌ No se pudo conectar con el servicio Python: ${err.message}`);
+        }
+    });
+
+    // ============================================================
+    // /tokenstatus — Verificar estado del token actual
+    // ============================================================
+    bot.command('tokenstatus', async (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+        
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/token-status`);
+            const data = await response.json();
+            
+            if (data.status === 'valid') {
+                ctx.reply(`🟢 *Token ACTIVO*\n⏱ Quedan: ${data.remaining_minutes} minutos`, { parse_mode: 'Markdown' });
+            } else if (data.status === 'expired') {
+                ctx.reply(`🔴 *Token EXPIRADO*\n\nUsa /settoken para renovarlo.`, { parse_mode: 'Markdown' });
+            } else {
+                ctx.reply(`⚪ *Sin token*\n\nUsa /settoken para configurar uno.`, { parse_mode: 'Markdown' });
+            }
+        } catch (err) {
+            ctx.reply(`❌ No se pudo verificar: ${err.message}`);
+        }
+    });
+
+    // ============================================================
     // FOTOS — Con mensajes de error descriptivos
     // ============================================================
     bot.on('photo', async (ctx) => {
