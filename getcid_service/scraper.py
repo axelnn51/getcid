@@ -87,7 +87,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
         await page.wait_for_timeout(3000)
 
         if needs_ui and not is_server:
-            # Login manual guiado
+            # ===== RUTA 1: Login manual en PC local (con ventana visible) =====
             logger.warning(f"[{email}] Esperando que completes el login interactivo/CAPTCHA...")
             for _ in range(60):
                 if captured_token: break
@@ -100,62 +100,160 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                             await page.locator("input[type='password']").fill(password)
                     except: pass
             
-            if captured_token or "visualsupport.microsoft.com/productActivation" in page.url:
+            if captured_token or "visualsupport.microsoft.com" in page.url:
                 await context.storage_state(path=state_file)
                 logger.info(f"[{email}] Estado de sesión guardado permanentemente.")
-        else:
-            # Flujo automatizado / Headless
-            btn_text = await page.locator("body").inner_text()
-            if "Let" in btn_text and "Started" in btn_text:
-                await page.get_by_role("button").first.click()
-                
-            # Intentar login automático si aparece
-            for _ in range(4):
-                if "login.microsoftonline.com" in page.url:
-                    if await page.locator("input[type='email']").is_visible(timeout=2000):
-                        await page.locator("input[type='email']").fill(email)
-                        await page.locator("input[type='submit']").click()
-                        await page.wait_for_timeout(2000)
-                    
-                    if await page.locator("input[type='password']").is_visible(timeout=3000):
-                        await page.locator("input[type='password']").fill(password)
-                        await page.locator("input[type='submit']").click()
-                        await page.wait_for_timeout(3000)
-                        
-                        if await page.locator("input[id='idBtn_Back']").is_visible(timeout=3000):
-                            await page.locator("input[id='idBtn_Back']").click()
-                            
-                    await context.storage_state(path=state_file)
+
+        elif not needs_ui:
+            # ===== RUTA 2: Sesión guardada existe (cookies cargadas) =====
+            logger.info(f"[{email}] Sesión guardada cargada. Esperando que cookies autentiquen...")
+            
+            # Dar tiempo generoso a las cookies para que hagan el handshake OAuth
+            for i in range(15):  # Máximo 30 segundos
+                if captured_token:
+                    logger.info(f"[{email}] Token capturado via cookies en {i*2}s")
                     break
                 
-                # Si pide Captcha explícito en la URL o DOM
-                page_url = page.url.lower()
-                try:
-                    page_text = await page.locator("body").inner_text(timeout=2000)
-                except:
-                    page_text = ""
-                if "captcha" in page_url or "challenge" in page_url or "HIP" in page_text:
-                    logger.error(f"[{email}] Microsoft detectó bot y pide CAPTCHA. Abandonando cuenta.")
-                    return None
+                current_url = page.url
+                logger.info(f"[{email}] Iteración {i+1}/15 - URL: {current_url[:80]}...")
+                
+                # Si estamos en visualsupport, buscar botón "Let's Get Started"
+                if "visualsupport.microsoft.com" in current_url and "login" not in current_url:
+                    try:
+                        btn = page.get_by_role("button", name="Get Started")
+                        if await btn.is_visible(timeout=1000):
+                            await btn.click()
+                            logger.info(f"[{email}] Botón 'Get Started' clickeado.")
+                            await page.wait_for_timeout(3000)
+                            continue
+                    except: pass
+                    
+                    # También intentar cualquier botón visible
+                    try:
+                        body_text = await page.locator("body").inner_text(timeout=2000)
+                        if "Let" in body_text and "Started" in body_text:
+                            await page.get_by_role("button").first.click()
+                            await page.wait_for_timeout(3000)
+                            continue
+                    except: pass
+                
+                # Si nos redirigió a login, las cookies expiraron → intentar login automático
+                if "login.microsoftonline.com" in current_url and i > 3:
+                    logger.warning(f"[{email}] Cookies expiraron. Intentando login automático...")
+                    try:
+                        if await page.locator("input[type='email']").is_visible(timeout=2000):
+                            await page.locator("input[type='email']").fill(email)
+                            await page.locator("input[type='submit']").click()
+                            await page.wait_for_timeout(2000)
+                        
+                        if await page.locator("input[type='password']").is_visible(timeout=3000):
+                            await page.locator("input[type='password']").fill(password)
+                            await page.locator("input[type='submit']").click()
+                            await page.wait_for_timeout(3000)
+                            
+                            if await page.locator("input[id='idBtn_Back']").is_visible(timeout=3000):
+                                await page.locator("input[id='idBtn_Back']").click()
+                        
+                        await context.storage_state(path=state_file)
+                        logger.info(f"[{email}] Sesión renovada y guardada.")
+                    except Exception as login_err:
+                        logger.warning(f"[{email}] Login automático falló: {login_err}")
                     
                 await page.wait_for_timeout(2000)
 
-            await page.wait_for_timeout(6000)
+        else:
+            # ===== RUTA 3: Sin sesión en servidor (primer uso) =====
+            logger.warning(f"[{email}] Sin sesión en servidor. Login automático con Xvfb...")
+            
+            # Buscar botón "Let's Get Started"
+            try:
+                body_text = await page.locator("body").inner_text(timeout=3000)
+                if "Let" in body_text and "Started" in body_text:
+                    await page.get_by_role("button").first.click()
+                    await page.wait_for_timeout(3000)
+            except: pass
+            
+            # Intentar login automático
+            for attempt in range(6):
+                if captured_token: break
+                
+                if "login.microsoftonline.com" in page.url:
+                    # Verificar CAPTCHA real (solo por imagen de captcha, no por URL genérica)
+                    try:
+                        captcha_img = page.locator("img[id*='captcha'], img[id*='hip'], #hipTemplateContainer")
+                        if await captcha_img.is_visible(timeout=1500):
+                            logger.error(f"[{email}] CAPTCHA visual detectado. Abandonando cuenta.")
+                            try:
+                                await page.screenshot(path="/app/debug_captcha.png")
+                            except: pass
+                            return None
+                    except: pass
+                    
+                    try:
+                        if await page.locator("input[type='email']").is_visible(timeout=2000):
+                            await page.locator("input[type='email']").fill(email)
+                            await page.locator("input[type='submit']").click()
+                            await page.wait_for_timeout(2000)
+                        
+                        if await page.locator("input[type='password']").is_visible(timeout=3000):
+                            await page.locator("input[type='password']").fill(password)
+                            await page.locator("input[type='submit']").click()
+                            await page.wait_for_timeout(3000)
+                            
+                            if await page.locator("input[id='idBtn_Back']").is_visible(timeout=3000):
+                                await page.locator("input[id='idBtn_Back']").click()
+                                
+                        await context.storage_state(path=state_file)
+                        logger.info(f"[{email}] Sesión creada y guardada en servidor.")
+                        break
+                    except Exception as e:
+                        logger.warning(f"[{email}] Intento {attempt+1} de login falló: {e}")
+                
+                await page.wait_for_timeout(3000)
+            
+            await page.wait_for_timeout(5000)
 
-        # Fallback a Session Storage
+        # ===== Fallback: extraer token de Session Storage / Local Storage =====
         if not captured_token:
-            session_storage = await page.evaluate("() => JSON.stringify(window.sessionStorage)")
-            if session_storage:
-                ss_data = json.loads(session_storage)
-                for key, value in ss_data.items():
-                    if "AccessToken" in key or "accesstoken" in key.lower() or "secret" in value:
-                        try:
-                            token_data = json.loads(value)
-                            if "secret" in token_data:
-                                captured_token = token_data["secret"]
-                                logger.info(f"[{email}] Token extraído del caché MSAL.")
-                                break
-                        except: pass
+            logger.info(f"[{email}] Token no capturado por interceptor. Buscando en storage...")
+            try:
+                # Session Storage
+                session_storage = await page.evaluate("() => JSON.stringify(window.sessionStorage)")
+                if session_storage:
+                    ss_data = json.loads(session_storage)
+                    for key, value in ss_data.items():
+                        if "AccessToken" in key or "accesstoken" in key.lower():
+                            try:
+                                token_data = json.loads(value)
+                                if "secret" in token_data:
+                                    captured_token = token_data["secret"]
+                                    logger.info(f"[{email}] Token extraído de sessionStorage (MSAL).")
+                                    break
+                            except: pass
+                
+                # Local Storage fallback
+                if not captured_token:
+                    local_storage = await page.evaluate("() => JSON.stringify(window.localStorage)")
+                    if local_storage:
+                        ls_data = json.loads(local_storage)
+                        for key, value in ls_data.items():
+                            if "AccessToken" in key or "accesstoken" in key.lower():
+                                try:
+                                    token_data = json.loads(value)
+                                    if "secret" in token_data:
+                                        captured_token = token_data["secret"]
+                                        logger.info(f"[{email}] Token extraído de localStorage.")
+                                        break
+                                except: pass
+            except Exception as storage_err:
+                logger.warning(f"[{email}] Error buscando en storage: {storage_err}")
+            
+            if not captured_token:
+                logger.error(f"[{email}] No se pudo capturar token. URL final: {page.url}")
+                try:
+                    await page.screenshot(path="/app/debug_no_token.png")
+                    logger.info(f"[{email}] Screenshot de debug guardado en /app/debug_no_token.png")
+                except: pass
 
     except Exception as e:
         logger.error(f"[{email}] Error en Playwright: {e}")
