@@ -1,4 +1,5 @@
 import asyncio
+import random
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 import os
@@ -84,7 +85,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
 
     try:
         await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(2000 + random.randint(500, 2000))
 
         if needs_ui and not is_server:
             # ===== RUTA 1: Login manual en PC local (con ventana visible) =====
@@ -159,7 +160,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                     except Exception as login_err:
                         logger.warning(f"[{email}] Login automático falló: {login_err}")
                     
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(2000 + random.randint(500, 1500))
 
         else:
             # ===== RUTA 3: Sin sesión en servidor (primer uso) =====
@@ -178,11 +179,24 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                 if captured_token: break
                 
                 if "login.microsoftonline.com" in page.url:
-                    # Verificar CAPTCHA real (solo por imagen de captcha, no por URL genérica)
+                    # Verificar CAPTCHA por múltiples señales (contenido HTML, no solo URL)
                     try:
-                        captcha_img = page.locator("img[id*='captcha'], img[id*='hip'], #hipTemplateContainer")
-                        if await captcha_img.is_visible(timeout=1500):
-                            logger.error(f"[{email}] CAPTCHA visual detectado. Abandonando cuenta.")
+                        page_html = await page.content()
+                        captcha_signals = [
+                            await page.locator("img[id*='captcha'], img[id*='hip'], #hipTemplateContainer").is_visible(timeout=1500),
+                        ]
+                        # También verificar por contenido HTML
+                        html_captcha = any(x in page_html.lower() for x in [
+                            'captcha', 'funcaptcha', 'arkoselabs', 'hcaptcha',
+                            'verification required', 'prove you\'re not a robot'
+                        ])
+                        
+                        if any(captcha_signals) or html_captcha:
+                            logger.error(f"[{email}] CAPTCHA detectado (visual={captcha_signals[0]}, html={html_captcha}). Abandonando cuenta.")
+                            # Borrar sesión corrupta para forzar re-login limpio
+                            if os.path.exists(state_file):
+                                os.remove(state_file)
+                                logger.info(f"[{email}] Sesión corrupta eliminada para re-login limpio.")
                             try:
                                 await page.screenshot(path="/app/debug_captcha.png")
                             except: pass
@@ -192,13 +206,15 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                     try:
                         if await page.locator("input[type='email']").is_visible(timeout=2000):
                             await page.locator("input[type='email']").fill(email)
+                            await page.wait_for_timeout(random.randint(500, 1500))
                             await page.locator("input[type='submit']").click()
-                            await page.wait_for_timeout(2000)
+                            await page.wait_for_timeout(2000 + random.randint(500, 1500))
                         
                         if await page.locator("input[type='password']").is_visible(timeout=3000):
                             await page.locator("input[type='password']").fill(password)
+                            await page.wait_for_timeout(random.randint(500, 1500))
                             await page.locator("input[type='submit']").click()
-                            await page.wait_for_timeout(3000)
+                            await page.wait_for_timeout(3000 + random.randint(500, 1500))
                             
                             if await page.locator("input[id='idBtn_Back']").is_visible(timeout=3000):
                                 await page.locator("input[id='idBtn_Back']").click()
@@ -209,9 +225,9 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                     except Exception as e:
                         logger.warning(f"[{email}] Intento {attempt+1} de login falló: {e}")
                 
-                await page.wait_for_timeout(3000)
+                await page.wait_for_timeout(3000 + random.randint(500, 2000))
             
-            await page.wait_for_timeout(5000)
+            await page.wait_for_timeout(3000 + random.randint(1000, 3000))
 
         # ===== Fallback: extraer token de Session Storage / Local Storage =====
         if not captured_token:
@@ -299,11 +315,11 @@ async def extract_ms_token() -> str:
         for index, account in enumerate(ACCOUNTS):
             token = await attempt_login_for_account(p, account, is_first_account=(index == 0))
             if token:
-                # Guardar access token
+                # Guardar access token con duración real (1 hora típico de MS)
                 with open(TOKEN_CACHE_FILE, 'w') as f:
                     json.dump({
                         'token': token,
-                        'expires_at': time.time() + 3000
+                        'expires_at': time.time() + 3500  # ~58 min (access tokens de MS duran 1h)
                     }, f)
                 
                 # Extraer y guardar refresh token para uso futuro
@@ -314,6 +330,23 @@ async def extract_ms_token() -> str:
                 logger.warning(f"Cuenta {account['email']} falló. Pasando a la siguiente...")
                 
         logger.error("¡ALERTA CRÍTICA! Todas las cuentas fallaron o pidieron CAPTCHA.")
+        
+        # Enviar alerta Telegram
+        try:
+            from telegram_alert import send_alert
+            import asyncio
+            await send_alert(
+                "🔴 *ALERTA CRÍTICA: Scraper Fallido*\n\n"
+                "Todas las cuentas de Microsoft fallaron o pidieron CAPTCHA.\n"
+                "El servicio de CID está fuera de línea.\n\n"
+                "Acciones:\n"
+                "• `/setrefreshtoken` — Renovar token manual\n"
+                "• `/deviceauth` — Device Code Flow\n"
+                "• Verificar cuentas MS en .env"
+            )
+        except:
+            pass
+        
         return None
 
 

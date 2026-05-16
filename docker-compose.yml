@@ -38,3 +38,5 @@ services:
       - MS_PASSWORD=${MS_PASSWORD}
       - FORCE_HEADLESS=true
       - IS_SERVER=true
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_IDS=${ADMIN_IDS}
