@@ -103,11 +103,13 @@ async def refresh_access_token() -> str:
                     "client_id": client_id,
                     "grant_type": "refresh_token",
                     "refresh_token": refresh_token,
-                    "scope": scopes
+                    "scope": "api://2b217cec-607d-4eb6-887e-c928520a14f6/Product.Activation offline_access openid profile email" if token_type['type'] == 'spa' else scopes
                 },
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
-                    "Origin": "https://visualsupport.microsoft.com"
+                    "Origin": "https://visualsupport.microsoft.com",
+                    "Referer": "https://visualsupport.microsoft.com/",
+                    "Accept": "application/json"
                 }
             )
 
