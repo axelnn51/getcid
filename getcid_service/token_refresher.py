@@ -97,14 +97,23 @@ async def refresh_access_token() -> str:
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
+            # Para tokens SPA de visualsupport, necesitamos redirect_uri y los scopes originales
+            form_data = {
+                "client_id": client_id,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "scope": scopes or "openid profile email"
+            }
+
+            # Microsoft REQUIERE redirect_uri para clientes SPA
+            if token_type['type'] == 'spa':
+                form_data["redirect_uri"] = "https://visualsupport.microsoft.com"
+
+            logger.info(f"Enviando refresh con scopes: '{form_data['scope']}', redirect_uri: {form_data.get('redirect_uri', 'N/A')}")
+
             response = await client.post(
                 "https://login.microsoftonline.com/common/oauth2/v2.0/token",
-                data={
-                    "client_id": client_id,
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                    "scope": "api://2b217cec-607d-4eb6-887e-c928520a14f6/Product.Activation offline_access openid profile email" if token_type['type'] == 'spa' else scopes
-                },
+                data=form_data,
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
                     "Origin": "https://visualsupport.microsoft.com",
