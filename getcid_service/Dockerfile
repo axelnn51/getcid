@@ -3,7 +3,7 @@ FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
 WORKDIR /app
 
 # Instalar Xvfb para pantalla virtual (evita detección de headless por Microsoft)
-RUN apt-get update && apt-get install -y xvfb && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y xvfb dbus-x11 && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements e instalar
 COPY requirements.txt .
