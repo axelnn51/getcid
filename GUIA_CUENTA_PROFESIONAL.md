@@ -4,6 +4,11 @@
 
 Dado que el programa de desarrolladores de Microsoft 365 ahora tiene restricciones, aquí tienes el método oficial y 100% gratuito directamente desde el portal de seguridad de Microsoft, **sin tarjeta de crédito**.
 
+> [!TIP]
+> **ATAJO: Tienes licencias Office 365 A3 (Pro Plus)**
+> Las licencias A3 son Educativas, lo que significa que **ya son cuentas Profesionales/Educativas**. 
+> Si ya tienes una cuenta con esta licencia, **puedes saltarte los pasos 1, 2 y 3** y pasar directamente a la sección "Cómo usarlo en tu Bot (GetCID)".
+
 ---
 
 ### 🛠️ Pasos a seguir (Toma 2 minutos):
