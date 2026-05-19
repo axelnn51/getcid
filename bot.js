@@ -638,7 +638,9 @@ function startBot() {
             });
             
             const data = await response.json();
-            if (!data.success) {
+            if (data.success) {
+                ctx.reply(`⚙️ Recibido. Procesando ${clicks} clics y esperando validación de Microsoft...\n\n⏳ _Esto puede tomar 1 a 2 minutos, no toques nada más._`, { parse_mode: 'Markdown' });
+            } else {
                 ctx.reply(`❌ Error en el backend: ${data.error}`);
             }
         } catch (err) {
