@@ -85,7 +85,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {ms_session_token}",
         "x-session-id": sid,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
         "Accept": "application/json",
         "Origin": "https://visualsupport.microsoft.com",
         "Referer": "https://visualsupport.microsoft.com/"

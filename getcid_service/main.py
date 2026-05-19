@@ -11,6 +11,14 @@ from core import process_iid
 
 TOKEN_CACHE_FILE = "ms_token.json"
 
+# ============================================================
+# ESTADO GLOBAL PARA CAPTCHA REMOTO
+# ============================================================
+import threading
+captcha_event = asyncio.Event()
+captcha_clicks = 0
+renovation_task = None
+
 
 # ============================================================
 # STARTUP / SHUTDOWN — Lanzar proactive refresher al arrancar
@@ -60,6 +68,33 @@ class TokenRequest(BaseModel):
 # ============================================================
 # ENDPOINTS EXISTENTES
 # ============================================================
+
+@app.post("/api/start-renovation")
+async def start_renovation():
+    """Inicia el script de Playwright en background para renovar el token."""
+    global renovation_task
+    import logging
+    logger = logging.getLogger("API")
+    
+    if renovation_task and not renovation_task.done():
+        return JSONResponse(status_code=400, content={"success": False, "error": "Ya hay una renovación en progreso."})
+    
+    try:
+        from remote_renovar import run as run_renovar
+        renovation_task = asyncio.create_task(run_renovar())
+        logger.info("🚀 Tarea remota de renovación de token iniciada.")
+        return {"success": True, "message": "Proceso de renovación iniciado."}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+@app.post("/api/solve-captcha")
+async def solve_captcha(req: dict):
+    """Recibe los clics del usuario desde Telegram y despierta a Playwright."""
+    global captcha_event, captcha_clicks
+    clicks = req.get("clicks", 0)
+    captcha_clicks = clicks
+    captcha_event.set()
+    return {"success": True, "message": f"Se enviaron {clicks} clics."}
 
 @app.post("/api/getcid")
 async def api_getcid(req: IIDRequest):

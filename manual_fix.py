@@ -6,7 +6,7 @@ import time
 async def run():
     async with async_playwright() as p:
         print("\n" + "="*50)
-        print("🚀 INICIANDO CAPTURA MANUAL DE TOKEN")
+        print("INICIANDO CAPTURA MANUAL DE TOKEN")
         print("="*50)
         
         # Lanzamos el navegador
@@ -14,17 +14,17 @@ async def run():
         context = await browser.new_context(viewport={'width': 1280, 'height': 720})
         page = await context.new_page()
         
-        print("\n1. Se abrirá una ventana de Chrome.")
-        print("2. Inicia sesión normalmente en visualsupport.microsoft.com")
+        print("\n1. Se abrira una ventana de Chrome.")
+        print("2. Inicia sesion normalmente en visualsupport.microsoft.com")
         print("3. Resuelve el CAPTCHA si aparece (hazlo con calma).")
-        print("4. Quédate en la página hasta que veas el mensaje de éxito aquí.\n")
+        print("4. Quedate en la pagina hasta que veas el mensaje de exito aqui.\n")
         
         await page.goto("https://visualsupport.microsoft.com")
         
         token_data = {}
         
         async def handle_request(request):
-            # Buscamos la petición de token de Microsoft
+            # Buscamos la peticion de token de Microsoft
             if "token" in request.url and request.method == "POST":
                 try:
                     response = await request.response()
@@ -37,7 +37,7 @@ async def run():
                             token_data["email"] = "axelnn52@outlook.com"
                             token_data["saved_at"] = time.time()
                             print("\n" + "*"*50)
-                            print("✅ ¡TOKEN CAPTURADO CON ÉXITO!")
+                            print("¡TOKEN CAPTURADO CON EXITO!")
                             print("*"*50)
                 except:
                     pass
@@ -58,9 +58,9 @@ async def run():
             with open("ms_refresh_token_NUEVO.json", "w") as f:
                 json.dump(token_data, f, indent=2)
             print("\nArchivo 'ms_refresh_token_NUEVO.json' guardado en esta carpeta.")
-            print("Copia su contenido y envíalo al Bot.")
+            print("Copia su contenido y envialo al Bot.")
         else:
-            print("\n❌ No se capturó el token. El navegador se cerró antes.")
+            print("\nNo se capturo el token. El navegador se cerro antes.")
 
         await browser.close()
 

@@ -8,6 +8,13 @@ import logging
 import json
 import time
 
+# Importar el User-Agent oficial de CapMonster y el interceptor
+try:
+    from captcha_solver import CAPMONSTER_USER_AGENT, setup_blob_interceptor
+except ImportError:
+    CAPMONSTER_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+    setup_blob_interceptor = None
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -63,13 +70,18 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
         
     context = await browser.new_context(
         **context_options,
-        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        user_agent=CAPMONSTER_USER_AGENT
     )
     page = await context.new_page()
     
     # Inyectar Stealth para evadir detección antibot de Microsoft
     stealth = Stealth()
     await stealth.apply_stealth_async(page)
+    
+    # Configurar interceptor de blob ANTES de navegar
+    intercepted_data = None
+    if setup_blob_interceptor:
+        intercepted_data = await setup_blob_interceptor(page)
     
     captured_token = None
 
@@ -195,7 +207,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                             logger.warning(f"[{email}] CAPTCHA detectado (visual={captcha_signals[0]}, html={html_captcha}). Intentando resolver automáticamente con noCaptchaAi...")
                             try:
                                 from captcha_solver import solve_captcha_on_page
-                                solved = await solve_captcha_on_page(page)
+                                solved = await solve_captcha_on_page(page, intercepted_data=intercepted_data)
                                 if solved:
                                     logger.info(f"[{email}] CAPTCHA resuelto de forma automática. Continuando flujo de inicio de sesión...")
                                     await page.wait_for_timeout(3000)

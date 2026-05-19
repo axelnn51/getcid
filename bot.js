@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
 const path = require('path');
 const { getConfirmationID, CIDError } = require('./cid_helper');
@@ -154,14 +154,77 @@ function startBot() {
         if (isAdmin(tgId) && !user.is_admin) { db.setAdmin(user.id); user = db.findUserByTelegram(tgId); }
 
         const tag = user.is_admin ? ' 👑 Admin' : '';
+        let extraOptions = { parse_mode: 'Markdown' };
+        
+        if (user.is_admin) {
+            extraOptions = {
+                parse_mode: 'Markdown',
+                ...Markup.keyboard([
+                    ['🔄 Renovar Token', '📊 Estado Sistema'],
+                    ['👥 Usuarios', '⚙️ Ayuda Admin']
+                ]).resize()
+            };
+        }
+
         ctx.reply(
             `👋 ¡Hola ${username}!${tag}\n\n` +
             `📸 *Envíame una foto* del asistente de activación\n` +
             `📝 O *escribe el IID* (63 dígitos)\n\n` +
-            `💰 Balance: *${user.balance} CIDs*` +
-            (user.is_admin ? `\n\n⚙️ Admin:\n/addcredits <id> <n>\n/stats` : ''),
-            { parse_mode: 'Markdown' }
+            `💰 Balance: *${user.balance} CIDs*`,
+            extraOptions
         );
+    });
+
+    // ============================================================
+    // HANDLERS DEL MENÚ RIBBON (Admin)
+    // ============================================================
+    bot.hears('🔄 Renovar Token', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        const msg = await ctx.reply('🚀 Iniciando Chrome en el servidor... Por favor espera.', { parse_mode: 'Markdown' });
+        
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
+            const data = await response.json();
+            if (!data.success) {
+                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Error: ${data.error}`);
+            } else {
+                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ Proceso iniciado. Si hay CAPTCHA, te enviaré la foto en unos segundos.`);
+            }
+        } catch (err) {
+            ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ No se pudo contactar al servidor: ${err.message}`);
+        }
+    });
+
+    bot.hears('📊 Estado Sistema', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/token-status`);
+            const data = await response.json();
+            
+            let msg = `📊 *ESTADO DEL SISTEMA*\n\n`;
+            if (data.status === 'valid') msg += `🟢 *Token:* ACTIVO (${data.remaining_minutes} min)\n`;
+            else if (data.status === 'expired') msg += `🔴 *Token:* EXPIRADO\n`;
+            else msg += `⚪ *Token:* NINGUNO\n`;
+            
+            const s = db.getStats();
+            msg += `👥 *Usuarios:* ${s.totalUsers}\n`;
+            msg += `📈 *CIDs Hoy:* ${s.todayCids}\n`;
+            
+            ctx.reply(msg, { parse_mode: 'Markdown' });
+        } catch (err) {
+            ctx.reply(`❌ Error conectando al servidor: ${err.message}`);
+        }
+    });
+
+    bot.hears('👥 Usuarios', (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        ctx.reply('Para gestionar usuarios usa los comandos manuales por ahora:\n`/addcredits <id> <n>`', { parse_mode: 'Markdown' });
+    });
+
+    bot.hears('⚙️ Ayuda Admin', (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        ctx.reply('Comandos manuales:\n/settoken\n/setrefreshtoken\n/addcredits', { parse_mode: 'Markdown' });
     });
 
     bot.command('balance', (ctx) => {
@@ -555,6 +618,31 @@ function startBot() {
             
             const errorMsg = errorToMessage(err, digits);
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, errorMsg, { parse_mode: 'HTML' });
+        }
+    });
+
+    // ============================================================
+    // CAPTCHA INTERACTIVO: Manejador de clics en la botonera [ 0 ]...[ 5 ]
+    // ============================================================
+    bot.action(/solve_captcha_(\d+)/, async (ctx) => {
+        const clicks = parseInt(ctx.match[1]);
+        await ctx.answerCbQuery(`Enviando ${clicks} clics...`);
+        
+        try {
+            await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); // Ocultar botones para no hacer doble clic
+            
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/solve-captcha`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clicks })
+            });
+            
+            const data = await response.json();
+            if (!data.success) {
+                ctx.reply(`❌ Error en el backend: ${data.error}`);
+            }
+        } catch (err) {
+            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
         }
     });
 
