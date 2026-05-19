@@ -173,77 +173,85 @@ async def run():
                     clicked_captcha = False
                     for frame in page.frames:
                         try:
-                            # ¿Es el iframe del CAPTCHA?
-                            if "arkoselabs.com" in frame.url or "captcha" in frame.url.lower():
-                                # Ver si ya estamos adentro del puzzle (flechas visibles)
-                                right_arrow = frame.locator("a.navigate.right, button.navigate-right")
-                                if await right_arrow.count() > 0 and await right_arrow.first.is_visible(timeout=500):
-                                    print("🚨 CAPTCHA de flechas detectado. Solicitando ayuda por Telegram...")
-                                    
-                                    # Tomar screenshot del iframe completo
-                                    body = frame.locator("body")
-                                    await body.screenshot(path="captcha.png")
-                                    
-                                    # Enviar a Telegram
-                                    reply_markup = {
-                                        "inline_keyboard": [
-                                            [
-                                                {"text": "0", "callback_data": "solve_captcha_0"},
-                                                {"text": "1", "callback_data": "solve_captcha_1"},
-                                                {"text": "2", "callback_data": "solve_captcha_2"}
-                                            ],
-                                            [
-                                                {"text": "3", "callback_data": "solve_captcha_3"},
-                                                {"text": "4", "callback_data": "solve_captcha_4"},
-                                                {"text": "5", "callback_data": "solve_captcha_5"}
-                                            ]
-                                        ]
-                                    }
-                                    
-                                    async with httpx.AsyncClient() as http:
-                                        with open("captcha.png", "rb") as f:
-                                            await http.post(
-                                                f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-                                                data={
-                                                    "chat_id": ADMIN_CHAT_ID,
-                                                    "caption": "🚨 *Azure WAF CAPTCHA Detectado*\n¿Cuántos clics a la *DERECHA* necesita el tren?",
-                                                    "reply_markup": json.dumps(reply_markup),
-                                                    "parse_mode": "Markdown"
-                                                },
-                                                files={"photo": f}
-                                            )
-                                    
-                                    print("⏳ Esperando respuesta del administrador en Telegram...")
-                                    import main
-                                    main.captcha_event.clear()
-                                    await main.captcha_event.wait()
-                                    
-                                    clicks = main.captcha_clicks
-                                    print(f"🤖 Recibida instrucción: {clicks} clics a la derecha.")
-                                    
-                                    # Ejecutar los clics
-                                    for _ in range(clicks):
-                                        await right_arrow.first.click()
-                                        await page.wait_for_timeout(300)
-                                    
-                                    # Clic en Submit
-                                    submit_btn = frame.locator("button#home_children_button, button[type='submit']")
-                                    if await submit_btn.count() > 0:
-                                        await submit_btn.first.click()
-                                        print("✅ Botón Submit clickeado.")
-                                        await page.wait_for_timeout(3000)
-                                    
-                                    clicked_captcha = True
-                                    break
+                            # 1. Ver si ya estamos adentro del puzzle (flechas visibles)
+                            right_arrow = frame.locator("a.navigate.right, button.navigate-right")
+                            if await right_arrow.count() > 0 and await right_arrow.first.is_visible(timeout=500):
+                                print("🚨 CAPTCHA de flechas detectado. Solicitando ayuda por Telegram...")
                                 
-                                # Si no estamos en las flechas, quizá estamos en la pantalla inicial "Start"
-                                f_btn = frame.get_by_role("button", name=re.compile("^Start$|^Empezar$|^Comenzar$", re.IGNORECASE))
-                                if await f_btn.count() > 0 and await f_btn.first.is_visible(timeout=100):
-                                    print("🧩 Iniciando CAPTCHA automáticamente...")
-                                    await f_btn.first.click(timeout=1000)
-                                    await page.wait_for_timeout(2000)
-                                    clicked_captcha = True
-                                    break
+                                # Tomar screenshot del iframe completo
+                                body = frame.locator("body")
+                                await body.screenshot(path="captcha.png")
+                                
+                                # Enviar a Telegram
+                                reply_markup = {
+                                    "inline_keyboard": [
+                                        [
+                                            {"text": "0", "callback_data": "solve_captcha_0"},
+                                            {"text": "1", "callback_data": "solve_captcha_1"},
+                                            {"text": "2", "callback_data": "solve_captcha_2"}
+                                        ],
+                                        [
+                                            {"text": "3", "callback_data": "solve_captcha_3"},
+                                            {"text": "4", "callback_data": "solve_captcha_4"},
+                                            {"text": "5", "callback_data": "solve_captcha_5"}
+                                        ]
+                                    ]
+                                }
+                                
+                                async with httpx.AsyncClient() as http:
+                                    with open("captcha.png", "rb") as f:
+                                        await http.post(
+                                            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                                            data={
+                                                "chat_id": ADMIN_CHAT_ID,
+                                                "caption": "🚨 *Azure WAF CAPTCHA Detectado*\n¿Cuántos clics a la *DERECHA* necesita el tren?",
+                                                "reply_markup": json.dumps(reply_markup),
+                                                "parse_mode": "Markdown"
+                                            },
+                                            files={"photo": f}
+                                        )
+                                
+                                print("⏳ Esperando respuesta del administrador en Telegram...")
+                                import main
+                                main.captcha_event.clear()
+                                await main.captcha_event.wait()
+                                
+                                clicks = main.captcha_clicks
+                                print(f"🤖 Recibida instrucción: {clicks} clics a la derecha.")
+                                
+                                # Ejecutar los clics
+                                for _ in range(clicks):
+                                    await right_arrow.first.click()
+                                    await page.wait_for_timeout(300)
+                                
+                                # Clic en Submit
+                                submit_btn = frame.locator("button#home_children_button, button[type='submit']")
+                                if await submit_btn.count() > 0:
+                                    await submit_btn.first.click()
+                                    print("✅ Botón Submit clickeado.")
+                                    await page.wait_for_timeout(3000)
+                                
+                                clicked_captcha = True
+                                break
+                            
+                            # 2. Si no estamos en las flechas, quizá estamos en la pantalla inicial "Start"
+                            # Intento A: Como botón real
+                            f_btn = frame.get_by_role("button", name=re.compile("^Start$|^Empezar$|^Comenzar$", re.IGNORECASE))
+                            if await f_btn.count() > 0 and await f_btn.first.is_visible(timeout=100):
+                                print("🧩 Iniciando CAPTCHA automáticamente (Botón)...")
+                                await f_btn.first.click(timeout=1000)
+                                await page.wait_for_timeout(2000)
+                                clicked_captcha = True
+                                break
+                                
+                            # Intento B: Como texto simple (div/span disfrazado)
+                            f_btn_text = frame.get_by_text(re.compile("^Start$|^Empezar$|^Comenzar$", re.IGNORECASE))
+                            if await f_btn_text.count() > 0 and await f_btn_text.first.is_visible(timeout=100):
+                                print("🧩 Iniciando CAPTCHA automáticamente (Texto)...")
+                                await f_btn_text.first.click(timeout=1000)
+                                await page.wait_for_timeout(2000)
+                                clicked_captcha = True
+                                break
                         except Exception as inner_e:
                             continue
                     
