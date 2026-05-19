@@ -263,6 +263,19 @@ async def run():
                             await page.wait_for_timeout(2000)
                             continue
 
+                # 1.5 Pick an account (Seleccionar una cuenta)
+                try:
+                    pick_account_title = page.get_by_text(re.compile("Pick an account|Seleccionar una cuenta|Elegir una cuenta", re.IGNORECASE))
+                    if await pick_account_title.count() > 0 and await pick_account_title.first.is_visible(timeout=100):
+                        account_tile = page.get_by_text(MS_EMAIL, exact=False)
+                        if await account_tile.count() > 0 and await account_tile.first.is_visible(timeout=100):
+                            print("👤 Seleccionando cuenta guardada...")
+                            await account_tile.first.click()
+                            await page.wait_for_timeout(2000)
+                            continue
+                except:
+                    pass
+
                 # 2. Input de Email
                 email_input = page.locator("input[type='email'], input[name='loginfmt']")
                 if await email_input.count() > 0:
@@ -272,13 +285,14 @@ async def run():
                             print(f"📝 Rellenando email: {MS_EMAIL}")
                             await email_input.first.fill(MS_EMAIL)
                             await page.wait_for_timeout(500)
-                            try:
-                                await page.locator("input[type='submit']").first.click(timeout=1000)
-                            except:
-                                await page.keyboard.press("Enter")
-                            print("   ✅ Siguiente clickeado.")
-                            await page.wait_for_timeout(2000)
-                            continue
+                        
+                        try:
+                            await page.locator("input[type='submit']").first.click(timeout=1000)
+                        except:
+                            await page.keyboard.press("Enter")
+                        print("   ✅ Siguiente clickeado.")
+                        await page.wait_for_timeout(2000)
+                        continue
 
                 # 2.5 "Use your password" / "Usar su contraseña" (Si pide código de verificación)
                 use_pwd_btn = page.get_by_text(re.compile("Use your password|Usar su contraseña", re.IGNORECASE))
@@ -324,6 +338,25 @@ async def run():
 
             if elapsed % 10 == 0 and elapsed > 0:
                 print(f"  ⏳ Esperando... ({elapsed}s)")
+                
+                # ─── DEBUG: Enviar screenshot a Telegram si está atascado por mucho tiempo ───
+                if elapsed % 30 == 0:
+                    try:
+                        print(f"  📸 Enviando screenshot de debug a Telegram...")
+                        await page.screenshot(path="debug_stuck.png")
+                        async with httpx.AsyncClient() as http:
+                            with open("debug_stuck.png", "rb") as f:
+                                await http.post(
+                                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                                    data={
+                                        "chat_id": ADMIN_CHAT_ID,
+                                        "caption": f"🤖 *DEBUG* ({elapsed}s):\nSigo esperando en esta pantalla. ¿Requiere acción manual?",
+                                        "parse_mode": "Markdown"
+                                    },
+                                    files={"photo": f}
+                                )
+                    except Exception as e:
+                        print(f"  ⚠️ Error enviando debug screenshot: {e}")
 
             # Esperar un poco antes de volver a verificar el DOM
             await page.wait_for_timeout(1000)
