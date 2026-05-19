@@ -507,8 +507,6 @@ async def run():
         print("  🎉 ¡TODO LISTO! El sistema ya tiene los nuevos tokens.")
     else:
         print("  ⚠️ Token capturado pero hubo problemas al guardarlo.")
-    print("=" * 65)
-        print("  📱 Revisa Telegram, el comando debería estar ahí para copiar-pegar.")
     print("=" * 65 + "\n")
 
 
