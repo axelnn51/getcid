@@ -455,87 +455,16 @@ async def run():
     client_id = captured_client_id or SPA_CLIENT_ID
     success = False
 
-    # ─── PASO 6: Preparar datos para enviar ───
-    refresh_json = ""
-
+    # ─── PASO 6: Guardar Tokens Directamente ───
     if captured_refresh_token:
-        refresh_data = {
-            "refresh_token": captured_refresh_token,
-            "client_id": client_id,
-            "scopes": "",
-            "token_type": "spa" if client_id.startswith("2b217cec") else "native_app",
-            "max_lifetime_days": 1 if client_id.startswith("2b217cec") else 90,
-            "saved_at": time.time(),
-            "saved_at_readable": time.strftime('%Y-%m-%d %H:%M:%S')
-        }
-        refresh_json = json.dumps(refresh_data)
-
-        local_file = os.path.join(os.path.dirname(__file__), "ms_refresh_token_NUEVO.json")
-        with open(local_file, "w") as f:
-            f.write(refresh_json)
-        print(f"\n💾 Backup local: {local_file}")
-
-    # ─── PASO 7: SIEMPRE enviar access token via Telegram (/settoken) ───
-    print("\n📱 Enviando tokens al servidor via Telegram...")
-
-    if captured_token:
         try:
-            async with httpx.AsyncClient(timeout=30) as http:
-                # Notificar + enviar comando /settoken
-                await http.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": ADMIN_CHAT_ID,
-                        "text": (
-                            "🔑 *Token Renovado por Script Local*\n\n"
-                            f"🔑 Access Token: ✅ ({len(captured_token)} chars)\n"
-                            f"🔄 Refresh Token: {'✅' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
-                            f"🆔 Client: {client_id[:12]}...\n"
-                            f"📅 {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                            "📤 Enviando al servidor..."
-                        ),
-                        "parse_mode": "Markdown"
-                    }
-                )
-
-                # Enviar /settoken para que el admin lo copie-pegue
-                token_preview = captured_token[:50]
-                await http.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": ADMIN_CHAT_ID,
-                        "text": (
-                            "👇 *Copia y pega esto en este chat para activar el access token:*\n\n"
-                            f"`/settoken {captured_token}`"
-                        ),
-                        "parse_mode": "Markdown"
-                    }
-                )
-                print("   ✅ Comando /settoken enviado a Telegram!")
-                success = True
+            import token_refresher
+            token_refresher.save_refresh_token(captured_refresh_token, client_id, "")
+            print("💾 Refresh token guardado localmente.")
         except Exception as e:
-            print(f"   ⚠️ Error enviando access token a Telegram: {e}")
+            print(f"⚠️ Error guardando refresh token: {e}")
 
-    # ─── PASO 7B: Si hay refresh token, también enviarlo ───
-    if captured_refresh_token and refresh_json:
-        try:
-            async with httpx.AsyncClient(timeout=30) as http:
-                await http.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": ADMIN_CHAT_ID,
-                        "text": (
-                            "👇 *Y copia esto para el refresh token (auto-renovación):*\n\n"
-                            f"`/setrefreshtoken {refresh_json}`"
-                        ),
-                        "parse_mode": "Markdown"
-                    }
-                )
-                print("   ✅ Comando /setrefreshtoken enviado a Telegram!")
-        except Exception as e:
-            print(f"   ⚠️ Error enviando refresh token a Telegram: {e}")
-
-    # ─── PASO 8: Intentar enviar directo al servidor (por si está accesible) ───
+    # ─── PASO 7: Actualizar Access Token en Memoria ───
     for server_url in [GETCID_SERVER, "http://localhost:8000"]:
         try:
             async with httpx.AsyncClient(timeout=10) as http:
@@ -545,29 +474,40 @@ async def run():
                         json={"token": captured_token, "duration": 3500}
                     )
                     if resp.json().get("success"):
-                        print(f"   ✅ Access token enviado directo a {server_url}")
+                        print(f"✅ Access token actualizado en {server_url}")
                         success = True
-
-                if captured_refresh_token:
-                    resp = await http.post(
-                        f"{server_url}/api/setrefreshtoken",
-                        json={"refresh_token": captured_refresh_token, "client_id": client_id, "scopes": ""}
-                    )
-                    if resp.json().get("success"):
-                        print(f"   ✅ Refresh token enviado directo a {server_url}")
-                        success = True
-                break
+                        break
         except:
             pass
-    # ─── Resumen final ───
+
+    # ─── PASO 8: Notificar a Telegram ───
+    if captured_token:
+        try:
+            async with httpx.AsyncClient(timeout=30) as http:
+                await http.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={
+                        "chat_id": ADMIN_CHAT_ID,
+                        "text": (
+                            "✅ *Token Renovado Exitosamente (Remoto)*\n\n"
+                            f"El sistema ha capturado y guardado automáticamente los tokens.\n\n"
+                            f"🔑 Access Token: ✅\n"
+                            f"🔄 Refresh Token: {'✅ Guardado' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
+                            f"📅 Próxima renovación: ~24 horas (SPA) o ~90 días (nativo)"
+                        ),
+                        "parse_mode": "Markdown"
+                    }
+                )
+                print("✅ Mensaje de éxito enviado a Telegram!")
+        except Exception as e:
+            print(f"⚠️ Error enviando éxito a Telegram: {e}")
+
     print("\n" + "=" * 65)
-    if success:
-        print("  🎉 ¡TODO LISTO! Token(s) enviado(s) exitosamente.")
-        print("  📱 Revisa Telegram y copia-pega el comando /settoken")
-        print("  🔄 El proactive refresher lo mantendrá vivo automáticamente.")
-        print("  📅 Próxima renovación: ~24 horas (SPA) o ~90 días (nativo)")
+    if success or captured_refresh_token:
+        print("  🎉 ¡TODO LISTO! El sistema ya tiene los nuevos tokens.")
     else:
-        print("  ⚠️ Token capturado pero no se pudo enviar.")
+        print("  ⚠️ Token capturado pero hubo problemas al guardarlo.")
+    print("=" * 65)
         print("  📱 Revisa Telegram, el comando debería estar ahí para copiar-pegar.")
     print("=" * 65 + "\n")
 

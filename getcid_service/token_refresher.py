@@ -24,6 +24,7 @@ logger = logging.getLogger("TokenRefresher")
 PERSIST_DIR = "/app/persist" if os.path.isdir("/app/persist") else "."
 REFRESH_TOKEN_FILE = os.path.join(PERSIST_DIR, "ms_refresh_token.json")
 TOKEN_CACHE_FILE = "ms_token.json"  # Este puede ser efímero, se regenera con refresh
+_expiration_alert_count = 0
 
 # Client IDs conocidos como SPA (24h limit)
 SPA_CLIENT_IDS = [
@@ -69,6 +70,7 @@ def _detect_token_type(client_id: str) -> dict:
 
 
 async def refresh_access_token() -> str:
+    global _expiration_alert_count
     """
     Usa el Refresh Token guardado para obtener un nuevo Access Token.
     Retorna el access token o None si falla.
@@ -142,6 +144,7 @@ async def refresh_access_token() -> str:
                         save_refresh_token(new_refresh_token, client_id, scopes)
                         logger.info("Refresh token renovado automaticamente.")
 
+                    _expiration_alert_count = 0  # Resetear alertas
                     return new_access_token
                 else:
                     logger.error(f"Respuesta sin access_token: {token_data}")
@@ -155,20 +158,31 @@ async def refresh_access_token() -> str:
                 # Si el refresh token expiró, alertar
                 if response.status_code == 400 and ("expired" in str(error_msg).lower() or "AADSTS70000" in str(error_msg)):
                     logger.error("🔴 REFRESH TOKEN EXPIRADO. Se necesita re-autenticación.")
-                    # Alerta Telegram
-                    try:
-                        from telegram_alert import send_alert
-                        import asyncio
-                        await send_alert(
-                            f"🔴 *REFRESH TOKEN EXPIRADO*\n\n"
-                            f"Error: `{error_code}`\n"
-                            f"Tipo: {token_type['label']}\n\n"
-                            f"Acciones:\n"
-                            f"• `/deviceauth` — Device Code Flow (90 días)\n"
-                            f"• `/setrefreshtoken` — Token manual"
-                        )
-                    except:
-                        pass
+                    
+                    if _expiration_alert_count < 3:
+                        _expiration_alert_count += 1
+                        # Alerta Telegram
+                        try:
+                            from telegram_alert import send_alert
+                            import asyncio
+                            
+                            reply_markup = {
+                                "inline_keyboard": [
+                                    [{"text": "🔄 Renovar Token Remoto", "callback_data": "start_renovation"}]
+                                ]
+                            }
+                            
+                            await send_alert(
+                                f"🔴 *REFRESH TOKEN EXPIRADO*\n\n"
+                                f"Error: `{error_code}`\n"
+                                f"Tipo: {token_type['label']}\n\n"
+                                f"El auto-renovador no puede continuar. Haz clic en el botón de abajo para renovar el token usando el navegador remoto de forma interactiva.",
+                                reply_markup=reply_markup
+                            )
+                        except:
+                            pass
+                    else:
+                        logger.error("Silenciando alertas de expiración de token (límite de 3 alcanzado).")
 
                 return None
 
