@@ -40,3 +40,4 @@ services:
       - IS_SERVER=true
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS}
+      - NOCAPTCHAAI_API_KEY=${NOCAPTCHAAI_API_KEY}

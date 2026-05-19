@@ -192,15 +192,26 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                         ])
                         
                         if any(captcha_signals) or html_captcha:
-                            logger.error(f"[{email}] CAPTCHA detectado (visual={captcha_signals[0]}, html={html_captcha}). Abandonando cuenta.")
-                            # Borrar sesión corrupta para forzar re-login limpio
-                            if os.path.exists(state_file):
-                                os.remove(state_file)
-                                logger.info(f"[{email}] Sesión corrupta eliminada para re-login limpio.")
+                            logger.warning(f"[{email}] CAPTCHA detectado (visual={captcha_signals[0]}, html={html_captcha}). Intentando resolver automáticamente con noCaptchaAi...")
                             try:
-                                await page.screenshot(path="/app/debug_captcha.png")
-                            except: pass
-                            return None
+                                from captcha_solver import solve_captcha_on_page
+                                solved = await solve_captcha_on_page(page)
+                                if solved:
+                                    logger.info(f"[{email}] CAPTCHA resuelto de forma automática. Continuando flujo de inicio de sesión...")
+                                    await page.wait_for_timeout(3000)
+                                else:
+                                    logger.error(f"[{email}] El solucionador de CAPTCHA no pudo resolver el puzzle.")
+                                    # Borrar sesión corrupta para forzar re-login limpio
+                                    if os.path.exists(state_file):
+                                        os.remove(state_file)
+                                        logger.info(f"[{email}] Sesión corrupta eliminada para re-login limpio.")
+                                    try:
+                                        await page.screenshot(path="/app/debug_captcha.png")
+                                    except: pass
+                                    return None
+                            except Exception as solve_err:
+                                logger.error(f"[{email}] Error invocando el solucionador de CAPTCHA: {solve_err}")
+                                return None
                     except: pass
                     
                     try:
