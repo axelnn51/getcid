@@ -448,7 +448,6 @@ async def run():
     success = False
 
     # ─── PASO 6: Preparar datos para enviar ───
-    import httpx
     refresh_json = ""
 
     if captured_refresh_token:
