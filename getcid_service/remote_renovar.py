@@ -174,7 +174,7 @@ async def run():
                     for frame in page.frames:
                         try:
                             # 1. Ver si ya estamos adentro del puzzle (flechas visibles)
-                            right_arrow = frame.locator("a.navigate.right, button.navigate-right")
+                            right_arrow = frame.locator("a.navigate.right, button.navigate-right, [aria-label*='next image' i], [aria-label*='siguiente' i], a[aria-label*='right' i]")
                             if await right_arrow.count() > 0 and await right_arrow.first.is_visible(timeout=500):
                                 print("🚨 CAPTCHA de flechas detectado. Solicitando ayuda por Telegram...")
                                 
@@ -225,7 +225,7 @@ async def run():
                                     await page.wait_for_timeout(300)
                                 
                                 # Clic en Submit
-                                submit_btn = frame.locator("button#home_children_button, button[type='submit']")
+                                submit_btn = frame.locator("button#home_children_button, button[type='submit'], button:has-text('Submit'), button:has-text('Enviar')")
                                 if await submit_btn.count() > 0:
                                     await submit_btn.first.click()
                                     print("✅ Botón Submit clickeado.")
