@@ -27,14 +27,19 @@ def resolver_captcha_con_ia(image_path: str) -> int:
         # Cargar la imagen local
         img = Image.open(image_path)
         
-        # El prompt perfecto adaptativo a cualquier puzzle de Arkose
+        # El prompt perfecto adaptativo con reglas explícitas para evitar alucinaciones
         prompt = (
             "Eres un experto solucionando puzzles lógicos de CAPTCHAs de Arkose Labs. "
-            "En la imagen adjunta hay un puzzle. Primero LEE LA INSTRUCCIÓN que aparece en texto en la imagen "
-            "(ej. 'Make sure the train in the image is at the position of the icon...', 'Use the arrows to rotate...', etc). "
-            "Luego, resuelve el puzzle estrictamente según esa instrucción comparando la imagen izquierda (referencia) y la derecha (interactiva). "
-            "Determina cuántos clics a la flecha DERECHA se necesitan (del 0 al 5) para llegar a la solución correcta. "
-            "Analiza paso a paso, y en la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics."
+            "Primero LEE LA INSTRUCCIÓN que aparece en texto en la imagen. "
+            "Existen varios tipos de puzzles. Sigue estas reglas ESTRICTAS según la instrucción:\n\n"
+            "TIPO 1: POSICIÓN EN EL CAMINO (ej. 'Make sure the train... is at the position of the icon connected by a red line'). "
+            "REGLA: La imagen izquierda muestra un camino con una línea roja punteada y un icono en un punto de la ruta. "
+            "La imagen derecha muestra unas vías de tren con una línea roja punteada similar y varios iconos. El tren avanza a la siguiente posición con cada clic. "
+            "Debes contar cuántos clics (avances) a la flecha DERECHA se necesitan para que el tren pase de su posición actual hasta el icono objetivo de la imagen izquierda. "
+            "NOTA: Si el tren YA ESTÁ posicionado exactamente sobre el icono correcto, la respuesta es 0. Si no, cuenta las posiciones hacia adelante.\n\n"
+            "TIPO 2: ROTACIÓN (ej. 'Use the arrows to rotate the object to face the same direction as the hand'). "
+            "REGLA: Calcula cuántos clics a la derecha necesitas para que el objeto apunte en la misma dirección que la mano.\n\n"
+            "Analiza paso a paso, y en la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (del 0 al 5)."
         )
         
         response = model.generate_content([prompt, img])
