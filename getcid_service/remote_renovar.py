@@ -17,6 +17,7 @@ Uso: python renovar_token.py
 
 import asyncio
 import json
+import re
 import time
 import os
 import sys
@@ -47,16 +48,16 @@ def update_winrate(success):
         return "N/A"
 
 # ─── Configuración ───
-# Datos de la cuenta (se leen del .env o se ponen aquí)
-MS_EMAIL = "axelnn52@outlook.com"
-MS_PASSWORD = "@Dotita123"
+# Datos de la cuenta (se leen del .env)
+MS_EMAIL = os.getenv("MS_EMAIL", "axelnn52@outlook.com")
+MS_PASSWORD = os.getenv("MS_PASSWORD", "@Dotita123")
 
 # URL del servidor Docker (cambiar si es diferente)
 GETCID_SERVER = os.getenv("GETCID_SERVER", "http://localhost:8000")
 
-# Telegram Bot para notificar directo (si el servidor no está accesible)
-BOT_TOKEN = "8334632533:AAEMCDWK-4sMpmDSSquc5Afz6FRVZjrs6go"
-ADMIN_CHAT_ID = "7233007906"
+# Telegram Bot para notificar directo
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8334632533:AAEMCDWK-4sMpmDSSquc5Afz6FRVZjrs6go")
+ADMIN_CHAT_ID = os.getenv("ADMIN_IDS", "7233007906")
 
 # Client ID del SPA de VisualSupport (el que funciona con cuentas personales)
 SPA_CLIENT_ID = "2b217cec-607d-4eb6-887e-c928520a14f6"
@@ -148,9 +149,8 @@ async def run():
         print("=" * 65 + "\n")
 
         start_wait = time.time()
-        max_wait = 90  # Reducido a la mitad (1.5 mins) como solicitaste
+        max_wait = 180  # 3 minutos (suficiente para 3 intentos de IA + fallback)
 
-        import re
         ai_fail_count = 0
         last_ai_clicks = -1
 
@@ -521,7 +521,7 @@ async def run():
         print("  • La página no cargó correctamente")
         print("  • Microsoft bloqueó la sesión")
         print("=" * 65)
-        sys.exit(1)
+        return  # No usar sys.exit() porque mataría el servidor FastAPI si se ejecuta desde el cron
 
     print("  🎉 ¡TOKENS CAPTURADOS EXITOSAMENTE!")
     print(f"  🔑 Access Token: {'✅ SÍ' if captured_token else '❌ NO'}")

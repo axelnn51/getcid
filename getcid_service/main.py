@@ -14,7 +14,6 @@ TOKEN_CACHE_FILE = "ms_token.json"
 # ============================================================
 # ESTADO GLOBAL PARA CAPTCHA REMOTO
 # ============================================================
-import threading
 captcha_event = asyncio.Event()
 captcha_clicks = 0
 renovation_task = None
@@ -38,6 +37,15 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️ No se pudo iniciar Proactive Refresher: {e}")
         refresher_task = None
 
+    # Lanzar Cron Diario de Renovación a la medianoche
+    try:
+        from cron_renovar import start_daily_cron
+        cron_task = asyncio.create_task(start_daily_cron())
+        logger.info("✅ Cron Diario (Medianoche) lanzado en background")
+    except Exception as e:
+        logger.error(f"⚠️ No se pudo iniciar Cron Diario: {e}")
+        cron_task = None
+
     yield  # Servidor corriendo
 
     # Shutdown: detener refresher
@@ -46,6 +54,12 @@ async def lifespan(app: FastAPI):
             from proactive_refresher import stop_proactive_refresh
             stop_proactive_refresh()
             refresher_task.cancel()
+        except:
+            pass
+            
+    if cron_task:
+        try:
+            cron_task.cancel()
         except:
             pass
 

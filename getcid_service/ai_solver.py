@@ -1,6 +1,8 @@
 import os
-import google.generativeai as genai
+import re
+import random
 import logging
+import google.generativeai as genai
 from PIL import Image
 
 logger = logging.getLogger("AISolver")
@@ -20,7 +22,6 @@ def resolver_captcha_con_ia(image_path: str) -> int:
     api_keys = [k.strip() for k in api_key_env.split(",") if k.strip()]
     
     # Barajar aleatoriamente para distribuir la carga entre las llaves
-    import random
     random.shuffle(api_keys)
     
     for idx, api_key in enumerate(api_keys):
@@ -71,7 +72,6 @@ def resolver_captcha_con_ia(image_path: str) -> int:
             
             
             # Extraemos solo el ÚLTIMO número de la respuesta (para evitar que agarre números de listas como '1.')
-            import re
             numbers = re.findall(r'\d+', text_res)
             if numbers:
                 num = int(numbers[-1])
