@@ -45,10 +45,10 @@ def resolver_captcha_con_ia(image_path: str) -> int:
                 "REGLA: La imagen izquierda muestra un camino con una línea roja punteada y un icono en un punto de la ruta. "
                 "La imagen derecha muestra unas vías de tren con una línea roja punteada similar y varios iconos. El tren avanza a la siguiente posición con cada clic. "
                 "Debes contar cuántos clics (avances) a la flecha DERECHA se necesitan para que el tren pase de su posición actual hasta el icono objetivo de la imagen izquierda. "
-                "NOTA: Si el tren YA ESTÁ posicionado exactamente sobre el icono correcto, la respuesta es 0. Si no, cuenta las posiciones hacia adelante.\n\n"
+                "¡ATENCIÓN! La posición inicial NUNCA es la correcta en estos CAPTCHAs. La respuesta NUNCA es 0. Siempre debes moverlo (de 1 a 5 clics).\n\n"
                 "TIPO 2: ROTACIÓN (ej. 'Use the arrows to rotate the object to face the same direction as the hand'). "
-                "REGLA: Calcula cuántos clics a la derecha necesitas para que el objeto apunte en la misma dirección que la mano.\n\n"
-                "Analiza paso a paso, y en la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (del 0 al 5)."
+                "REGLA: Calcula cuántos clics a la derecha necesitas para que el objeto apunte en la misma dirección que la mano. (NUNCA es 0).\n\n"
+                "Analiza paso a paso, y en la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (del 1 al 5)."
             )
             
             response = model.generate_content([prompt, img])
@@ -70,8 +70,8 @@ def resolver_captcha_con_ia(image_path: str) -> int:
             
         except Exception as e:
             error_msg = str(e)
-            if "429" in error_msg or "Quota" in error_msg:
-                logger.warning(f"⚠️ API Key {idx+1}/{len(api_keys)} sin cuota (Error 429). Probando la siguiente si existe...")
+            if "429" in error_msg or "Quota" in error_msg or "403" in error_msg:
+                logger.warning(f"⚠️ API Key {idx+1}/{len(api_keys)} falló (429/403). Probando la siguiente si existe...")
                 continue
             else:
                 logger.error(f"❌ Error al contactar con la API de Gemini: {e}")

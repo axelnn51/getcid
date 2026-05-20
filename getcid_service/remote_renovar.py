@@ -129,6 +129,7 @@ async def run():
         max_wait = 300  # 5 minutos
 
         import re
+        ai_fail_count = 0
 
         while time.time() - start_wait < max_wait:
             elapsed = int(time.time() - start_wait)
@@ -183,9 +184,9 @@ async def run():
                                 await body.screenshot(path="captcha.png")
                                 
                                 clicks = -1
-                                # Intentar con IA primero (PLAN A)
-                                if os.getenv("AI_SOLVER_ENABLED") == "true":
-                                    print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision...")
+                                # Intentar con IA primero (PLAN A) si no ha fallado demasiadas veces
+                                if os.getenv("AI_SOLVER_ENABLED") == "true" and ai_fail_count < 3:
+                                    print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision... (Intento {ai_fail_count+1}/3)")
                                     from ai_solver import resolver_captcha_con_ia
                                     
                                     # Tomar tiempo antes
@@ -254,7 +255,8 @@ async def run():
                             # 2. Detectar si falló ("That was not quite right. You can try again.")
                             try_again_btn = frame.get_by_role("button", name=re.compile("Try again|Intentar de nuevo", re.IGNORECASE))
                             if await try_again_btn.count() > 0 and await try_again_btn.first.is_visible(timeout=100):
-                                print(f"[{time.strftime('%H:%M:%S')}] ❌ CAPTCHA incorrecto. Clickeando 'Try again'...")
+                                ai_fail_count += 1
+                                print(f"[{time.strftime('%H:%M:%S')}] ❌ CAPTCHA incorrecto. Fallo acumulado: {ai_fail_count}/3. Clickeando 'Try again'...")
                                 await try_again_btn.first.click()
                                 await page.wait_for_timeout(2000)
                                 clicked_captcha = True

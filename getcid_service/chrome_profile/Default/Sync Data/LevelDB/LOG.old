@@ -1,2 +1,3 @@
-2026/05/20-00:17:23.646 20b8 Creating DB C:\Users\axeln\OneDrive\Desktop\GETCID\getcid_service\chrome_profile\Default\Sync Data\LevelDB since it was missing.
-2026/05/20-00:17:23.671 20b8 Reusing MANIFEST C:\Users\axeln\OneDrive\Desktop\GETCID\getcid_service\chrome_profile\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/05/20-01:08:10.767 549c Reusing MANIFEST C:\Users\axeln\OneDrive\Desktop\GETCID\getcid_service\chrome_profile\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/05/20-01:08:10.768 549c Recovering log #3
+2026/05/20-01:08:10.769 549c Reusing old log C:\Users\axeln\OneDrive\Desktop\GETCID\getcid_service\chrome_profile\Default\Sync Data\LevelDB/000003.log 
