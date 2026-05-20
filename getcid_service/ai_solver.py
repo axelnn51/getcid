@@ -63,6 +63,12 @@ def resolver_captcha_con_ia(image_path: str) -> int:
             # Extraer y limpiar el resultado
             text_res = response.text.strip()
             logger.info(f"🤖 IA Respuesta RAW: '{text_res}'")
+            try:
+                with open("last_reasoning.txt", "w", encoding="utf-8") as f:
+                    f.write(text_res)
+            except:
+                pass
+            
             
             # Extraemos solo el ÚLTIMO número de la respuesta (para evitar que agarre números de listas como '1.')
             import re

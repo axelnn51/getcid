@@ -24,6 +24,28 @@ import urllib.parse
 import httpx
 from main import captcha_event, captcha_clicks
 
+def update_winrate(success):
+    stats_file = "captcha_stats.json"
+    try:
+        stats = {"success": 0, "fail": 0}
+        if os.path.exists(stats_file):
+            with open(stats_file, "r") as f:
+                stats = json.load(f)
+                
+        if success:
+            stats["success"] += 1
+        else:
+            stats["fail"] += 1
+            
+        with open(stats_file, "w") as f:
+            json.dump(stats, f)
+            
+        total = stats["success"] + stats["fail"]
+        rate = (stats["success"] / total) * 100 if total > 0 else 0
+        return f"{stats['success']} aciertos / {stats['fail']} fallos ({rate:.1f}%)"
+    except Exception:
+        return "N/A"
+
 # ─── Configuración ───
 # Datos de la cuenta (se leen del .env o se ponen aquí)
 MS_EMAIL = "axelnn52@outlook.com"
@@ -126,7 +148,7 @@ async def run():
         print("=" * 65 + "\n")
 
         start_wait = time.time()
-        max_wait = 300  # 5 minutos
+        max_wait = 90  # Reducido a la mitad (1.5 mins) como solicitaste
 
         import re
         ai_fail_count = 0
@@ -138,11 +160,17 @@ async def run():
             # ¿Ya tenemos el token interceptado por red?
             if captured_token:
                 print(f"\n✅ Token capturado en red después de {elapsed}s")
+                if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < 3:
+                    print("📊 Registrando victoria para la IA...")
+                    update_winrate(True)
                 break
                 
             # ¿Llegamos a la página final de bienvenida?
             if "visualsupport.microsoft.com/welcome" in page.url:
                 print("\n✅ Llegamos a la página de bienvenida. Extrayendo tokens...")
+                if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < 3:
+                    print("📊 Registrando victoria para la IA...")
+                    update_winrate(True)
                 break
 
             # ¿Ya terminó el login y el token está en la memoria del navegador?
@@ -156,6 +184,9 @@ async def run():
                             break
                     if login_complete:
                         print(f"\n✅ Login completado exitosamente. Extrayendo tokens del storage...")
+                        if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < 3:
+                            print("📊 Registrando victoria para la IA...")
+                            update_winrate(True)
                         break
                 except Exception:
                     pass
@@ -204,8 +235,17 @@ async def run():
                                 # Si la IA falló, pedir ayuda humana (PLAN B)
                                 if clicks == -1:
                                     print(f"[{time.strftime('%H:%M:%S')}] 🚨 Solicitando ayuda por Telegram (Plan B)...")
-                                    ai_info = f"\n\n🤖 *Último intento IA:* {last_ai_clicks} clics (Falló)" if last_ai_clicks != -1 else ""
                                     
+                                    ai_info = ""
+                                    if last_ai_clicks != -1:
+                                        winrate = update_winrate(False)
+                                        raw_reasoning = "N/A"
+                                        try:
+                                            with open("last_reasoning.txt", "r", encoding="utf-8") as f:
+                                                raw_reasoning = f.read()
+                                        except:
+                                            pass
+                                        ai_info = f"\n\n🤖 *Último intento IA:* {last_ai_clicks} clics (Falló)\n📊 *Winrate IA:* {winrate}\n📝 *Razonamiento RAW:*\n`{raw_reasoning[:500]}...`"
                                     reply_markup = {
                                         "inline_keyboard": [
                                             [
