@@ -149,10 +149,14 @@ async def run():
         print("=" * 65 + "\n")
 
         start_wait = time.time()
-        max_wait = 180  # 3 minutos (suficiente para 3 intentos de IA + fallback)
+        max_wait = 360  # 6 minutos (suficiente para agotar todos los intentos de IA antes de pedir ayuda)
 
+        # Calcular intentos máximos de IA: 3 intentos por cada API key configurada
+        num_api_keys = len([k for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]) or 1
+        max_ai_attempts = num_api_keys * 3  # 4 keys × 3 = 12 intentos máximos
         ai_fail_count = 0
         last_ai_clicks = -1
+        print(f"  🤖 IA configurada con {num_api_keys} API keys × 3 intentos = {max_ai_attempts} intentos máx antes de pedir ayuda.\n")
 
         while time.time() - start_wait < max_wait:
             elapsed = int(time.time() - start_wait)
@@ -184,7 +188,7 @@ async def run():
                             break
                     if login_complete:
                         print(f"\n✅ Login completado exitosamente. Extrayendo tokens del storage...")
-                        if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < 3:
+                        if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                             print("📊 Registrando victoria para la IA...")
                             update_winrate(True)
                         break
@@ -216,9 +220,9 @@ async def run():
                                 await body.screenshot(path="captcha.png")
                                 
                                 clicks = -1
-                                # Intentar con IA primero (PLAN A) si no ha fallado demasiadas veces
-                                if os.getenv("AI_SOLVER_ENABLED") == "true" and ai_fail_count < 3:
-                                    print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision... (Intento {ai_fail_count+1}/3)")
+                                # Intentar con IA primero (PLAN A) si no ha agotado todos los intentos
+                                if os.getenv("AI_SOLVER_ENABLED") == "true" and ai_fail_count < max_ai_attempts:
+                                    print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision... (Intento {ai_fail_count+1}/{max_ai_attempts})")
                                     from ai_solver import resolver_captcha_con_ia
                                     
                                     # Tomar tiempo antes
@@ -305,7 +309,7 @@ async def run():
                             try_again_btn = frame.get_by_role("button", name=re.compile("Try again|Intentar de nuevo", re.IGNORECASE))
                             if await try_again_btn.count() > 0 and await try_again_btn.first.is_visible(timeout=100):
                                 ai_fail_count += 1
-                                print(f"[{time.strftime('%H:%M:%S')}] ❌ CAPTCHA incorrecto. Fallo acumulado: {ai_fail_count}/3. Clickeando 'Try again'...")
+                                print(f"[{time.strftime('%H:%M:%S')}] ❌ CAPTCHA incorrecto. Fallo acumulado: {ai_fail_count}/{max_ai_attempts}. Clickeando 'Try again'...")
                                 await try_again_btn.first.click()
                                 await page.wait_for_timeout(2000)
                                 clicked_captcha = True
