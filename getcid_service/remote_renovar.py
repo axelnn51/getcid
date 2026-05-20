@@ -49,15 +49,15 @@ def update_winrate(success):
 
 # ─── Configuración ───
 # Datos de la cuenta (se leen del .env)
-MS_EMAIL = os.getenv("MS_EMAIL", "axelnn52@outlook.com")
-MS_PASSWORD = os.getenv("MS_PASSWORD", "@Dotita123")
+MS_EMAIL = os.getenv("MS_EMAIL") or "axelnn52@outlook.com"
+MS_PASSWORD = os.getenv("MS_PASSWORD") or "@Dotita123"
 
 # URL del servidor Docker (cambiar si es diferente)
-GETCID_SERVER = os.getenv("GETCID_SERVER", "http://localhost:8000")
+GETCID_SERVER = os.getenv("GETCID_SERVER") or "http://localhost:8000"
 
 # Telegram Bot para notificar directo
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8334632533:AAEMCDWK-4sMpmDSSquc5Afz6FRVZjrs6go")
-ADMIN_CHAT_ID = os.getenv("ADMIN_IDS", "7233007906")
+BOT_TOKEN = os.getenv("BOT_TOKEN") or "8334632533:AAEMCDWK-4sMpmDSSquc5Afz6FRVZjrs6go"
+ADMIN_CHAT_ID = os.getenv("ADMIN_IDS") or "7233007906"
 
 # Client ID del SPA de VisualSupport (el que funciona con cuentas personales)
 SPA_CLIENT_ID = "2b217cec-607d-4eb6-887e-c928520a14f6"
@@ -223,18 +223,27 @@ async def run():
                                 # Intentar con IA primero (PLAN A) si no ha agotado todos los intentos
                                 if os.getenv("AI_SOLVER_ENABLED") == "true" and ai_fail_count < max_ai_attempts:
                                     print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision... (Intento {ai_fail_count+1}/{max_ai_attempts})")
-                                    from ai_solver import resolver_captcha_con_ia
+                                    try:
+                                        from ai_solver import resolver_captcha_con_ia
+                                    except ImportError as ie:
+                                        print(f"[{time.strftime('%H:%M:%S')}] ❌ ERROR IMPORTANDO ai_solver: {ie}")
+                                        resolver_captcha_con_ia = None
                                     
-                                    # Tomar tiempo antes
-                                    start_time = time.time()
-                                    clicks = resolver_captcha_con_ia("captcha.png")
-                                    elapsed = time.time() - start_time
-                                    
-                                    if 0 <= clicks <= 5:
-                                        print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
-                                        last_ai_clicks = clicks
-                                    else:
-                                        print(f"[{time.strftime('%H:%M:%S')}] ⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
+                                    if resolver_captcha_con_ia:
+                                        # Tomar tiempo antes
+                                        start_time = time.time()
+                                        try:
+                                            clicks = resolver_captcha_con_ia("captcha.png")
+                                        except Exception as ai_err:
+                                            print(f"[{time.strftime('%H:%M:%S')}] ❌ ERROR EJECUTANDO ai_solver: {ai_err}")
+                                            clicks = -1
+                                        elapsed = time.time() - start_time
+                                        
+                                        if 0 <= clicks <= 5:
+                                            print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
+                                            last_ai_clicks = clicks
+                                        else:
+                                            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
 
                                 # Si la IA falló, pedir ayuda humana (PLAN B)
                                 if clicks == -1:
