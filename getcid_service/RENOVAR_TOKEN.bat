@@ -13,13 +13,13 @@ cd /d "%~dp0"
 REM Verificar si existe venv local
 if exist "venv\Scripts\python.exe" (
     echo Usando Python del venv local...
-    venv\Scripts\python.exe renovar_token.py
+    venv\Scripts\python.exe remote_renovar.py
 ) else if exist "getcid_service\venv\Scripts\python.exe" (
     echo Usando Python del venv de getcid_service...
-    getcid_service\venv\Scripts\python.exe renovar_token.py
+    getcid_service\venv\Scripts\python.exe remote_renovar.py
 ) else (
     echo Usando Python del sistema...
-    python renovar_token.py
+    python remote_renovar.py
 )
 
 echo.

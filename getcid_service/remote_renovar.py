@@ -185,17 +185,22 @@ async def run():
                                 clicks = -1
                                 # Intentar con IA primero (PLAN A)
                                 if os.getenv("AI_SOLVER_ENABLED") == "true":
-                                    print("🤖 IA Activada: Analizando puzzle con Gemini Vision...")
+                                    print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision...")
                                     from ai_solver import resolver_captcha_con_ia
+                                    
+                                    # Tomar tiempo antes
+                                    start_time = time.time()
                                     clicks = resolver_captcha_con_ia("captcha.png")
+                                    elapsed = time.time() - start_time
+                                    
                                     if 0 <= clicks <= 5:
-                                        print(f"✅ La IA determinó que son {clicks} clics.")
+                                        print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
                                     else:
-                                        print("⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
+                                        print(f"[{time.strftime('%H:%M:%S')}] ⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
 
                                 # Si la IA falló, pedir ayuda humana (PLAN B)
                                 if clicks == -1:
-                                    print("🚨 Solicitando ayuda por Telegram (Plan B)...")
+                                    print(f"[{time.strftime('%H:%M:%S')}] 🚨 Solicitando ayuda por Telegram (Plan B)...")
                                     reply_markup = {
                                         "inline_keyboard": [
                                             [

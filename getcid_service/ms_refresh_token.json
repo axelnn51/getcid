@@ -1,0 +1,11 @@
+{
+  "refresh_token": "M.C529_BL2.0.U.-ChOIeHHAXliHxsBRqM68eQeRxQbgdctPw1UVul*16xXiddt*A2e9OCNnRoSQyX5Gd0q!prhsIFxLEpE6HtTLuzq9bpxwHb1xhnXVXoZ!9v1d7l4PYA9t8u7SLhMs3Z!Ff7DhjQ5fUU5s6DRZUXrPThrU9zDVqDfn3WRzvbC2My1iThKdMB04KcS!BCySO14QH4xyX7SlwtsJXF62JI7dIHNgegJ!KXfIgNmkg*586YQq4jLNEEdPn92mkn!3z6wH5qtMt7KP1qX31NquMTrRwi*cdxuS4rjWG!Oa0ahHIo3KogJDbMZ7u12mw9u7B*4!yox!WIPpSAmNMSXKsECemLI$",
+  "client_id": "2b217cec-607d-4eb6-887e-c928520a14f6",
+  "scopes": "",
+  "token_type": "spa",
+  "token_type_label": "SPA (24h max)",
+  "max_lifetime_days": 1,
+  "saved_at": 1779256072.5823817,
+  "saved_at_readable": "2026-05-20 00:47:52",
+  "last_refreshed_at": 1779256072.5823817
+}
