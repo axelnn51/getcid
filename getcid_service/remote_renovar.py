@@ -310,6 +310,30 @@ async def run():
                             if await try_again_btn.count() > 0 and await try_again_btn.first.is_visible(timeout=100):
                                 ai_fail_count += 1
                                 print(f"[{time.strftime('%H:%M:%S')}] ❌ CAPTCHA incorrecto. Fallo acumulado: {ai_fail_count}/{max_ai_attempts}. Clickeando 'Try again'...")
+                                
+                                # Enviar log de fallo a Telegram para entrenamiento
+                                if last_ai_clicks != -1:
+                                    try:
+                                        raw_reasoning = "N/A"
+                                        try:
+                                            with open("last_reasoning.txt", "r", encoding="utf-8") as f:
+                                                raw_reasoning = f.read()[:400]
+                                        except:
+                                            pass
+                                        async with httpx.AsyncClient() as http:
+                                            with open("captcha.png", "rb") as f:
+                                                await http.post(
+                                                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                                                    data={
+                                                        "chat_id": ADMIN_CHAT_ID,
+                                                        "caption": f"❌ *Fallo IA #{ai_fail_count}/{max_ai_attempts}*\n🤖 Respuesta: *{last_ai_clicks} clics* (Incorrecto)\n\n📝 `{raw_reasoning}...`",
+                                                        "parse_mode": "Markdown"
+                                                    },
+                                                    files={"photo": f}
+                                                )
+                                    except:
+                                        pass
+                                
                                 await try_again_btn.first.click()
                                 await page.wait_for_timeout(2000)
                                 clicked_captcha = True
@@ -565,16 +589,28 @@ async def run():
     if captured_token:
         try:
             async with httpx.AsyncClient(timeout=30) as http:
+                # Obtener winrate actual
+                winrate_str = ""
+                try:
+                    if os.path.exists("captcha_stats.json"):
+                        with open("captcha_stats.json", "r") as f:
+                            stats = json.load(f)
+                        total = stats["success"] + stats["fail"]
+                        rate = (stats["success"] / total) * 100 if total > 0 else 0
+                        winrate_str = f"\n📊 *Winrate IA:* {stats['success']}/{total} ({rate:.0f}%)"
+                except:
+                    pass
+                
                 await http.post(
                     f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                     json={
                         "chat_id": ADMIN_CHAT_ID,
                         "text": (
-                            "✅ *Token Renovado Exitosamente (Remoto)*\n\n"
-                            f"El sistema ha capturado y guardado automáticamente los tokens.\n\n"
+                            "✅ *Token Renovado Exitosamente*\n\n"
                             f"🔑 Access Token: ✅\n"
                             f"🔄 Refresh Token: {'✅ Guardado' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
-                            f"📅 Próxima renovación: ~24 horas (SPA) o ~90 días (nativo)"
+                            f"📅 Próxima renovación: medianoche"
+                            f"{winrate_str}"
                         ),
                         "parse_mode": "Markdown"
                     }
