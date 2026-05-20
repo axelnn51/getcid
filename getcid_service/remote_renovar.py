@@ -251,6 +251,15 @@ async def run():
                                 clicked_captcha = True
                                 break
                             
+                            # 2. Detectar si falló ("That was not quite right. You can try again.")
+                            try_again_btn = frame.get_by_role("button", name=re.compile("Try again|Intentar de nuevo", re.IGNORECASE))
+                            if await try_again_btn.count() > 0 and await try_again_btn.first.is_visible(timeout=100):
+                                print(f"[{time.strftime('%H:%M:%S')}] ❌ CAPTCHA incorrecto. Clickeando 'Try again'...")
+                                await try_again_btn.first.click()
+                                await page.wait_for_timeout(2000)
+                                clicked_captcha = True
+                                break
+                            
                             # 2. Si no estamos en las flechas, quizá estamos en la pantalla inicial "Start"
                             # Intento A: Como botón real
                             f_btn = frame.get_by_role("button", name=re.compile("^Start$|^Empezar$|^Comenzar$", re.IGNORECASE))
