@@ -19,8 +19,8 @@ def resolver_captcha_con_ia(image_path: str) -> int:
     try:
         genai.configure(api_key=api_key)
         
-        # Usamos el modelo optimizado para visión
-        model = genai.GenerativeModel('gemini-1.5-pro')
+        # Usamos el modelo optimizado para visión (Flash es gratis y súper rápido)
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         logger.info("🤖 Enviando imagen a Gemini 1.5 Pro para análisis de CAPTCHA...")
         
