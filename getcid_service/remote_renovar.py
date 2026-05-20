@@ -152,11 +152,15 @@ async def run():
         max_wait = 360  # 6 minutos (suficiente para agotar todos los intentos de IA antes de pedir ayuda)
 
         # Calcular intentos máximos de IA: 3 intentos por cada API key configurada
-        num_api_keys = len([k for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]) or 1
+        gemini_keys_raw = os.getenv("GEMINI_API_KEY") or ""
+        num_api_keys = len([k for k in gemini_keys_raw.split(",") if k.strip()]) or 1
+        ai_enabled = (os.getenv("AI_SOLVER_ENABLED") or "").strip().lower() == "true"
         max_ai_attempts = num_api_keys * 3  # 4 keys × 3 = 12 intentos máximos
         ai_fail_count = 0
         last_ai_clicks = -1
-        print(f"  🤖 IA configurada con {num_api_keys} API keys × 3 intentos = {max_ai_attempts} intentos máx antes de pedir ayuda.\n")
+        print(f"  🤖 IA {'ACTIVADA' if ai_enabled else 'DESACTIVADA'}")
+        print(f"  🔑 API Keys detectadas: {num_api_keys} × 3 intentos = {max_ai_attempts} intentos máx")
+        print(f"  📝 ENV DEBUG: AI_SOLVER_ENABLED='{os.getenv('AI_SOLVER_ENABLED')}' | GEMINI_API_KEY={len(gemini_keys_raw)} chars\n")
 
         while time.time() - start_wait < max_wait:
             elapsed = int(time.time() - start_wait)
@@ -164,7 +168,7 @@ async def run():
             # ¿Ya tenemos el token interceptado por red?
             if captured_token:
                 print(f"\n✅ Token capturado en red después de {elapsed}s")
-                if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < 3:
+                if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                     print("📊 Registrando victoria para la IA...")
                     update_winrate(True)
                 break
@@ -172,7 +176,7 @@ async def run():
             # ¿Llegamos a la página final de bienvenida?
             if "visualsupport.microsoft.com/welcome" in page.url:
                 print("\n✅ Llegamos a la página de bienvenida. Extrayendo tokens...")
-                if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < 3:
+                if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                     print("📊 Registrando victoria para la IA...")
                     update_winrate(True)
                 break
@@ -188,7 +192,7 @@ async def run():
                             break
                     if login_complete:
                         print(f"\n✅ Login completado exitosamente. Extrayendo tokens del storage...")
-                        if os.getenv("AI_SOLVER_ENABLED") == "true" and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
+                        if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                             print("📊 Registrando victoria para la IA...")
                             update_winrate(True)
                         break
@@ -221,7 +225,7 @@ async def run():
                                 
                                 clicks = -1
                                 # Intentar con IA primero (PLAN A) si no ha agotado todos los intentos
-                                if os.getenv("AI_SOLVER_ENABLED") == "true" and ai_fail_count < max_ai_attempts:
+                                if ai_enabled and ai_fail_count < max_ai_attempts:
                                     print(f"[{time.strftime('%H:%M:%S')}] 🤖 IA Activada: Analizando puzzle con Gemini Vision... (Intento {ai_fail_count+1}/{max_ai_attempts})")
                                     try:
                                         from ai_solver import resolver_captcha_con_ia
