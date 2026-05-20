@@ -176,48 +176,60 @@ async def run():
                             # 1. Ver si ya estamos adentro del puzzle (flechas visibles)
                             right_arrow = frame.locator("a.navigate.right, button.navigate-right, [aria-label*='next image' i], [aria-label*='siguiente' i], a[aria-label*='right' i]")
                             if await right_arrow.count() > 0 and await right_arrow.first.is_visible(timeout=500):
-                                print("🚨 CAPTCHA de flechas detectado. Solicitando ayuda por Telegram...")
+                                print("🚨 CAPTCHA de flechas detectado.")
                                 
                                 # Tomar screenshot del iframe completo
                                 body = frame.locator("body")
                                 await body.screenshot(path="captcha.png")
                                 
-                                # Enviar a Telegram
-                                reply_markup = {
-                                    "inline_keyboard": [
-                                        [
-                                            {"text": "0", "callback_data": "solve_captcha_0"},
-                                            {"text": "1", "callback_data": "solve_captcha_1"},
-                                            {"text": "2", "callback_data": "solve_captcha_2"}
-                                        ],
-                                        [
-                                            {"text": "3", "callback_data": "solve_captcha_3"},
-                                            {"text": "4", "callback_data": "solve_captcha_4"},
-                                            {"text": "5", "callback_data": "solve_captcha_5"}
+                                clicks = -1
+                                # Intentar con IA primero (PLAN A)
+                                if os.getenv("AI_SOLVER_ENABLED") == "true":
+                                    print("🤖 IA Activada: Analizando puzzle con Gemini Vision...")
+                                    from ai_solver import resolver_captcha_con_ia
+                                    clicks = resolver_captcha_con_ia("captcha.png")
+                                    if 0 <= clicks <= 5:
+                                        print(f"✅ La IA determinó que son {clicks} clics.")
+                                    else:
+                                        print("⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
+
+                                # Si la IA falló, pedir ayuda humana (PLAN B)
+                                if clicks == -1:
+                                    print("🚨 Solicitando ayuda por Telegram (Plan B)...")
+                                    reply_markup = {
+                                        "inline_keyboard": [
+                                            [
+                                                {"text": "0", "callback_data": "solve_captcha_0"},
+                                                {"text": "1", "callback_data": "solve_captcha_1"},
+                                                {"text": "2", "callback_data": "solve_captcha_2"}
+                                            ],
+                                            [
+                                                {"text": "3", "callback_data": "solve_captcha_3"},
+                                                {"text": "4", "callback_data": "solve_captcha_4"},
+                                                {"text": "5", "callback_data": "solve_captcha_5"}
+                                            ]
                                         ]
-                                    ]
-                                }
-                                
-                                async with httpx.AsyncClient() as http:
-                                    with open("captcha.png", "rb") as f:
-                                        await http.post(
-                                            f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
-                                            data={
-                                                "chat_id": ADMIN_CHAT_ID,
-                                                "caption": "🚨 *Azure WAF CAPTCHA Detectado*\n¿Cuántos clics a la *DERECHA* necesita el tren?",
-                                                "reply_markup": json.dumps(reply_markup),
-                                                "parse_mode": "Markdown"
-                                            },
-                                            files={"photo": f}
-                                        )
-                                
-                                print("⏳ Esperando respuesta del administrador en Telegram...")
-                                import main
-                                main.captcha_event.clear()
-                                await main.captcha_event.wait()
-                                
-                                clicks = main.captcha_clicks
-                                print(f"🤖 Recibida instrucción: {clicks} clics a la derecha.")
+                                    }
+                                    
+                                    async with httpx.AsyncClient() as http:
+                                        with open("captcha.png", "rb") as f:
+                                            await http.post(
+                                                f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                                                data={
+                                                    "chat_id": ADMIN_CHAT_ID,
+                                                    "caption": "🚨 *Azure WAF CAPTCHA Detectado*\n¿Cuántos clics a la *DERECHA* necesita el tren?",
+                                                    "reply_markup": json.dumps(reply_markup),
+                                                    "parse_mode": "Markdown"
+                                                },
+                                                files={"photo": f}
+                                            )
+                                    
+                                    print("⏳ Esperando respuesta del administrador en Telegram...")
+                                    import main
+                                    main.captcha_event.clear()
+                                    await main.captcha_event.wait()
+                                    clicks = main.captcha_clicks
+                                    print(f"👨‍💻 Recibida instrucción manual: {clicks} clics a la derecha.")
                                 
                                 # Ejecutar los clics
                                 for _ in range(clicks):
