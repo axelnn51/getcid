@@ -241,10 +241,15 @@ async def run():
                                     clicks = main.captcha_clicks
                                     print(f"👨‍💻 Recibida instrucción manual: {clicks} clics a la derecha.")
                                 
-                                # Ejecutar los clics
-                                for _ in range(clicks):
+                                # Ejecutar los clics con calma para que la animación termine
+                                for i in range(clicks):
                                     await right_arrow.first.click()
-                                    await page.wait_for_timeout(300)
+                                    print(f"   ▶ Clic {i+1}/{clicks}")
+                                    await page.wait_for_timeout(1200) # 1.2 segundos entre clics
+                                
+                                # Esperar a que la última animación termine antes de enviar
+                                if clicks > 0:
+                                    await page.wait_for_timeout(1000)
                                 
                                 # Clic en Submit
                                 submit_btn = frame.locator("button#home_children_button, button[type='submit'], button:has-text('Submit'), button:has-text('Enviar')")
