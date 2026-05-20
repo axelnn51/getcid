@@ -130,6 +130,7 @@ async def run():
 
         import re
         ai_fail_count = 0
+        last_ai_clicks = -1
 
         while time.time() - start_wait < max_wait:
             elapsed = int(time.time() - start_wait)
@@ -196,12 +197,15 @@ async def run():
                                     
                                     if 0 <= clicks <= 5:
                                         print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
+                                        last_ai_clicks = clicks
                                     else:
                                         print(f"[{time.strftime('%H:%M:%S')}] ⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
 
                                 # Si la IA falló, pedir ayuda humana (PLAN B)
                                 if clicks == -1:
                                     print(f"[{time.strftime('%H:%M:%S')}] 🚨 Solicitando ayuda por Telegram (Plan B)...")
+                                    ai_info = f"\n\n🤖 *Último intento IA:* {last_ai_clicks} clics (Falló)" if last_ai_clicks != -1 else ""
+                                    
                                     reply_markup = {
                                         "inline_keyboard": [
                                             [
@@ -223,7 +227,7 @@ async def run():
                                                 f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
                                                 data={
                                                     "chat_id": ADMIN_CHAT_ID,
-                                                    "caption": "🚨 *Azure WAF CAPTCHA Detectado*\n¿Cuántos clics a la *DERECHA* necesita el tren?",
+                                                    "caption": f"🚨 *Azure WAF CAPTCHA Detectado*\n¿Cuántos clics a la *DERECHA* necesita el tren?{ai_info}",
                                                     "reply_markup": json.dumps(reply_markup),
                                                     "parse_mode": "Markdown"
                                                 },
