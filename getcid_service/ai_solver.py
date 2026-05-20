@@ -27,15 +27,14 @@ def resolver_captcha_con_ia(image_path: str) -> int:
         # Cargar la imagen local
         img = Image.open(image_path)
         
-        # El prompt perfecto según las instrucciones
+        # El prompt perfecto adaptativo a cualquier puzzle de Arkose
         prompt = (
-            "Eres un experto solucionando puzzles lógicos. En la imagen adjunta hay un puzzle de 2 partes. "
-            "A la izquierda hay un ícono de referencia mostrando una dirección específica. "
-            "A la derecha hay un objeto/tren sobre unas vías en una imagen 3D. "
-            "Tu tarea es determinar cuántos 'clics' en el botón de flecha derecha se necesitan para rotar la imagen de la derecha "
-            "y que coincida EXACTAMENTE con la orientación y el ángulo de la imagen de referencia de la izquierda. "
-            "Sabiendo que cada clic a la flecha rota la imagen una cantidad fija, dime el número exacto de clics. "
-            "IMPORTANTE: Tu respuesta debe ser ÚNICAMENTE el número entero (ejemplo: 3). No escribas ninguna otra palabra, solo el número del 0 al 5."
+            "Eres un experto solucionando puzzles lógicos de CAPTCHAs de Arkose Labs. "
+            "En la imagen adjunta hay un puzzle. Primero LEE LA INSTRUCCIÓN que aparece en texto en la imagen "
+            "(ej. 'Make sure the train in the image is at the position of the icon...', 'Use the arrows to rotate...', etc). "
+            "Luego, resuelve el puzzle estrictamente según esa instrucción comparando la imagen izquierda (referencia) y la derecha (interactiva). "
+            "Determina cuántos clics a la flecha DERECHA se necesitan (del 0 al 5) para llegar a la solución correcta. "
+            "Analiza paso a paso, y en la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics."
         )
         
         response = model.generate_content([prompt, img])
@@ -44,11 +43,11 @@ def resolver_captcha_con_ia(image_path: str) -> int:
         text_res = response.text.strip()
         logger.info(f"🤖 IA Respuesta RAW: '{text_res}'")
         
-        # Extraemos solo los números por si la IA añade puntuación
+        # Extraemos solo el ÚLTIMO número de la respuesta (para evitar que agarre números de listas como '1.')
         import re
         numbers = re.findall(r'\d+', text_res)
         if numbers:
-            num = int(numbers[0])
+            num = int(numbers[-1])
             if 0 <= num <= 5:
                 return num
                 
