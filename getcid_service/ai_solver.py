@@ -28,8 +28,8 @@ def resolver_captcha_con_ia(image_path: str) -> int:
         try:
             genai.configure(api_key=api_key)
             
-            # Usamos el modelo Pro para un razonamiento espacial 3D superior
-            model = genai.GenerativeModel('gemini-1.5-pro')
+            # Usamos el modelo Flash que es más estable en la API, con el nuevo prompt mejorado
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
             if idx == 0:
                 logger.info(f"🤖 Enviando imagen a Gemini Vision (Intentando con API Key {idx+1}/{len(api_keys)})...")
