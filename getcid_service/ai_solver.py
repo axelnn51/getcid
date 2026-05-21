@@ -28,8 +28,8 @@ def resolver_captcha_con_ia(image_path: str) -> int:
         try:
             genai.configure(api_key=api_key)
             
-            # Usamos el modelo optimizado para visión (Flash es gratis y súper rápido)
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # Usamos el modelo Pro para un razonamiento espacial 3D superior
+            model = genai.GenerativeModel('gemini-1.5-pro')
             
             if idx == 0:
                 logger.info(f"🤖 Enviando imagen a Gemini Vision (Intentando con API Key {idx+1}/{len(api_keys)})...")
@@ -37,26 +37,32 @@ def resolver_captcha_con_ia(image_path: str) -> int:
             # Cargar la imagen local
             img = Image.open(image_path)
             
-            # El prompt perfecto adaptativo con reglas explícitas para evitar alucinaciones
+            # El prompt estructurado paso a paso para forzar a la IA a enumerar los nodos
             prompt = (
                 "Eres un experto solucionando puzzles lógicos de CAPTCHAs de Arkose Labs. "
-                "Primero LEE LA INSTRUCCIÓN que aparece en texto en la imagen. "
-                "Existen varios tipos de puzzles. Sigue estas reglas ESTRICTAS según la instrucción:\n\n"
-                "TIPO 1: POSICIÓN EN EL CAMINO (ej. 'Make sure the train... is at the position of the icon connected by a red line'). "
-                "REGLA: Tienes que mover el tren por las vías hasta llegar al icono objetivo indicado en la imagen izquierda. "
-                "CÓMO CALCULAR LOS CLICS: "
-                "1. Encuentra el icono objetivo en las vías de la imagen derecha. "
-                "2. Encuentra dónde está el tren actualmente. "
-                "3. Fíjate hacia dónde mira la parte frontal del tren (su 'cara' o ventana). Esa es la dirección 'hacia adelante' por la que avanzará. "
-                "4. Sigue la vía (línea roja punteada) hacia adelante. ¡CUIDADO EXTREMO! Las vías pueden cruzarse sobre sí mismas en 3D (como un puente, un paso a desnivel o una figura de 8). Sigue la vía de forma continua por arriba o por abajo sin 'saltar' bruscamente en los cruces. "
-                "5. Cuenta cuántos postes rojos (paradas) hay desde el tren hasta el objetivo siguiendo esa ruta exacta. "
-                "6. CIRCUITO CÍCLICO: Si siguiendo la vía llegas al final de la pista, el siguiente clic te teletransporta al extremo inicial de la vía para continuar el bucle. "
-                "Ejemplo: Si el camino es A -> B -> C -> D, y el tren está en D. 1 clic lo lleva a A. 2 clics lo llevan a B. "
-                "NUNCA calcules la distancia 'más corta' en línea recta. SIEMPRE sigue el camino de las vías paso a paso. "
-                "¡ATENCIÓN! La posición inicial NUNCA es la correcta. La respuesta NUNCA es 0. (Siempre es del 1 al 5).\n\n"
-                "TIPO 2: ROTACIÓN (ej. 'Use the arrows to rotate the object to face the same direction as the hand'). "
-                "REGLA: Calcula cuántos clics a la derecha necesitas para que el objeto apunte en la misma dirección que la mano. (NUNCA es 0).\n\n"
-                "Analiza paso a paso, y en la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (del 1 al 5)."
+                "Existen dos tipos principales. Lee la instrucción de la imagen para saber cuál es:\n\n"
+                "TIPO 1: POSICIÓN EN EL CAMINO (ej. 'move the train to the icon').\n"
+                "La imagen contiene dos partes: a la izquierda el icono objetivo, a la derecha un tren en una vía 3D con varios postes rojos que tienen iconos. "
+                "REGLA: Tienes que calcular cuántos clics ('avances') se necesitan para mover el tren por la vía hasta el icono objetivo.\n"
+                "Sigue ESTRICTAMENTE este análisis paso a paso:\n"
+                "1. IDENTIFICA EL OBJETIVO: ¿Cuál es el icono de la imagen izquierda?\n"
+                "2. POSICIÓN INICIAL: ¿Sobre qué icono (poste rojo) está estacionado el tren AZUL en la imagen derecha?\n"
+                "3. DIRECCIÓN: ¿Hacia dónde mira la cara frontal (la chimenea/ventana) del tren?\n"
+                "4. MAPEO DE LA VÍA: Sigue la línea punteada roja en la dirección que mira el tren. Enumera TODOS los iconos (postes) que encuentras en el camino, en orden, hasta llegar al icono objetivo. ¡No te saltes ninguno! La vía puede cruzarse o ser un bucle circular.\n"
+                "5. CONTEO: Cuenta los pasos (clics). Cada avance a un nuevo poste es 1 clic.\n"
+                "Ejemplo de razonamiento esperado:\n"
+                "- Objetivo: Diamante.\n"
+                "- Posición inicial: El tren está sobre el icono de una taza.\n"
+                "- Dirección: Mira hacia la derecha.\n"
+                "- Camino: Taza -> (clic 1) -> Engranaje -> (clic 2) -> Cadenas -> (clic 3) -> Diamante.\n"
+                "- Total clics: 3.\n\n"
+                "TIPO 2: ROTACIÓN (ej. 'Use the arrows to rotate the object to face the same direction as the hand').\n"
+                "REGLA: Calcula cuántos clics a la derecha necesitas para que el animal u objeto de la derecha apunte en la misma dirección exacta que la mano de la izquierda.\n\n"
+                "REGLAS CRÍTICAS:\n"
+                "- Para el tren: ¡NUNCA vayas en reversa! Siempre sigue la dirección a la que apunta el frente del tren.\n"
+                "- La posición inicial NUNCA es la correcta. La respuesta NUNCA es 0.\n"
+                "- La respuesta final siempre es un número del 1 al 5.\n"
+                "En la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (ejemplo: 3)."
             )
             
             response = model.generate_content([prompt, img])
