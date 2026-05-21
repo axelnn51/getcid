@@ -209,6 +209,13 @@ def save_refresh_token(refresh_token: str, client_id: str, scopes: str = ""):
         }, f, indent=2)
 
 
+def reset_expiration_alerts():
+    """Resetea el contador de alertas de expiración tras una renovación exitosa."""
+    global _expiration_alert_count
+    _expiration_alert_count = 0
+    logger.info("🔄 Contador de alertas de expiración reseteado.")
+
+
 def get_refresh_token_status() -> dict:
     """Retorna el estado del refresh token con información REAL del tipo."""
     if not os.path.exists(REFRESH_TOKEN_FILE):

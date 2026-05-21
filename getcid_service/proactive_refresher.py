@@ -6,6 +6,7 @@ Evita que el token expire silenciosamente entre requests de clientes.
 - Con client_id SPA (24h): mantiene el token "caliente" renovando antes de expirar
 - Con client_id nativo (90d): renueva igualmente por seguridad
 - Envía alertas Telegram si falla 2+ veces consecutivas
+- AUTO-ESCALA: si falla 5+ veces, dispara remote_renovar automáticamente
 """
 import asyncio
 import time
@@ -15,6 +16,8 @@ logger = logging.getLogger("ProactiveRefresher")
 
 REFRESH_INTERVAL_SECONDS = 25 * 60  # 25 minutos
 INITIAL_DELAY_SECONDS = 60  # Esperar 1 min después del arranque
+AUTO_RENOVATE_THRESHOLD = 5  # Fallos consecutivos antes de auto-renovar
+AUTO_RENOVATE_COOLDOWN = 7200  # 2 horas entre auto-renovaciones
 
 # Estado global
 _running = False
@@ -23,6 +26,7 @@ _last_refresh_ok = None
 _consecutive_failures = 0
 _total_refreshes = 0
 _total_failures = 0
+_last_auto_renovate_time = 0
 
 
 async def start_proactive_refresh():
@@ -69,18 +73,67 @@ async def start_proactive_refresh():
                 logger.error(f"❌ Proactive refresh FALLÓ (consecutivos: {_consecutive_failures})")
 
                 # Alerta Telegram después de 2 fallos consecutivos
-                if _consecutive_failures >= 2:
+                if _consecutive_failures == 2:
                     await _send_failure_alert()
+
+                # AUTO-ESCALACIÓN: disparar remote_renovar después de N fallos
+                if _consecutive_failures >= AUTO_RENOVATE_THRESHOLD:
+                    await _auto_renovate()
 
         except Exception as e:
             _consecutive_failures += 1
             _total_failures += 1
             logger.error(f"💥 Error en proactive refresh: {e}")
 
-            if _consecutive_failures >= 2:
+            if _consecutive_failures == 2:
                 await _send_failure_alert()
+            
+            if _consecutive_failures >= AUTO_RENOVATE_THRESHOLD:
+                await _auto_renovate()
 
         await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
+
+
+async def _auto_renovate():
+    """Auto-escala disparando remote_renovar cuando el refresh token falla mucho."""
+    global _last_auto_renovate_time
+
+    now = time.time()
+    if now - _last_auto_renovate_time < AUTO_RENOVATE_COOLDOWN:
+        elapsed_min = int((now - _last_auto_renovate_time) / 60)
+        cooldown_min = AUTO_RENOVATE_COOLDOWN // 60
+        logger.info(f"⏸ Auto-renovación en cooldown ({elapsed_min}/{cooldown_min} min). Esperando...")
+        return
+
+    _last_auto_renovate_time = now
+    logger.info("🚀 AUTO-ESCALACIÓN: Disparando remote_renovar automáticamente...")
+
+    try:
+        from telegram_alert import send_alert
+        await send_alert(
+            "🤖 *Auto-Renovación Activada*\n\n"
+            f"Fallos consecutivos: *{_consecutive_failures}*\n"
+            "Disparando renovación automática por Playwright..."
+        )
+    except:
+        pass
+
+    try:
+        from remote_renovar import run as run_renovar
+        await run_renovar()
+        logger.info("✅ Auto-renovación completada.")
+    except Exception as e:
+        logger.error(f"❌ Auto-renovación falló: {e}")
+        try:
+            from telegram_alert import send_alert
+            await send_alert(
+                f"❌ *Auto-Renovación Falló*\n\n"
+                f"Error: `{str(e)[:200]}`\n\n"
+                "Se necesita intervención manual.\n"
+                "Usa 🔄 Renovar Token o /deviceauth"
+            )
+        except:
+            pass
 
 
 async def _send_failure_alert():
@@ -110,7 +163,9 @@ def get_refresher_status() -> dict:
         "consecutive_failures": _consecutive_failures,
         "total_refreshes": _total_refreshes,
         "total_failures": _total_failures,
-        "interval_minutes": REFRESH_INTERVAL_SECONDS // 60
+        "interval_minutes": REFRESH_INTERVAL_SECONDS // 60,
+        "auto_renovate_threshold": AUTO_RENOVATE_THRESHOLD,
+        "last_auto_renovate": _last_auto_renovate_time or None
     }
 
 

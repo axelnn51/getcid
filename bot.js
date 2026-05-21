@@ -161,6 +161,7 @@ function startBot() {
                 parse_mode: 'Markdown',
                 ...Markup.keyboard([
                     ['🔄 Renovar Token', '📊 Estado Sistema'],
+                    ['🔑 Estado Token', '🔐 Device Auth'],
                     ['👥 Usuarios', '⚙️ Ayuda Admin']
                 ]).resize()
             };
@@ -224,7 +225,22 @@ function startBot() {
 
     bot.hears('⚙️ Ayuda Admin', (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
-        ctx.reply('Comandos manuales:\n/settoken\n/setrefreshtoken\n/addcredits', { parse_mode: 'Markdown' });
+        ctx.reply(
+            '⚙️ *Comandos Admin Disponibles:*\n\n' +
+            '🔄 *Renovar Token* — Abrir Playwright para renovar\n' +
+            '📊 *Estado Sistema* — Resumen rápido\n' +
+            '🔑 *Estado Token* — Estado detallado del token\n' +
+            '🔐 *Device Auth* — Iniciar Device Code Flow (90 días)\n\n' +
+            '*Comandos manuales:*\n' +
+            '/systemstatus — Estado completo\n' +
+            '/tokenstatus — Estado del access token\n' +
+            '/settoken — Setear token manual\n' +
+            '/setrefreshtoken — Setear refresh token\n' +
+            '/deviceauth — Device Code Flow\n' +
+            '/addcredits — Agregar créditos\n' +
+            '/stats — Estadísticas',
+            { parse_mode: 'Markdown' }
+        );
     });
 
     bot.command('balance', (ctx) => {
@@ -622,8 +638,100 @@ function startBot() {
     });
 
     // ============================================================
-    // CAPTCHA INTERACTIVO: Manejador de clics en la botonera [ 0 ]...[ 5 ]
+    // HANDLERS DE MENÚ: Estado Token y Device Auth
     // ============================================================
+    bot.hears('🔑 Estado Token', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        // Reutilizar lógica de /systemstatus
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-status`);
+            const data = await response.json();
+            
+            let accessInfo = '❓ Desconocido';
+            const at = data.access_token || {};
+            if (at.status === 'valid') accessInfo = `🟢 Válido (${at.remaining_minutes || '?'} min)`;
+            else if (at.status === 'expired') accessInfo = '🔴 Expirado';
+            else if (at.status === 'no_token') accessInfo = '⚪ Sin token';
+            
+            let refreshInfo = '❓ Desconocido';
+            const rt = data.refresh_token || {};
+            if (rt.status === 'valid') {
+                if (rt.token_type === 'spa') {
+                    refreshInfo = `🟡 SPA (${rt.remaining_hours || '?'}h restantes)`;
+                } else {
+                    refreshInfo = `🟢 ${rt.token_type_label || 'OK'} (${rt.remaining_days || '?'} días)`;
+                }
+            } else if (rt.status === 'expired') refreshInfo = '🔴 EXPIRADO';
+            else if (rt.status === 'no_token') refreshInfo = '⚪ No configurado';
+            
+            let refresherInfo = '❌ Inactivo';
+            const pr = data.proactive_refresher || {};
+            if (pr.running) {
+                refresherInfo = `✅ Activo (${pr.total_refreshes || 0} OK, ${pr.consecutive_failures || 0} fallos)`;
+                if (pr.last_refresh_ago_min !== null) refresherInfo += ` | Hace ${pr.last_refresh_ago_min} min`;
+            }
+            
+            ctx.reply(
+                `🔑 *Estado de Tokens*\n\n` +
+                `🔑 Access Token: ${accessInfo}\n` +
+                `🔄 Refresh Token: ${refreshInfo}\n` +
+                `⚙️ Proactive Refresh: ${refresherInfo}`,
+                { parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            ctx.reply(`❌ Error: ${err.message}`);
+        }
+    });
+
+    bot.hears('🔐 Device Auth', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        // Reutilizar lógica de /deviceauth
+        try {
+            const msg = await ctx.reply('🔄 Iniciando Device Code Flow...');
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/device-auth-start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (data.success) {
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
+                    `🔐 *Device Code Flow Activo*\n\n` +
+                    `📋 Código: \`${data.user_code}\`\n` +
+                    `🌐 URL: ${data.verification_uri}\n\n` +
+                    `1️⃣ Abre el link\n2️⃣ Pega el código\n3️⃣ Inicia sesión\n\n` +
+                    `⏱ Expira en ${Math.floor(data.expires_in / 60)} min`,
+                    { parse_mode: 'Markdown' }
+                );
+            } else {
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ ${data.error}`);
+            }
+        } catch (err) {
+            ctx.reply(`❌ Error: ${err.message}`);
+        }
+    });
+
+    // ============================================================
+    // CAPTCHA INTERACTIVO + RENOVACIÓN INLINE
+    // ============================================================
+    
+    // Handler para el botón inline "🔄 Renovar Token Remoto" de las alertas del proactive_refresher
+    bot.action('start_renovation', async (ctx) => {
+        await ctx.answerCbQuery('Iniciando renovación...');
+        try {
+            await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                ctx.reply('✅ Proceso de renovación iniciado. Si hay CAPTCHA, te enviaré la foto.');
+            } else {
+                ctx.reply(`❌ Error: ${data.error}`);
+            }
+        } catch (err) {
+            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
+        }
+    });
+
+    // Handler para clics de CAPTCHA [ 0 ]...[ 5 ]
     bot.action(/solve_captcha_(\d+)/, async (ctx) => {
         const clicks = parseInt(ctx.match[1]);
         await ctx.answerCbQuery(`Enviando ${clicks} clics...`);

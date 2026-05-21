@@ -25,6 +25,32 @@ import urllib.parse
 import httpx
 from main import captcha_event, captcha_clicks
 
+async def validate_token(token: str) -> bool:
+    """Valida que un access token realmente funcione contra la API de Microsoft."""
+    try:
+        import uuid as _uuid
+        async with httpx.AsyncClient(timeout=15, verify=False) as client:
+            resp = await client.post(
+                "https://visualsupport.microsoft.com/api/productActivation/validateIID",
+                json={"IID": "000000000000000000000000000000000000000000000000000000", "ProductType": "windows", "productGroup": "Windows", "productName": "Windows 11", "numberOfDigits": 6, "Country": "CHN", "Region": "APAC", "InstalledDevices": 1},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                    "Origin": "https://visualsupport.microsoft.com",
+                    "Referer": "https://visualsupport.microsoft.com/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+                }
+            )
+            # 403 = token expired/invalid, 200 or 400 (bad IID but token valid) = OK
+            if resp.status_code == 403:
+                print(f"   ❌ Token INVÁLIDO (403 Forbidden)")
+                return False
+            print(f"   ✅ Token VALIDADO (HTTP {resp.status_code})")
+            return True
+    except Exception as e:
+        print(f"   ⚠️ Error validando token: {e}")
+        return False
+
 def update_winrate(success):
     stats_file = "captcha_stats.json"
     try:
@@ -106,6 +132,19 @@ async def run():
         profile_dir = os.path.join(base_dir, "chrome_profile")
         os.makedirs(profile_dir, exist_ok=True)
 
+        # ─── LIMPIAR MSAL CACHE para forzar login fresco ───
+        # Esto evita que el navegador reutilice tokens viejos del cache
+        print("🧹 Limpiando MSAL cache del perfil para forzar login fresco...")
+        for msal_dir in ["Session Storage", "Local Storage"]:
+            msal_path = os.path.join(profile_dir, "Default", msal_dir)
+            if os.path.isdir(msal_path):
+                try:
+                    import shutil
+                    shutil.rmtree(msal_path, ignore_errors=True)
+                    print(f"   ✅ {msal_dir} limpiado")
+                except Exception as e:
+                    print(f"   ⚠️ No se pudo limpiar {msal_dir}: {e}")
+
         context = await p.chromium.launch_persistent_context(
             user_data_dir=profile_dir,
             headless=False,
@@ -127,12 +166,15 @@ async def run():
             await stealth.apply_stealth_async(page)
 
         # ─── Interceptar el Bearer token de las requests ───
+        token_capture_time = None  # Track WHEN the token was captured
         async def on_request(request):
             global captured_token
+            nonlocal token_capture_time
             if "api/productActivation" in request.url or "visualsupport.microsoft.com/api/" in request.url:
                 auth = request.headers.get("authorization", "")
                 if "Bearer" in auth:
                     captured_token = auth.replace("Bearer ", "").strip()
+                    token_capture_time = time.time()
                     print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(captured_token)} chars)")
 
         page.on("request", on_request)
@@ -162,16 +204,23 @@ async def run():
         print(f"  🔑 API Keys detectadas: {num_api_keys} × 3 intentos = {max_ai_attempts} intentos máx")
         print(f"  📝 ENV DEBUG: AI_SOLVER_ENABLED='{os.getenv('AI_SOLVER_ENABLED')}' | GEMINI_API_KEY={len(gemini_keys_raw)} chars\n")
 
+        MIN_CAPTURE_WAIT = 5  # Mínimo 5 segundos antes de aceptar un token (evitar cache viejo)
+
         while time.time() - start_wait < max_wait:
             elapsed = int(time.time() - start_wait)
 
             # ¿Ya tenemos el token interceptado por red?
-            if captured_token:
+            if captured_token and elapsed >= MIN_CAPTURE_WAIT:
                 print(f"\n✅ Token capturado en red después de {elapsed}s")
                 if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                     print("📊 Registrando victoria para la IA...")
                     update_winrate(True)
                 break
+            elif captured_token and elapsed < MIN_CAPTURE_WAIT:
+                # Token capturado demasiado rápido → probablemente del cache viejo
+                print(f"  ⚠️ Token capturado en {elapsed}s (< {MIN_CAPTURE_WAIT}s). Podría ser cache viejo, esperando más...")
+                captured_token = None
+                token_capture_time = None
                 
             # ¿Llegamos a la página final de bienvenida?
             if "visualsupport.microsoft.com/welcome" in page.url:
@@ -552,7 +601,7 @@ async def run():
 
         await context.close()
 
-    # ─── PASO 5: Resultados ───
+    # ─── PASO 5: Validar tokens antes de reportar ───
     print("\n" + "=" * 65)
 
     if not captured_token and not captured_refresh_token:
@@ -562,10 +611,54 @@ async def run():
         print("  • La página no cargó correctamente")
         print("  • Microsoft bloqueó la sesión")
         print("=" * 65)
+        # Notificar fallo a Telegram
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                await http.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nNo se capturó ningún token. Revisa el servidor.", "parse_mode": "Markdown"}
+                )
+        except: pass
         return  # No usar sys.exit() porque mataría el servidor FastAPI si se ejecuta desde el cron
 
-    print("  🎉 ¡TOKENS CAPTURADOS EXITOSAMENTE!")
-    print(f"  🔑 Access Token: {'✅ SÍ' if captured_token else '❌ NO'}")
+    # ─── VALIDACIÓN: Verificar que el token REALMENTE funcione ───
+    if captured_token:
+        print("\n🔍 Validando access token contra Microsoft API...")
+        token_valid = await validate_token(captured_token)
+        if not token_valid:
+            print("  ❌ TOKEN CAPTURADO ES INVÁLIDO. Descartando.")
+            captured_token = None
+            # Intentar usar el refresh token para obtener uno nuevo
+            if captured_refresh_token:
+                print("  🔄 Intentando generar access token desde refresh token...")
+                try:
+                    import token_refresher
+                    token_refresher.save_refresh_token(captured_refresh_token, captured_client_id or SPA_CLIENT_ID, "")
+                    new_token = await token_refresher.refresh_access_token()
+                    if new_token:
+                        captured_token = new_token
+                        print("  ✅ Nuevo access token generado desde refresh token!")
+                        token_valid = await validate_token(captured_token)
+                        if not token_valid:
+                            print("  ❌ Incluso el nuevo token es inválido.")
+                            captured_token = None
+                except Exception as e:
+                    print(f"  ⚠️ Error generando token desde refresh: {e}")
+    
+    if not captured_token:
+        print("  ❌ NO HAY TOKEN VÁLIDO DESPUÉS DE LA VALIDACIÓN")
+        print("=" * 65)
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                await http.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nToken capturado pero es inválido (403). Se necesita re-login manual.", "parse_mode": "Markdown"}
+                )
+        except: pass
+        return
+
+    print("  🎉 ¡TOKENS CAPTURADOS Y VALIDADOS!")
+    print(f"  🔑 Access Token: ✅ VALIDADO")
     print(f"  🔄 Refresh Token: {'✅ SÍ' if captured_refresh_token else '❌ NO'}")
     print(f"  🆔 Client ID: {captured_client_id or SPA_CLIENT_ID}")
     print("=" * 65)
@@ -581,6 +674,14 @@ async def run():
             print("💾 Refresh token guardado localmente.")
         except Exception as e:
             print(f"⚠️ Error guardando refresh token: {e}")
+
+    # ─── PASO 6.5: Resetear alertas de expiración ───
+    try:
+        import token_refresher
+        token_refresher.reset_expiration_alerts()
+        print("🔄 Alertas de expiración reseteadas.")
+    except Exception as e:
+        print(f"⚠️ Error reseteando alertas: {e}")
 
     # ─── PASO 7: Actualizar Access Token en Memoria ───
     for server_url in [GETCID_SERVER, "http://localhost:8000"]:
@@ -619,8 +720,8 @@ async def run():
                     json={
                         "chat_id": ADMIN_CHAT_ID,
                         "text": (
-                            "✅ *Token Renovado Exitosamente*\n\n"
-                            f"🔑 Access Token: ✅\n"
+                            "✅ *Token Renovado y Validado*\n\n"
+                            f"🔑 Access Token: ✅ Validado\n"
                             f"🔄 Refresh Token: {'✅ Guardado' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
                             f"📅 Próxima renovación: medianoche"
                             f"{winrate_str}"
