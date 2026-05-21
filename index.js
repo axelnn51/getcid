@@ -56,12 +56,21 @@ function buildErrorResponse(error, detectedIID) {
     // CIDError con mensaje descriptivo
     if (error instanceof CIDError || (error && error.code)) {
         let msg = error.userMessage || error.message;
+        
+        // Quitar markdown para la web
+        msg = msg.replace(/\*/g, '');
+        
+        // Enmascarar errores internos/técnicos para la web (getcid.cdkeysperu.com)
+        if (error.code === 'NETWORK_ERROR' || error.code === 'MS_ERROR' || error.code === 'TIMEOUT') {
+             msg = "❌ Error temporal de conexión con el servidor de activación. Por favor, inténtalo de nuevo en unos minutos.";
+        }
+        
         if (iidDisplay) msg += `\n\n📝 IID detectado:\n${iidDisplay}`;
         return { success: false, error: msg, errorCode: error.code, iid: iid };
     }
 
     // Error genérico
-    let msg = 'Error procesando solicitud.';
+    let msg = '❌ Error procesando solicitud. Por favor, inténtalo de nuevo en unos minutos.';
     if (iidDisplay) msg += `\n\n📝 IID detectado:\n${iidDisplay}`;
     return { success: false, error: msg, errorCode: 'UNKNOWN', iid: iid };
 }

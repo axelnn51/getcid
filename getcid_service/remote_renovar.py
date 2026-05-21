@@ -102,6 +102,18 @@ captured_client_id = None
 
 async def run():
     global captured_token, captured_refresh_token, captured_client_id
+    captured_token = None
+    captured_refresh_token = None
+    captured_client_id = None
+    
+    previous_token = None
+    try:
+        if os.path.exists("ms_token.json"):
+            with open("ms_token.json", "r") as f:
+                data = json.load(f)
+                previous_token = data.get("token")
+    except:
+        pass
     
     print_banner()
 
@@ -157,6 +169,14 @@ async def run():
             viewport={"width": 1280, "height": 900}
         )
         
+        # ─── LIMPIAR COOKIES ───
+        # Evita que un auto-login por cookies mantenga vivo un bug de caché de sesión
+        try:
+            await context.clear_cookies()
+            print("   ✅ Cookies limpiadas exitosamente.")
+        except Exception as e:
+            print(f"   ⚠️ No se pudieron limpiar las cookies: {e}")
+        
         # En contextos persistentes, la primera página ya viene abierta
         page = context.pages[0] if context.pages else await context.new_page()
 
@@ -173,9 +193,17 @@ async def run():
             if "api/productActivation" in request.url or "visualsupport.microsoft.com/api/" in request.url:
                 auth = request.headers.get("authorization", "")
                 if "Bearer" in auth:
-                    captured_token = auth.replace("Bearer ", "").strip()
-                    token_capture_time = time.time()
-                    print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(captured_token)} chars)")
+                    token = auth.replace("Bearer ", "").strip()
+                    # Ignorar si es exactamente el mismo token que ya teníamos (falso positivo)
+                    if previous_token and token == previous_token:
+                        # Solo hacer print una vez por request si es idéntico para no spamear
+                        if not hasattr(on_request, "warned"):
+                            print(f"\n⚠️ Token interceptado es IDÉNTICO al anterior. Ignorando falso positivo.")
+                            on_request.warned = True
+                    else:
+                        captured_token = token
+                        token_capture_time = time.time()
+                        print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(captured_token)} chars)")
 
         page.on("request", on_request)
 
@@ -721,7 +749,7 @@ async def run():
                         "chat_id": ADMIN_CHAT_ID,
                         "text": (
                             "✅ *Token Renovado y Validado*\n\n"
-                            f"🔑 Access Token: ✅ Validado\n"
+                            f"🔑 Access Token: ✅ (`{captured_token[:15]}...{captured_token[-5:]}`)\n"
                             f"🔄 Refresh Token: {'✅ Guardado' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
                             f"📅 Próxima renovación: medianoche"
                             f"{winrate_str}"

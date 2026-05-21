@@ -40,6 +40,15 @@ TOKEN_CACHE_FILE = "ms_token.json"
 if not os.path.exists(STATE_DIR):
     os.makedirs(STATE_DIR)
 
+previous_token = None
+try:
+    if os.path.exists(TOKEN_CACHE_FILE):
+        with open(TOKEN_CACHE_FILE, "r") as f:
+            data = json.load(f)
+            previous_token = data.get("token")
+except:
+    pass
+
 async def attempt_login_for_account(p, account: dict, is_first_account: bool) -> str:
     """Intenta iniciar sesión o usar la sesión guardada para una cuenta específica."""
     email = account['email']
@@ -84,14 +93,21 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
         intercepted_data = await setup_blob_interceptor(page)
     
     captured_token = None
+    token_warned = False
 
     async def handle_request(request):
-        nonlocal captured_token
+        nonlocal captured_token, token_warned
         if "api/productActivation" in request.url or "visualsupport.microsoft.com/api/" in request.url:
             auth_header = request.headers.get("authorization")
             if auth_header and "Bearer" in auth_header:
-                captured_token = auth_header.replace("Bearer ", "").strip()
-                logger.info(f"[{email}] ¡Token Bearer capturado exitosamente!")
+                token = auth_header.replace("Bearer ", "").strip()
+                if previous_token and token == previous_token:
+                    if not token_warned:
+                        logger.warning(f"[{email}] ⚠️ Token interceptado es IDÉNTICO al anterior. Ignorando falso positivo de caché.")
+                        token_warned = True
+                else:
+                    captured_token = token
+                    logger.info(f"[{email}] ¡Token Bearer capturado exitosamente!")
 
     page.on("request", handle_request)
 
