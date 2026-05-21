@@ -26,27 +26,20 @@ import httpx
 from main import captcha_event, captcha_clicks
 
 async def validate_token(token: str) -> bool:
-    """Valida que un access token realmente funcione contra la API de Microsoft."""
+    """Valida que un access token realmente funcione contra la API de Microsoft usando DPoP."""
     try:
-        import uuid as _uuid
-        async with httpx.AsyncClient(timeout=15, verify=False) as client:
-            resp = await client.post(
-                "https://visualsupport.microsoft.com/api/productActivation/validateIID",
-                json={"IID": "000000000000000000000000000000000000000000000000000000", "ProductType": "windows", "productGroup": "Windows", "productName": "Windows 11", "numberOfDigits": 6, "Country": "CHN", "Region": "APAC", "InstalledDevices": 1},
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                    "Origin": "https://visualsupport.microsoft.com",
-                    "Referer": "https://visualsupport.microsoft.com/",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
-                }
-            )
-            # 403 = token expired/invalid, 200 or 400 (bad IID but token valid) = OK
-            if resp.status_code == 403:
-                print(f"   ❌ Token INVÁLIDO (403 Forbidden)")
-                return False
-            print(f"   ✅ Token VALIDADO (HTTP {resp.status_code})")
-            return True
+        from core import process_iid
+        # Un IID falso pero con el formato correcto
+        res = await process_iid("000000000000000000000000000000000000000000000000000000", token)
+        
+        # Si Microsoft rechaza el token (403), core.py devuelve "Token expirado o Denegado."
+        if not res.get("success") and ("Token expirado" in res.get("error", "") or "403" in res.get("error", "")):
+            print(f"   ❌ Token INVÁLIDO (403 Forbidden)")
+            return False
+            
+        # Si Microsoft devuelve error de IID inválido (o cualquier otra cosa que no sea 403), el token es válido
+        print(f"   ✅ Token VALIDADO (Respuesta de MS: {res.get('error')})")
+        return True
     except Exception as e:
         print(f"   ⚠️ Error validando token: {e}")
         return False
