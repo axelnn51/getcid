@@ -116,6 +116,23 @@ async def api_getcid(req: IIDRequest):
     try:
         import traceback
         result = await process_iid(req.iid)
+        
+        # INTERCEPTAR ERROR 403 (TOKEN EXPIRADO) Y AUTO-RENOVAR
+        if not result.get("success") and "Token expirado" in result.get("error", ""):
+            import logging
+            logger = logging.getLogger("API")
+            logger.warning("🔴 [GETCID] Token expirado detectado en tiempo real. Disparando auto-renovación...")
+            
+            # Lanzar la tarea de renovación en background
+            await start_renovation()
+            
+            # Informar al frontend que el sistema se está auto-curando
+            return JSONResponse(status_code=400, content={
+                "success": False, 
+                "error": "🔄 El sistema está resolviendo el CAPTCHA de Microsoft para auto-renovar la sesión. Por favor, reintenta tu activación en 60 segundos.",
+                "code": "MS_TOKEN_RENEWING"
+            })
+            
         if result.get("success"):
             return JSONResponse(status_code=200, content=result)
         else:
