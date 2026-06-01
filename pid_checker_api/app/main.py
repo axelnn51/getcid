@@ -26,7 +26,7 @@ class CheckResponse(BaseModel):
     total_activations: int | None = None
 
 def validate_key_format(key: str) -> bool:
-    pattern = r'^([N-Z0-9]{5}-){4}[N-Z0-9]{5}$'
+    pattern = r'^([A-Z0-9]{5}-){4}[A-Z0-9]{5}$'
     return bool(re.match(pattern, key.upper()))
 
 @app.post("/api/v1/check", response_model=CheckResponse)

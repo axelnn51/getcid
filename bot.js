@@ -262,7 +262,7 @@ function startBot() {
         }
 
         const key = args[0].toUpperCase();
-        const keyRegex = /^([N-Z0-9]{5}-){4}[N-Z0-9]{5}$/;
+        const keyRegex = /^([A-Z0-9]{5}-){4}[A-Z0-9]{5}$/;
         if (!keyRegex.test(key)) {
             return ctx.reply('❌ *Formato inválido*. La clave debe tener 25 caracteres (ej. XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).', { parse_mode: 'Markdown' });
         }
