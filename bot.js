@@ -256,7 +256,8 @@ function startBot() {
         if (args.length === 0) {
             return ctx.reply(
                 '🔑 *Verificador de Licencias (PID Checker)*\n\n' +
-                'Uso: `/check XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`',
+                'Uso: `/check XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`\n\n' +
+                '🔍 Verifica estado real contra servidores de Microsoft.',
                 { parse_mode: 'Markdown' }
             );
         }
@@ -267,7 +268,7 @@ function startBot() {
             return ctx.reply('❌ *Formato inválido*. La clave debe tener 25 caracteres (ej. XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).', { parse_mode: 'Markdown' });
         }
 
-        const msg = await ctx.reply('⏳ Verificando clave...');
+        const msg = await ctx.reply('⏳ Verificando clave contra servidores de Microsoft...');
 
         try {
             const response = await fetch(`${PID_CHECKER_URL}/api/v1/check`, {
@@ -277,34 +278,34 @@ function startBot() {
             });
 
             if (response.status === 429) {
-                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '⏳ Error 429: Demasiadas verificaciones. Intenta en un minuto.');
+                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '⏳ Demasiadas verificaciones. Espera un minuto.');
+            }
+
+            if (response.status === 503) {
+                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ Motor PID Checker no disponible. Contacta al admin.');
             }
 
             const data = await response.json();
-            let resultMsg = `🔑 *Reporte de Licencia*\n\n*Clave:* \`${data.key}\`\n`;
+            let resultMsg = `🔑 <b>Reporte de Licencia</b>\n\n<b>Clave:</b> <code>${data.key}</code>\n`;
+
+            if (data.edition) resultMsg += `<b>Edición:</b> ${data.edition}\n`;
+            if (data.key_type) resultMsg += `<b>Tipo:</b> ${data.key_type}\n`;
+
+            resultMsg += `\n`;
 
             if (data.is_valid) {
-                resultMsg += `*Edición:* ${data.edition || 'Desconocida'}\n`;
-                resultMsg += `*Tipo:* ${data.key_type || 'Desconocido'}\n\n`;
-
-                if (data.key_type === 'Volume:MAK' && data.remaining_activations !== null) {
-                    resultMsg += `✅ *Estado:* Activa\n`;
-                    resultMsg += `📊 *Activaciones:* ${data.remaining_activations} / ${data.total_activations}\n`;
-                } else {
-                    resultMsg += `✅ *Estado:* Válida (Lista para usar)\n`;
-                }
+                resultMsg += `✅ <b>Estado:</b> Online-Valid (Clave válida)\n`;
             } else {
-                resultMsg += `❌ *Estado:* Inválida o Bloqueada\n`;
-                if (data.error_code === '0xC004C003') resultMsg += `*Motivo:* Clave bloqueada por Microsoft (0xC004C003)\n`;
-                else if (data.error_code === '0xC004C008') resultMsg += `*Motivo:* Límite de activaciones excedido (0xC004C008)\n`;
-                else resultMsg += `*Error:* ${data.error_code}\n`;
+                resultMsg += `❌ <b>Estado:</b> Inválida\n`;
+                if (data.error_code) resultMsg += `<b>Código:</b> ${data.error_code}\n`;
+                if (data.error_message) resultMsg += `<b>Motivo:</b> ${data.error_message}\n`;
             }
 
-            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, resultMsg, { parse_mode: 'Markdown' });
+            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, resultMsg, { parse_mode: 'HTML' });
 
         } catch (error) {
             console.error('[PID CHECKER ERROR]', error);
-            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ No se pudo conectar con el motor del verificador interno. Intenta más tarde.');
+            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ No se pudo conectar con el motor del verificador. Intenta más tarde.');
         }
     });
 
