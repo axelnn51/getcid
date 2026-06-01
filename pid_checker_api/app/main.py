@@ -28,16 +28,21 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # Cargar pkeyconfigs al iniciar la API
 # ============================================================
 # Podemos tener múltiples pkeyconfigs para soportar Windows y Office al mismo tiempo
-PKEYCONFIG_PATHS = [
-    "/app/winkeycheck/pkeyconfig.xrm-ms", # Windows 11/10
-    "/app/winkeycheck/licensing_stuff/pkeyconfigs/office/16/pkeyconfig.xrm-ms" # Office 2016/2019/2021/2024
-]
+import glob
+
 loaded_pkcs = []
 
 @app.on_event("startup")
 async def load_pkeyconfigs():
     global loaded_pkcs
-    for path in PKEYCONFIG_PATHS:
+    # Buscar recursivamente todos los pkeyconfig*.xrm-ms en la carpeta winkeycheck
+    search_path = "/app/winkeycheck/**/*.xrm-ms"
+    pkeyconfig_paths = glob.glob(search_path, recursive=True)
+    
+    if not pkeyconfig_paths:
+        logger.error("❌ No se encontraron archivos pkeyconfig.xrm-ms en /app/winkeycheck/")
+        
+    for path in pkeyconfig_paths:
         try:
             with open(path, "r", encoding="utf-8-sig") as f:
                 pkc = PKeyConfig(ET.fromstring(f.read()))
