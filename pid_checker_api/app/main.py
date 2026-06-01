@@ -25,20 +25,27 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ============================================================
-# Cargar pkeyconfig al iniciar la API
+# Cargar pkeyconfigs al iniciar la API
 # ============================================================
-PKEYCONFIG_PATH = os.environ.get("PKEYCONFIG_PATH", "/app/winkeycheck/pkeyconfig.xrm-ms")
-pkc = None
+# Podemos tener múltiples pkeyconfigs para soportar Windows y Office al mismo tiempo
+PKEYCONFIG_PATHS = [
+    "/app/winkeycheck/pkeyconfig.xrm-ms", # Windows 11/10
+    "/app/winkeycheck/licensing_stuff/pkeyconfigs/office/16/pkeyconfig.xrm-ms" # Office 2016/2019/2021/2024
+]
+loaded_pkcs = []
 
 @app.on_event("startup")
-async def load_pkeyconfig():
-    global pkc
-    try:
-        with open(PKEYCONFIG_PATH, "r", encoding="utf-8-sig") as f:
-            pkc = PKeyConfig(ET.fromstring(f.read()))
-        logger.info(f"✅ PKeyConfig cargado desde {PKEYCONFIG_PATH}")
-    except Exception as e:
-        logger.error(f"❌ Error cargando pkeyconfig: {e}")
+async def load_pkeyconfigs():
+    global loaded_pkcs
+    for path in PKEYCONFIG_PATHS:
+        try:
+            with open(path, "r", encoding="utf-8-sig") as f:
+                pkc = PKeyConfig(ET.fromstring(f.read()))
+                loaded_pkcs.append(pkc)
+            logger.info(f"✅ PKeyConfig cargado desde {path}")
+        except Exception as e:
+            logger.error(f"❌ Error cargando pkeyconfig desde {path}: {e}")
+
 
 # ============================================================
 # Importar funciones de verificación real
@@ -80,33 +87,40 @@ def validate_key_format(key: str) -> bool:
     return bool(re.match(pattern, key.upper()))
 
 def get_edition_from_pkc(key: str) -> dict:
-    """Usa pkeyconfig para identificar la edición y tipo de la clave."""
-    try:
-        if "N" not in key:
-            return {"edition": None, "key_type": None, "error": "No es PKEY2009"}
-        
-        pkey_data = ProductKeyDecoder(key)
-        config = pkc.config_for_group(pkey_data.group)
-        
-        edition = getattr(config, 'edition_id', None) or getattr(config, 'product_description', None) or str(config.config_id)
-        
-        # Detectar tipo basado en el config
-        key_type = "Retail"
-        config_id_str = str(config.config_id).lower() if config.config_id else ""
-        edition_str = str(edition).lower() if edition else ""
-        
-        if "mak" in edition_str or "volume" in edition_str or "mak" in config_id_str:
-            key_type = "Volume:MAK"
-        elif "oem" in edition_str:
-            key_type = "OEM"
-        elif "kms" in edition_str:
-            key_type = "KMS"
-        elif "retail" in edition_str:
-            key_type = "Retail"
+    """Usa pkeyconfig para identificar la edición y tipo de la clave iterando por los configs cargados."""
+    if "N" not in key:
+        return {"edition": None, "key_type": None, "error": "No es PKEY2009", "pkc": None}
+    
+    pkey_data = ProductKeyDecoder(key)
+    last_error = "Clave no compatible con los pkeyconfig proporcionados."
+    
+    for pkc in loaded_pkcs:
+        try:
+            config = pkc.config_for_group(pkey_data.group)
             
-        return {"edition": edition, "key_type": key_type, "error": None}
-    except Exception as e:
-        return {"edition": None, "key_type": None, "error": str(e)}
+            edition = getattr(config, 'edition_id', None) or getattr(config, 'product_description', None) or str(config.config_id)
+            
+            # Detectar tipo basado en el config
+            key_type = "Retail"
+            config_id_str = str(config.config_id).lower() if config.config_id else ""
+            edition_str = str(edition).lower() if edition else ""
+            
+            if "mak" in edition_str or "volume" in edition_str or "mak" in config_id_str:
+                key_type = "Volume:MAK"
+            elif "oem" in edition_str:
+                key_type = "OEM"
+            elif "kms" in edition_str:
+                key_type = "KMS"
+            elif "retail" in edition_str:
+                key_type = "Retail"
+                
+            return {"edition": edition, "key_type": key_type, "error": None, "pkc": pkc}
+        except Exception as e:
+            last_error = str(e)
+            continue
+            
+    return {"edition": None, "key_type": None, "error": last_error, "pkc": None}
+
 
 # ============================================================
 # Endpoints
@@ -119,18 +133,28 @@ async def check_license(request: Request, payload: CheckRequest):
     if not validate_key_format(key):
         raise HTTPException(status_code=400, detail="Formato de clave inválido. Debe ser XXXXX-XXXXX-XXXXX-XXXXX-XXXXX")
 
-    if pkc is None:
+    if not loaded_pkcs:
         raise HTTPException(status_code=503, detail="Motor PKeyConfig no está cargado. Reinicie el servicio.")
 
     # 1. Identificar edición offline
     edition_info = get_edition_from_pkc(key)
     
+    if edition_info.get("pkc") is None:
+        return CheckResponse(
+            key=key,
+            is_valid=False,
+            error_code="INVALID_KEY",
+            error_message=edition_info.get("error", "Clave no compatible con los pkeyconfig proporcionados")
+        )
+    
+    matched_pkc = edition_info["pkc"]
+    
     # 2. Verificar online contra Microsoft
     try:
         if payload.consume:
-            error_code, message, success = consume_key(key, PUB_LICENSE, pkc)
+            error_code, message, success = consume_key(key, PUB_LICENSE, matched_pkc)
         else:
-            error_code, message, success = query_key(key, pkc)
+            error_code, message, success = query_key(key, matched_pkc)
     except Exception as e:
         logger.error(f"Error verificando clave: {e}")
         return CheckResponse(
@@ -165,6 +189,6 @@ async def check_license(request: Request, payload: CheckRequest):
 async def health_check():
     return {
         "status": "ok",
-        "pkeyconfig_loaded": pkc is not None,
+        "pkeyconfigs_loaded": len(loaded_pkcs),
         "engine": "winkeycheck"
     }
