@@ -17,6 +17,7 @@ services:
       - WC_CONSUMER_KEY=${WC_CONSUMER_KEY}
       - WC_CONSUMER_SECRET=${WC_CONSUMER_SECRET}
       - GETCID_SERVICE_URL=http://getcid_python:8000
+      - PID_CHECKER_URL=http://pid_checker_api:8000
     depends_on:
       - getcid_python
     healthcheck:
@@ -42,4 +43,14 @@ services:
       - ADMIN_IDS=${ADMIN_IDS}
       - NOCAPTCHAAI_API_KEY=${NOCAPTCHAAI_API_KEY}
       - AI_SOLVER_ENABLED=${AI_SOLVER_ENABLED}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+
+  pid_checker_api:
+    build: ./pid_checker_api
+    container_name: pid_checker_api
+    restart: unless-stopped
+    ports:
+      - "8080:8000"
+    environment:
+      - APP_ENV=production
+      - RATE_LIMIT_PER_MINUTE=10

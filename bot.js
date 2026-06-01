@@ -249,6 +249,65 @@ function startBot() {
         ctx.reply(`💰 Balance: *${user.balance} CIDs*`, { parse_mode: 'Markdown' });
     });
 
+    const PID_CHECKER_URL = process.env.PID_CHECKER_URL || 'http://localhost:8080';
+
+    bot.command('check', async (ctx) => {
+        const args = ctx.message.text.split(' ').slice(1);
+        if (args.length === 0) {
+            return ctx.reply(
+                '🔑 *Verificador de Licencias (PID Checker)*\n\n' +
+                'Uso: `/check XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`',
+                { parse_mode: 'Markdown' }
+            );
+        }
+
+        const key = args[0].toUpperCase();
+        const keyRegex = /^([N-Z0-9]{5}-){4}[N-Z0-9]{5}$/;
+        if (!keyRegex.test(key)) {
+            return ctx.reply('❌ *Formato inválido*. La clave debe tener 25 caracteres (ej. XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).', { parse_mode: 'Markdown' });
+        }
+
+        const msg = await ctx.reply('⏳ Verificando clave...');
+
+        try {
+            const response = await fetch(`${PID_CHECKER_URL}/api/v1/check`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key: key })
+            });
+
+            if (response.status === 429) {
+                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '⏳ Error 429: Demasiadas verificaciones. Intenta en un minuto.');
+            }
+
+            const data = await response.json();
+            let resultMsg = `🔑 *Reporte de Licencia*\n\n*Clave:* \`${data.key}\`\n`;
+
+            if (data.is_valid) {
+                resultMsg += `*Edición:* ${data.edition || 'Desconocida'}\n`;
+                resultMsg += `*Tipo:* ${data.key_type || 'Desconocido'}\n\n`;
+
+                if (data.key_type === 'Volume:MAK' && data.remaining_activations !== null) {
+                    resultMsg += `✅ *Estado:* Activa\n`;
+                    resultMsg += `📊 *Activaciones:* ${data.remaining_activations} / ${data.total_activations}\n`;
+                } else {
+                    resultMsg += `✅ *Estado:* Válida (Lista para usar)\n`;
+                }
+            } else {
+                resultMsg += `❌ *Estado:* Inválida o Bloqueada\n`;
+                if (data.error_code === '0xC004C003') resultMsg += `*Motivo:* Clave bloqueada por Microsoft (0xC004C003)\n`;
+                else if (data.error_code === '0xC004C008') resultMsg += `*Motivo:* Límite de activaciones excedido (0xC004C008)\n`;
+                else resultMsg += `*Error:* ${data.error_code}\n`;
+            }
+
+            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, resultMsg, { parse_mode: 'Markdown' });
+
+        } catch (error) {
+            console.error('[PID CHECKER ERROR]', error);
+            await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ No se pudo conectar con el motor del verificador interno. Intenta más tarde.');
+        }
+    });
+
     bot.command('addcredits', (ctx) => {
         const tgId = String(ctx.from.id);
         if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
