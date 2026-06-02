@@ -270,7 +270,37 @@ async def run():
                     pass
 
             try:
-                # 0. Error de Microsoft ("Our services aren't available right now") -> Recargar
+                # 0. DETECCIÓN DE BLOQUEO DE CUENTA ("You've tried to sign in too many times")
+                lockout_msg = page.get_by_text(re.compile("tried to sign in too many times|demasiados intentos|too many times|account.*locked|cuenta.*bloqueada", re.IGNORECASE))
+                if await lockout_msg.count() > 0:
+                    if await lockout_msg.first.is_visible(timeout=100):
+                        print("\n🚫 ¡CUENTA BLOQUEADA POR MICROSOFT! Abortando renovación.")
+                        try:
+                            async with httpx.AsyncClient(timeout=10) as http:
+                                await http.post(
+                                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                                    json={"chat_id": ADMIN_CHAT_ID, "text": "🚫 *Renovación Abortada*\n\nMicrosoft bloqueó la cuenta por demasiados intentos de login.\nEspera 30-60 minutos y usa /deviceauth como alternativa.", "parse_mode": "Markdown"}
+                                )
+                        except: pass
+                        await context.close()
+                        return
+
+                # 0.1 DETECCIÓN DE "Too Many Requests" / Rate Limiting
+                rate_limit_msg = page.get_by_text(re.compile("Too Many Requests|rate limit|demasiadas solicitudes", re.IGNORECASE))
+                if await rate_limit_msg.count() > 0:
+                    if await rate_limit_msg.first.is_visible(timeout=100):
+                        print("\n🚫 ¡RATE LIMITED POR MICROSOFT! Abortando renovación.")
+                        try:
+                            async with httpx.AsyncClient(timeout=10) as http:
+                                await http.post(
+                                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                                    json={"chat_id": ADMIN_CHAT_ID, "text": "🚫 *Rate Limited*\n\nMicrosoft devolvió 'Too Many Requests'.\nEspera 1 hora antes de reintentar.", "parse_mode": "Markdown"}
+                                )
+                        except: pass
+                        await context.close()
+                        return
+
+                # 0.2 Error de Microsoft ("Our services aren't available right now") -> Recargar
                 error_msg = page.get_by_text(re.compile("services aren't available right now|servicios no están disponibles", re.IGNORECASE))
                 if await error_msg.count() > 0:
                     if await error_msg.first.is_visible(timeout=100):

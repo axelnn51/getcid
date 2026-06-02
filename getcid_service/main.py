@@ -11,12 +11,25 @@ from core import process_iid
 
 TOKEN_CACHE_FILE = "ms_token.json"
 
+# Cooldown para alertas de token expirado (evitar spam)
+_last_token_expired_alert = 0
+_TOKEN_ALERT_COOLDOWN = 1800  # 30 minutos
+
 # ============================================================
 # ESTADO GLOBAL PARA CAPTCHA REMOTO
 # ============================================================
 captcha_event = asyncio.Event()
 captcha_clicks = 0
 renovation_task = None
+
+
+def _peru_time_str():
+    """Devuelve la hora actual en formato legible, hora Perú (UTC-5)."""
+    import datetime as _dt
+    utc_now = _dt.datetime.now(_dt.timezone.utc)
+    peru_tz = _dt.timezone(_dt.timedelta(hours=-5))
+    peru_now = utc_now.astimezone(peru_tz)
+    return peru_now.strftime('%Y-%m-%d %H:%M:%S PET')
 
 
 # ============================================================
@@ -32,18 +45,18 @@ async def lifespan(app: FastAPI):
     try:
         from proactive_refresher import start_proactive_refresh
         refresher_task = asyncio.create_task(start_proactive_refresh())
-        logger.info("✅ Proactive Token Refresher lanzado en background")
+        logger.info(f"✅ [{_peru_time_str()}] Proactive Token Refresher lanzado en background")
     except Exception as e:
-        logger.error(f"⚠️ No se pudo iniciar Proactive Refresher: {e}")
+        logger.error(f"⚠️ [{_peru_time_str()}] No se pudo iniciar Proactive Refresher: {e}")
         refresher_task = None
 
-    # Lanzar Cron Diario de Renovación a la medianoche
+    # Lanzar Cron Diario de Renovación (medianoche Perú = 05:00 UTC)
     try:
         from cron_renovar import start_daily_cron
         cron_task = asyncio.create_task(start_daily_cron())
-        logger.info("✅ Cron Diario (Medianoche) lanzado en background")
+        logger.info(f"✅ [{_peru_time_str()}] Cron Diario (Medianoche Perú) lanzado en background")
     except Exception as e:
-        logger.error(f"⚠️ No se pudo iniciar Cron Diario: {e}")
+        logger.error(f"⚠️ [{_peru_time_str()}] No se pudo iniciar Cron Diario: {e}")
         cron_task = None
 
     yield  # Servidor corriendo
@@ -96,7 +109,7 @@ async def start_renovation():
     try:
         from remote_renovar import run as run_renovar
         renovation_task = asyncio.create_task(run_renovar())
-        logger.info("🚀 Tarea remota de renovación de token iniciada.")
+        logger.info(f"🚀 [{_peru_time_str()}] Tarea remota de renovación de token iniciada.")
         return {"success": True, "message": "Proceso de renovación iniciado."}
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
@@ -113,24 +126,37 @@ async def solve_captcha(req: dict):
 @app.post("/api/getcid")
 async def api_getcid(req: IIDRequest):
     """Endpoint de la API para procesar el IID."""
+    global _last_token_expired_alert
     try:
         import traceback
         result = await process_iid(req.iid)
         
-        # INTERCEPTAR ERROR 403 (TOKEN EXPIRADO) Y AUTO-RENOVAR
+        # Si el token expiró, solo alertar (NO disparar Playwright)
         if not result.get("success") and "Token expirado" in result.get("error", ""):
             import logging
             logger = logging.getLogger("API")
-            logger.warning("🔴 [GETCID] Token expirado detectado en tiempo real. Disparando auto-renovación...")
+            logger.warning(f"🔴 [{_peru_time_str()}] Token expirado detectado en petición de CID.")
             
-            # Lanzar la tarea de renovación en background
-            await start_renovation()
+            # Alerta Telegram con cooldown de 30 min
+            now = time.time()
+            if now - _last_token_expired_alert > _TOKEN_ALERT_COOLDOWN:
+                _last_token_expired_alert = now
+                try:
+                    from telegram_alert import send_alert
+                    await send_alert(
+                        f"🔴 *Token Expirado — CID Fallido*\n\n"
+                        f"⏰ {_peru_time_str()}\n"
+                        f"Un usuario intentó obtener un CID pero el token está expirado.\n\n"
+                        f"El cron de medianoche lo renovará automáticamente.\n"
+                        f"Para renovar ahora: 🔄 Renovar Token o /deviceauth"
+                    )
+                except:
+                    pass
             
-            # Informar al frontend que el sistema se está auto-curando
             return JSONResponse(status_code=400, content={
                 "success": False, 
-                "error": "🔄 El sistema está resolviendo el CAPTCHA de Microsoft para auto-renovar la sesión. Por favor, reintenta tu activación en 60 segundos.",
-                "code": "MS_TOKEN_RENEWING"
+                "error": "⚠️ El token de Microsoft expiró. El sistema lo renovará automáticamente a medianoche. Si necesitas un CID urgente, contacta al admin.",
+                "code": "MS_TOKEN_EXPIRED"
             })
             
         if result.get("success"):
