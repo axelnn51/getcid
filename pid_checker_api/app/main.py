@@ -35,12 +35,17 @@ loaded_pkcs = []
 @app.on_event("startup")
 async def load_pkeyconfigs():
     global loaded_pkcs
-    # Buscar recursivamente todos los pkeyconfig*.xrm-ms en la carpeta winkeycheck
-    search_path = "/app/winkeycheck/**/*.xrm-ms"
-    pkeyconfig_paths = glob.glob(search_path, recursive=True)
+    # Buscar recursivamente todos los pkeyconfig*.xrm-ms en la carpeta winkeycheck y pkeyconfigs
+    search_paths = [
+        "/app/winkeycheck/**/*.xrm-ms",
+        "/app/pkeyconfigs/**/*.xrm-ms"
+    ]
+    pkeyconfig_paths = []
+    for sp in search_paths:
+        pkeyconfig_paths.extend(glob.glob(sp, recursive=True))
     
     if not pkeyconfig_paths:
-        logger.error("❌ No se encontraron archivos pkeyconfig.xrm-ms en /app/winkeycheck/")
+        logger.error("❌ No se encontraron archivos pkeyconfig.xrm-ms en /app/winkeycheck/ ni /app/pkeyconfigs/")
         
     for path in pkeyconfig_paths:
         try:
