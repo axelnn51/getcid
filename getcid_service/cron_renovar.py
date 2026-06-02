@@ -2,15 +2,15 @@ import asyncio
 import datetime
 import logging
 import time
+import os
+import json
+import httpx
 
-logger = logging.getLogger("CronRenovar")
+logger = logging.getLogger("ContinuousWatcher")
 
-MAX_RETRIES = 2
-RETRY_DELAY_SECONDS = 600  # 10 minutos entre reintentos (dar tiempo a que Microsoft desbloquee)
-
-# Hora UTC a la que se renueva = 05:00 UTC = 00:00 hora Perú (UTC-5)
-RENOVATION_HOUR_UTC = 5
-
+# Tiempo antes de las 24 horas para renovar (23h 55m = 24h - 5m)
+RENEWAL_THRESHOLD_SECONDS = (24 * 3600) - (5 * 60)
+WATCHER_INTERVAL_SECONDS = 60  # Revisar cada minuto
 
 def _peru_time_str():
     """Devuelve la hora actual en formato legible, hora Perú (UTC-5)."""
@@ -19,103 +19,66 @@ def _peru_time_str():
     peru_now = utc_now.astimezone(peru_tz)
     return peru_now.strftime('%Y-%m-%d %H:%M:%S PET')
 
-
-async def _run_with_retries():
-    """Ejecuta la renovación con reintentos y validación."""
-    for attempt in range(1, MAX_RETRIES + 1):
-        logger.info(f"🔄 [{_peru_time_str()}] Intento de renovación {attempt}/{MAX_RETRIES}...")
-        try:
-            from remote_renovar import run as run_renovar
-            await run_renovar()
-            
-            # Verificar que el token sea válido después de renovar
-            import os, json
-            token_file = "ms_token.json"
-            if os.path.exists(token_file):
-                with open(token_file, 'r') as f:
-                    data = json.load(f)
-                if data.get('expires_at', 0) > time.time():
-                    logger.info(f"✅ [{_peru_time_str()}] Renovación exitosa en intento {attempt}. Token válido.")
-                    return True
-                else:
-                    logger.warning(f"⚠️ [{_peru_time_str()}] Intento {attempt}: Token guardado pero ya expirado.")
-            else:
-                logger.warning(f"⚠️ [{_peru_time_str()}] Intento {attempt}: No se generó archivo de token.")
-                
-        except Exception as e:
-            error_str = str(e).lower()
-            logger.error(f"❌ [{_peru_time_str()}] Intento {attempt} falló: {e}")
-            
-            # Si Microsoft bloqueó la cuenta, NO reintentar (sería peor)
-            if "too many" in error_str or "blocked" in error_str or "locked" in error_str:
-                logger.error(f"🚫 [{_peru_time_str()}] Cuenta bloqueada por Microsoft. Abortando reintentos.")
-                break
-        
-        if attempt < MAX_RETRIES:
-            logger.info(f"⏳ [{_peru_time_str()}] Esperando {RETRY_DELAY_SECONDS // 60} minutos antes del siguiente intento...")
-            await asyncio.sleep(RETRY_DELAY_SECONDS)
-    
-    logger.error(f"❌ [{_peru_time_str()}] Renovación fallida después de todos los intentos.")
-    
-    # Notificar fallo crítico a Telegram
-    try:
-        from telegram_alert import send_alert
-        await send_alert(
-            "🔴 *CRON: Renovación Automática Fallida*\n\n"
-            f"⏰ {_peru_time_str()}\n"
-            f"Los {MAX_RETRIES} intentos de renovación fallaron.\n"
-            "Se necesita intervención manual.\n\n"
-            "• Usa 🔄 Renovar Token\n"
-            "• O /deviceauth para re-autenticarse"
-        )
-    except:
-        pass
-    
-    return False
-
-
 async def start_daily_cron():
-    """Ejecuta remote_renovar.py UNA VEZ al día a medianoche hora Perú (05:00 UTC)."""
-    logger.info(f"🕒 [{_peru_time_str()}] Cron de Renovación iniciado. Horario: {RENOVATION_HOUR_UTC}:00 UTC (00:00 Perú)")
+    """
+    Vigila continuamente el estado del token.
+    Asegura que la obtención se ejecute 5 minutos antes de que expiren las 24 horas
+    de la sesión de Microsoft.
+    """
+    logger.info(f"🕒 [{_peru_time_str()}] Watcher Continuo Iniciado. "
+                f"Renovará automáticamente cada {RENEWAL_THRESHOLD_SECONDS / 3600:.2f} horas.")
     
-    # Esperar un minuto en el inicio para no pisar otros procesos de arranque
+    # Esperar un poco en el inicio para no pisar otros procesos
     await asyncio.sleep(60)
     
     while True:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        
-        # Calcular la próxima ejecución a las RENOVATION_HOUR_UTC:00 UTC
-        next_run = now.replace(hour=RENOVATION_HOUR_UTC, minute=0, second=0, microsecond=0)
-        if next_run <= now:
-            # Ya pasó la hora hoy, programar para mañana
-            next_run += datetime.timedelta(days=1)
-        
-        seconds_until = (next_run - now).total_seconds()
-        horas = int(seconds_until // 3600)
-        minutos = int((seconds_until % 3600) // 60)
-        
-        # Mostrar en hora Perú para fácil lectura
-        peru_tz = datetime.timezone(datetime.timedelta(hours=-5))
-        next_run_peru = next_run.astimezone(peru_tz)
-        
-        logger.info(
-            f"⏳ [{_peru_time_str()}] Próxima renovación: "
-            f"{next_run_peru.strftime('%Y-%m-%d %H:%M PET')} "
-            f"({next_run.strftime('%H:%M UTC')}) — "
-            f"en {horas}h {minutos}min"
-        )
-        
-        # Dormir hasta la hora programada
-        await asyncio.sleep(seconds_until)
-        
-        logger.info(f"🕛 [{_peru_time_str()}] ¡Hora de renovación! Iniciando proceso automático...")
-        
-        success = await _run_with_retries()
-        
-        if success:
-            logger.info(f"✅ [{_peru_time_str()}] Renovación programada completada exitosamente.")
-        else:
-            logger.error(f"❌ [{_peru_time_str()}] Renovación programada falló.")
+        try:
+            token_file = "ms_token.json"
+            needs_renovation = False
+            reason = ""
             
-        # Dormir 2 minutos extra para asegurar que ya pasó la hora y no se repita
-        await asyncio.sleep(120)
+            if os.path.exists(token_file):
+                with open(token_file, 'r') as f:
+                    data = json.load(f)
+                    
+                last_run = data.get('last_playwright_run', 0)
+                expires_at = data.get('expires_at', 0)
+                now = time.time()
+                
+                # 1. Chequear si pasaron 23h 55m desde la última ejecución de Playwright
+                if last_run > 0 and (now - last_run) >= RENEWAL_THRESHOLD_SECONDS:
+                    needs_renovation = True
+                    reason = "Han pasado 23h 55m desde la última obtención de Playwright."
+                
+                # 2. Chequear si el token cacheado expiró (como capa de seguridad extra)
+                elif expires_at > 0 and expires_at < now:
+                    needs_renovation = True
+                    reason = "El token en memoria ha expirado completamente."
+            else:
+                needs_renovation = True
+                reason = "No existe archivo de token."
+
+            if needs_renovation:
+                logger.warning(f"⚠️ [{_peru_time_str()}] Renovación requerida: {reason}")
+                
+                # Disparar renovación en la API
+                async with httpx.AsyncClient(timeout=10) as client:
+                    try:
+                        resp = await client.post("http://localhost:8000/api/start-renovation")
+                        if resp.status_code == 200:
+                            logger.info(f"🚀 [{_peru_time_str()}] Ciclo infinito de obtención activado correctamente.")
+                        else:
+                            logger.error(f"❌ [{_peru_time_str()}] Error activando ciclo: {resp.text}")
+                    except Exception as e:
+                        logger.error(f"❌ [{_peru_time_str()}] Error de red activando ciclo: {e}")
+                
+                # Esperar 15 minutos para que la obtención tenga tiempo de terminar 
+                # y no estar disparando la API constantemente
+                await asyncio.sleep(900)
+                continue
+                
+        except Exception as e:
+            logger.error(f"❌ [{_peru_time_str()}] Error en el watcher: {e}")
+            
+        # Dormir 1 minuto y volver a chequear
+        await asyncio.sleep(WATCHER_INTERVAL_SECONDS)

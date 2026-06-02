@@ -90,6 +90,7 @@ class IIDRequest(BaseModel):
 class TokenRequest(BaseModel):
     token: str
     duration: int = 3600  # Duración en segundos (default: 1 hora)
+    is_playwright: bool = False
 
 
 # ============================================================
@@ -98,7 +99,7 @@ class TokenRequest(BaseModel):
 
 @app.post("/api/start-renovation")
 async def start_renovation():
-    """Inicia el script de Playwright en background para renovar el token."""
+    """Inicia el script de Playwright en background para renovar el token. Modo Infinito."""
     global renovation_task
     import logging
     logger = logging.getLogger("API")
@@ -106,13 +107,26 @@ async def start_renovation():
     if renovation_task and not renovation_task.done():
         return JSONResponse(status_code=400, content={"success": False, "error": "Ya hay una renovación en progreso."})
     
-    try:
+    async def infinite_renovation():
         from remote_renovar import run as run_renovar
-        renovation_task = asyncio.create_task(run_renovar())
-        logger.info(f"🚀 [{_peru_time_str()}] Tarea remota de renovación de token iniciada.")
-        return {"success": True, "message": "Proceso de renovación iniciado."}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+        attempt = 1
+        while True:
+            logger.info(f"🔄 [{_peru_time_str()}] Iniciando obtención automática (Intento {attempt})...")
+            try:
+                success = await run_renovar()
+                if success:
+                    logger.info(f"✅ [{_peru_time_str()}] Obtención exitosa en el intento {attempt}.")
+                    break
+            except Exception as e:
+                logger.error(f"❌ [{_peru_time_str()}] Error de excepción en obtención: {e}")
+            
+            logger.warning(f"⚠️ [{_peru_time_str()}] Intento {attempt} fallido. Reintentando en 2 minutos para no ser bloqueados inmediatamente...")
+            attempt += 1
+            await asyncio.sleep(120)
+
+    renovation_task = asyncio.create_task(infinite_renovation())
+    logger.info(f"🚀 [{_peru_time_str()}] Ciclo infinito de obtención de token iniciado.")
+    return {"success": True, "message": "Proceso de renovación infinito iniciado."}
 
 @app.post("/api/solve-captcha")
 async def solve_captcha(req: dict):
@@ -131,11 +145,13 @@ async def api_getcid(req: IIDRequest):
         import traceback
         result = await process_iid(req.iid)
         
-        # Si el token expiró, solo alertar (NO disparar Playwright)
+        # Si el token expiró, disparar renovación infinita y avisar al cliente
         if not result.get("success") and "Token expirado" in result.get("error", ""):
             import logging
             logger = logging.getLogger("API")
             logger.warning(f"🔴 [{_peru_time_str()}] Token expirado detectado en petición de CID.")
+            
+            await start_renovation()
             
             # Alerta Telegram con cooldown de 30 min
             now = time.time()
@@ -146,17 +162,16 @@ async def api_getcid(req: IIDRequest):
                     await send_alert(
                         f"🔴 *Token Expirado — CID Fallido*\n\n"
                         f"⏰ {_peru_time_str()}\n"
-                        f"Un usuario intentó obtener un CID pero el token está expirado.\n\n"
-                        f"El cron de medianoche lo renovará automáticamente.\n"
-                        f"Para renovar ahora: 🔄 Renovar Token o /deviceauth"
+                        f"El token expiró al intentar activar.\n"
+                        f"El sistema **ya activó el ciclo infinito** para obtener uno nuevo automáticamente."
                     )
                 except:
                     pass
             
             return JSONResponse(status_code=400, content={
                 "success": False, 
-                "error": "⚠️ El token de Microsoft expiró. El sistema lo renovará automáticamente a medianoche. Si necesitas un CID urgente, contacta al admin.",
-                "code": "MS_TOKEN_EXPIRED"
+                "error": "🔄 El sistema detectó que el token expiró y ya está trabajando en ciclo infinito para obtener uno nuevo. Reintenta en unos minutos.",
+                "code": "MS_TOKEN_RENEWING"
             })
             
         if result.get("success"):
@@ -171,11 +186,24 @@ async def api_getcid(req: IIDRequest):
 async def set_token(req: TokenRequest):
     """Recibe un token de Microsoft generado localmente y lo guarda en caché."""
     try:
+        import os
+        last_run = 0
+        if os.path.exists(TOKEN_CACHE_FILE):
+            try:
+                with open(TOKEN_CACHE_FILE, 'r') as f:
+                    data = json.load(f)
+                    last_run = data.get('last_playwright_run', 0)
+            except: pass
+
+        if req.is_playwright:
+            last_run = time.time()
+
         expires_at = time.time() + req.duration
         with open(TOKEN_CACHE_FILE, 'w') as f:
             json.dump({
                 'token': req.token,
-                'expires_at': expires_at
+                'expires_at': expires_at,
+                'last_playwright_run': last_run
             }, f)
         
         minutes_left = req.duration // 60

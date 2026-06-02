@@ -670,7 +670,7 @@ async def run():
                     json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nNo se capturó ningún token. Revisa el servidor.", "parse_mode": "Markdown"}
                 )
         except: pass
-        return  # No usar sys.exit() porque mataría el servidor FastAPI si se ejecuta desde el cron
+        return False  # No usar sys.exit() porque mataría el servidor FastAPI si se ejecuta desde el cron
 
     # ─── VALIDACIÓN: Verificar que el token REALMENTE funcione ───
     if captured_token:
@@ -741,7 +741,7 @@ async def run():
                 if captured_token:
                     resp = await http.post(
                         f"{server_url}/api/settoken",
-                        json={"token": captured_token, "duration": 3500}
+                        json={"token": captured_token, "duration": 3500, "is_playwright": True}
                     )
                     if resp.json().get("success"):
                         print(f"✅ Access token actualizado en {server_url}")
@@ -787,9 +787,10 @@ async def run():
     print("\n" + "=" * 65)
     if success or captured_refresh_token:
         print("  🎉 ¡TODO LISTO! El sistema ya tiene los nuevos tokens.")
+        return True
     else:
         print("  ⚠️ Token capturado pero hubo problemas al guardarlo.")
-    print("=" * 65 + "\n")
+        return False
 
 
 if __name__ == "__main__":
