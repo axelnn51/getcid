@@ -6,79 +6,84 @@ import os
 import json
 import httpx
 
-logger = logging.getLogger("ContinuousWatcher")
+logger = logging.getLogger("CronRenovar")
 
 # Tiempo antes de las 24 horas para renovar (23h 55m = 24h - 5m)
 RENEWAL_THRESHOLD_SECONDS = (24 * 3600) - (5 * 60)
-WATCHER_INTERVAL_SECONDS = 60  # Revisar cada minuto
 
-def _peru_time_str():
-    """Devuelve la hora actual en formato legible, hora Perú (UTC-5)."""
-    utc_now = datetime.datetime.now(datetime.timezone.utc)
+def _peru_time_str(ts=None):
+    """Devuelve la hora en formato legible, hora Perú (UTC-5)."""
+    if ts:
+        utc_now = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+    else:
+        utc_now = datetime.datetime.now(datetime.timezone.utc)
     peru_tz = datetime.timezone(datetime.timedelta(hours=-5))
     peru_now = utc_now.astimezone(peru_tz)
     return peru_now.strftime('%Y-%m-%d %H:%M:%S PET')
 
 async def start_daily_cron():
     """
-    Vigila continuamente el estado del token.
-    Asegura que la obtención se ejecute 5 minutos antes de que expiren las 24 horas
-    de la sesión de Microsoft.
+    Sistema Programado Inteligente:
+    Duerme tranquilamente sin gastar recursos y se despierta exactamente
+    5 minutos antes de que el token de 24 horas expire para renovarlo.
     """
-    logger.info(f"🕒 [{_peru_time_str()}] Watcher Continuo Iniciado. "
-                f"Renovará automáticamente cada {RENEWAL_THRESHOLD_SECONDS / 3600:.2f} horas.")
+    logger.info(f"🕒 [{_peru_time_str()}] Cron Programado Iniciado.")
     
     # Esperar un poco en el inicio para no pisar otros procesos
-    await asyncio.sleep(60)
+    await asyncio.sleep(10)
     
     while True:
         try:
             token_file = "ms_token.json"
-            needs_renovation = False
-            reason = ""
+            last_run = 0
             
             if os.path.exists(token_file):
-                with open(token_file, 'r') as f:
-                    data = json.load(f)
-                    
-                last_run = data.get('last_playwright_run', 0)
-                expires_at = data.get('expires_at', 0)
-                now = time.time()
-                
-                # 1. Chequear si pasaron 23h 55m desde la última ejecución de Playwright
-                if last_run > 0 and (now - last_run) >= RENEWAL_THRESHOLD_SECONDS:
-                    needs_renovation = True
-                    reason = "Han pasado 23h 55m desde la última obtención de Playwright."
-                
-                # 2. Chequear si el token cacheado expiró (como capa de seguridad extra)
-                elif expires_at > 0 and expires_at < now:
-                    needs_renovation = True
-                    reason = "El token en memoria ha expirado completamente."
-            else:
-                needs_renovation = True
-                reason = "No existe archivo de token."
-
-            if needs_renovation:
-                logger.warning(f"⚠️ [{_peru_time_str()}] Renovación requerida: {reason}")
-                
-                # Disparar renovación en la API
-                async with httpx.AsyncClient(timeout=10) as client:
-                    try:
-                        resp = await client.post("http://localhost:8000/api/start-renovation")
-                        if resp.status_code == 200:
-                            logger.info(f"🚀 [{_peru_time_str()}] Ciclo infinito de obtención activado correctamente.")
-                        else:
-                            logger.error(f"❌ [{_peru_time_str()}] Error activando ciclo: {resp.text}")
-                    except Exception as e:
-                        logger.error(f"❌ [{_peru_time_str()}] Error de red activando ciclo: {e}")
-                
-                # Esperar 15 minutos para que la obtención tenga tiempo de terminar 
-                # y no estar disparando la API constantemente
-                await asyncio.sleep(900)
-                continue
-                
-        except Exception as e:
-            logger.error(f"❌ [{_peru_time_str()}] Error en el watcher: {e}")
+                try:
+                    with open(token_file, 'r') as f:
+                        data = json.load(f)
+                    last_run = data.get('last_playwright_run', 0)
+                except Exception:
+                    pass
             
-        # Dormir 1 minuto y volver a chequear
-        await asyncio.sleep(WATCHER_INTERVAL_SECONDS)
+            now = time.time()
+            
+            if last_run == 0:
+                logger.warning(f"⚠️ [{_peru_time_str()}] No hay registro previo del token. Lanzando obtención ahora...")
+                sleep_time = 0
+            else:
+                next_run_time = last_run + RENEWAL_THRESHOLD_SECONDS
+                sleep_time = next_run_time - now
+                
+                if sleep_time <= 0:
+                    logger.warning(f"⚠️ [{_peru_time_str()}] El tiempo de 23h 55m ya pasó. Lanzando obtención ahora...")
+                    sleep_time = 0
+                else:
+                    horas = int(sleep_time // 3600)
+                    minutos = int((sleep_time % 3600) // 60)
+                    logger.info(f"⏳ [{_peru_time_str()}] Durmiendo hasta la próxima obtención programada: "
+                                f"{_peru_time_str(next_run_time)} (en {horas}h {minutos}m)")
+
+            # Dormir exactamente hasta la hora calculada (sin loops de chequeo)
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+            
+            # ¡Es hora de renovar! (Lanzamos el sistema automático infinito)
+            logger.info(f"🕛 [{_peru_time_str()}] ¡Despertando! Lanzando obtención automática 5 min antes de expirar...")
+            
+            async with httpx.AsyncClient(timeout=10) as client:
+                try:
+                    resp = await client.post("http://localhost:8000/api/start-renovation")
+                    if resp.status_code == 200:
+                        logger.info(f"🚀 [{_peru_time_str()}] Sistema infinito de obtención activado.")
+                    else:
+                        logger.error(f"❌ [{_peru_time_str()}] Error activando sistema: {resp.text}")
+                except Exception as e:
+                    logger.error(f"❌ [{_peru_time_str()}] Error de red activando sistema: {e}")
+            
+            # Dormir unos minutos para darle tiempo al sistema infinito de terminar
+            # antes de volver a calcular el próximo ciclo de 24 horas.
+            await asyncio.sleep(600)
+            
+        except Exception as e:
+            logger.error(f"❌ [{_peru_time_str()}] Error en el cron: {e}")
+            await asyncio.sleep(60)
