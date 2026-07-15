@@ -236,6 +236,31 @@ async def run():
                 if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                     print("📊 Registrando victoria para la IA...")
                     update_winrate(True)
+                
+                # ── CAPTURA ANTICIPADA DEL REFRESH TOKEN ──
+                # Esperar 2s para que el /welcome cargue el MSAL cache antes de salir del loop.
+                # Si lo dejamos para después del loop, la navegación destruye el contexto y falla.
+                if not captured_refresh_token:
+                    print("🔍 Extrayendo refresh token antes de salir del loop (evitar context destroyed)...")
+                    await page.wait_for_timeout(2000)
+                    for _sn, _js in [("sessionStorage", "window.sessionStorage"), ("localStorage", "window.localStorage")]:
+                        try:
+                            _raw = await page.evaluate(f"() => JSON.stringify({_js})")
+                            if not _raw:
+                                continue
+                            _storage = json.loads(_raw)
+                            for _k, _v in _storage.items():
+                                try:
+                                    _parsed = json.loads(_v)
+                                    if isinstance(_parsed, dict) and "refreshtoken" in _k.lower() and "secret" in _parsed and not captured_refresh_token:
+                                        captured_refresh_token = _parsed["secret"]
+                                        captured_client_id = _parsed.get("client_id", SPA_CLIENT_ID)
+                                        print(f"   🎯 REFRESH TOKEN (anticipado) de {_sn}! ({len(captured_refresh_token)} chars)")
+                                except Exception:
+                                    continue
+                        except Exception as _e:
+                            print(f"   ⚠️ No se pudo leer {_sn} anticipado: {_e}")
+                
                 break
             elif captured_token and elapsed < MIN_CAPTURE_WAIT:
                 # Token capturado demasiado rápido → probablemente del cache viejo
