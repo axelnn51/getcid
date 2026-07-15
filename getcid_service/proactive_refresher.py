@@ -88,9 +88,10 @@ async def start_proactive_refresh():
                     f"(consecutivos: {_consecutive_failures}, total fallos: {_total_failures})"
                 )
 
-                # Alerta Telegram después de N fallos consecutivos (con cooldown)
+                # Alerta Telegram + auto-trigger de Playwright después de N fallos consecutivos
                 if _consecutive_failures >= ALERT_THRESHOLD:
                     await _send_failure_alert()
+                    await _trigger_renovation()
 
         except Exception as e:
             _consecutive_failures += 1
@@ -99,6 +100,7 @@ async def start_proactive_refresh():
 
             if _consecutive_failures >= ALERT_THRESHOLD:
                 await _send_failure_alert()
+                await _trigger_renovation()
 
         await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
 
@@ -122,15 +124,36 @@ async def _send_failure_alert():
             f"Fallos consecutivos: *{_consecutive_failures}*\n"
             f"Total fallos: *{_total_failures}*\n\n"
             f"El access token podría expirar pronto.\n"
-            f"El cron de medianoche lo intentará renovar automáticamente.\n\n"
-            f"Acciones manuales posibles:\n"
-            f"• `/setrefreshtoken` — Renovar refresh token\n"
-            f"• `/deviceauth` — Iniciar Device Code Flow\n"
-            f"• 🔄 Renovar Token — Desde el menú"
+            f"🤖 *Lanzando renovación automática via Playwright...*"
         )
         logger.info(f"📱 [{_peru_time_str()}] Alerta enviada a Telegram.")
     except Exception as e:
         logger.error(f"Error enviando alerta Telegram: {e}")
+
+
+_last_renovation_trigger = 0
+RENOVATION_COOLDOWN = 3600  # No lanzar más de 1 Playwright por hora
+
+async def _trigger_renovation():
+    """Lanza el ciclo infinito de renovación Playwright automáticamente."""
+    global _last_renovation_trigger
+
+    now = time.time()
+    if now - _last_renovation_trigger < RENOVATION_COOLDOWN:
+        logger.info(f"⏸ [{_peru_time_str()}] Renovación Playwright en cooldown. No se lanza.")
+        return
+
+    _last_renovation_trigger = now
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post("http://localhost:8000/api/start-renovation")
+            if resp.status_code in (200, 400):  # 400 = ya hay una renovación en progreso
+                logger.info(f"🚀 [{_peru_time_str()}] Renovación Playwright lanzada automáticamente (status {resp.status_code}).")
+            else:
+                logger.error(f"❌ [{_peru_time_str()}] Error lanzando renovación: {resp.text}")
+    except Exception as e:
+        logger.error(f"❌ [{_peru_time_str()}] No se pudo lanzar renovación automática: {e}")
 
 
 def get_refresher_status() -> dict:

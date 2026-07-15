@@ -101,8 +101,10 @@ async def run():
     
     previous_token = None
     try:
-        if os.path.exists("ms_token.json"):
-            with open("ms_token.json", "r") as f:
+        _persist = "/app/persist" if os.path.isdir("/app/persist") else "."
+        _token_file = os.path.join(_persist, "ms_token.json")
+        if os.path.exists(_token_file):
+            with open(_token_file, "r") as f:
                 data = json.load(f)
                 previous_token = data.get("token")
     except:

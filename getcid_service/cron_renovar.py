@@ -81,10 +81,13 @@ async def start_daily_cron():
                     resp = await client.post("http://localhost:8000/api/start-renovation")
                     if resp.status_code == 200:
                         logger.info(f"🚀 [{_peru_time_str()}] Sistema infinito de obtención activado.")
+                    elif resp.status_code == 400:
+                        logger.info(f"ℹ️ [{_peru_time_str()}] Ya hay una renovación en progreso. OK.")
                     else:
                         logger.error(f"❌ [{_peru_time_str()}] Error activando sistema: {resp.text}")
                 except Exception as e:
                     logger.error(f"❌ [{_peru_time_str()}] Error de red activando sistema: {e}")
+
             
             # Dormir unos minutos para darle tiempo al sistema infinito de terminar
             # antes de volver a calcular el próximo ciclo de 24 horas.

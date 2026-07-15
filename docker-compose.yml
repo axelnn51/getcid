@@ -19,7 +19,8 @@ services:
       - GETCID_SERVICE_URL=http://getcid_python:8000
       - PID_CHECKER_URL=http://pid_checker_api:8000
     depends_on:
-      - getcid_python
+      getcid_python:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
       interval: 30s
@@ -44,6 +45,13 @@ services:
       - NOCAPTCHAAI_API_KEY=${NOCAPTCHAAI_API_KEY}
       - AI_SOLVER_ENABLED=${AI_SOLVER_ENABLED}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GETCID_SERVER=http://localhost:8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   pid_checker_api:
     build: ./pid_checker_api
@@ -53,4 +61,11 @@ services:
       - "8085:8000"
     environment:
       - APP_ENV=production
-      - RATE_LIMIT_PER_MINUTE=10
+      - RATE_LIMIT_PER_MINUTE=10
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+

@@ -34,12 +34,13 @@ if ms_accounts_env:
 elif single_email and single_pass:
     ACCOUNTS.append({"email": single_email.strip(), "password": single_pass.strip()})
 
-STATE_DIR = "states"
 _PERSIST_DIR = "/app/persist" if os.path.isdir("/app/persist") else "."
+STATE_DIR = os.path.join(_PERSIST_DIR, "states")  # Persist: sesiones sobreviven reinicios
 TOKEN_CACHE_FILE = os.path.join(_PERSIST_DIR, "ms_token.json")
 
 if not os.path.exists(STATE_DIR):
     os.makedirs(STATE_DIR)
+
 
 previous_token = None
 try:
