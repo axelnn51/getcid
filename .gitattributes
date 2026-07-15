@@ -1,0 +1,16 @@
+# Forzar LF en scripts shell para que funcionen en Linux/Docker
+*.sh text eol=lf
+
+# Archivos de texto normales con CRLF en Windows
+*.js text eol=crlf
+*.json text eol=crlf
+*.md text eol=crlf
+*.yml text eol=crlf
+*.yaml text eol=crlf
+*.py text eol=crlf
+
+# Binarios sin conversión
+*.png binary
+*.jpg binary
+*.ico binary
+*.traineddata binary

@@ -12,6 +12,7 @@ XVFB_PID=$!
 
 export DISPLAY=:99
 export PYTHONUNBUFFERED=1
+export GETCID_SERVER="http://localhost:8000"
 
 sleep 2
 

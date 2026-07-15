@@ -23,7 +23,8 @@ logger = logging.getLogger("TokenRefresher")
 # Usar directorio persistente si existe (Docker volume)
 PERSIST_DIR = "/app/persist" if os.path.isdir("/app/persist") else "."
 REFRESH_TOKEN_FILE = os.path.join(PERSIST_DIR, "ms_refresh_token.json")
-TOKEN_CACHE_FILE = "ms_token.json"  # Este puede ser efímero, se regenera con refresh
+TOKEN_CACHE_FILE = os.path.join(PERSIST_DIR, "ms_token.json")  # Persistente: sobrevive reinicios
+
 _expiration_alert_count = 0
 
 # Client IDs conocidos como SPA (24h limit)

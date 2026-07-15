@@ -9,7 +9,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from core import process_iid
 
-TOKEN_CACHE_FILE = "ms_token.json"
+_PERSIST_DIR = "/app/persist" if __import__("os").path.isdir("/app/persist") else "."
+TOKEN_CACHE_FILE = __import__("os").path.join(_PERSIST_DIR, "ms_token.json")
 
 # Cooldown para alertas de token expirado (evitar spam)
 _last_token_expired_alert = 0

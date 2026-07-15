@@ -34,7 +34,12 @@ async def start_daily_cron():
     
     while True:
         try:
-            token_file = "ms_token.json"
+            # Usar el mismo directorio persistente que token_refresher.py
+            # En Docker: /app/persist/ms_token.json (sobrevive reinicios del contenedor)
+            # En local: ./ms_token.json
+            import os as _os
+            _persist = "/app/persist" if _os.path.isdir("/app/persist") else "."
+            token_file = _os.path.join(_persist, "ms_token.json")
             last_run = 0
             
             if os.path.exists(token_file):
@@ -44,6 +49,7 @@ async def start_daily_cron():
                     last_run = data.get('last_playwright_run', 0)
                 except Exception:
                     pass
+
             
             now = time.time()
             
