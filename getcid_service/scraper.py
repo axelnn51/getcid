@@ -35,7 +35,8 @@ elif single_email and single_pass:
     ACCOUNTS.append({"email": single_email.strip(), "password": single_pass.strip()})
 
 STATE_DIR = "states"
-TOKEN_CACHE_FILE = "ms_token.json"
+_PERSIST_DIR = "/app/persist" if os.path.isdir("/app/persist") else "."
+TOKEN_CACHE_FILE = os.path.join(_PERSIST_DIR, "ms_token.json")
 
 if not os.path.exists(STATE_DIR):
     os.makedirs(STATE_DIR)
