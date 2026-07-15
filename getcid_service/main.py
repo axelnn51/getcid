@@ -60,89 +60,67 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️ [{_peru_time_str()}] No se pudo iniciar Cron Diario: {e}")
         cron_task = None
 
-    # ── BOOT VALIDATOR: verifica token al arrancar y actúa inmediatamente ──
+    # ── BOOT VALIDATOR: siempre refresca el token en boot, nunca confía solo en el archivo ──
     async def startup_validator():
         """
         Se ejecuta 15 segundos después del boot.
-        1. Notifica en Telegram que el servidor arrancó.
-        2. Verifica si el token es válido, está por expirar, o ya expiró.
-        3. Si expiró o le quedan < 30 min → lanza renovación inmediata.
+        NO confía en el archivo local (puede estar obsoleto tras restart).
+        Siempre intenta refresh real contra Microsoft, sin CAPTCHA.
+        Si falla → lanza Playwright.
         """
         await asyncio.sleep(15)  # Esperar a que uvicorn esté 100% listo
         _logger = logging.getLogger("BootValidator")
-        _logger.info(f"🔍 [{_peru_time_str()}] Boot Validator iniciado. Verificando estado del sistema...")
+        _logger.info(f"🔄 [{_peru_time_str()}] Boot Validator: intentando refresh proactivo real...")
 
-        # Leer estado del token
-        token_status = "unknown"
-        remaining_min = 0
-        try:
-            if os.path.exists(TOKEN_CACHE_FILE):
-                with open(TOKEN_CACHE_FILE, 'r') as f:
-                    data = json.load(f)
-                remaining = data.get('expires_at', 0) - time.time()
-                remaining_min = int(remaining // 60)
-                if remaining > 0:
-                    token_status = "valid"
-                else:
-                    token_status = "expired"
-            else:
-                token_status = "no_file"
-        except Exception as e:
-            token_status = f"error: {e}"
+        refresh_ok = False
+        new_token = None
 
-        # Leer estado del refresh token
-        refresh_status = "unknown"
         try:
-            from token_refresher import get_refresh_token_status
+            from token_refresher import refresh_access_token, get_refresh_token_status
             rs = get_refresh_token_status()
             refresh_status = rs.get("status", "unknown")
-        except Exception:
-            pass
 
-        # Construir mensaje de Telegram
-        token_emoji = "✅" if token_status == "valid" else "❌"
-        refresh_emoji = "✅" if refresh_status == "valid" else "⚠️"
-        time_info = f"({remaining_min} min restantes)" if token_status == "valid" else ""
-
-        boot_msg = (
-            f"🔄 *Servidor Reiniciado*\n\n"
-            f"⏰ {_peru_time_str()}\n"
-            f"{token_emoji} Access Token: `{token_status}` {time_info}\n"
-            f"{refresh_emoji} Refresh Token: `{refresh_status}`\n\n"
-        )
-
-        needs_renovation = False
-
-        if token_status == "expired" or token_status == "no_file":
-            boot_msg += "🚨 *Token expirado — lanzando renovación automática...*"
-            needs_renovation = True
-        elif token_status == "valid" and remaining_min < 30:
-            boot_msg += f"⚠️ *Token con solo {remaining_min} min restantes — renovando preventivamente...*"
-            needs_renovation = True
-        else:
-            boot_msg += f"✅ *Todo OK. El sistema reanudó operaciones normalmente.*"
-
-        # Notificar a Telegram
-        try:
-            from telegram_alert import send_alert
-            await send_alert(boot_msg)
-            _logger.info(f"📱 [{_peru_time_str()}] Notificación de boot enviada a Telegram.")
+            if refresh_status == "valid":
+                new_token = await refresh_access_token()
+                refresh_ok = bool(new_token)
         except Exception as e:
-            _logger.warning(f"⚠️ No se pudo notificar boot por Telegram: {e}")
+            _logger.warning(f"⚠️ [{_peru_time_str()}] Error en refresh de boot: {e}")
 
-        # Si necesita renovar, lanzar ahora
-        if needs_renovation:
-            _logger.warning(f"🚀 [{_peru_time_str()}] Boot Validator: lanzando renovación de emergencia...")
+        if refresh_ok:
+            _logger.info(f"✅ [{_peru_time_str()}] Boot: token refrescado correctamente, sistema listo.")
             try:
-                async with __import__('httpx').AsyncClient(timeout=10) as client:
-                    resp = await client.post("http://localhost:8000/api/start-renovation")
-                    _logger.info(f"🚀 [{_peru_time_str()}] Renovación lanzada (status {resp.status_code}).")
-            except Exception as e:
-                _logger.error(f"❌ [{_peru_time_str()}] Error lanzando renovación de boot: {e}")
+                from telegram_alert import send_alert
+                await send_alert(
+                    f"🔄 *Servidor Reiniciado*\n\n"
+                    f"⏰ {_peru_time_str()}\n"
+                    f"✅ Access Token: refrescado al arrancar\n"
+                    f"✅ Refresh Token: válido\n\n"
+                    f"✅ *Sistema operativo normalmente.*"
+                )
+            except Exception:
+                pass
         else:
-            _logger.info(f"✅ [{_peru_time_str()}] Token válido ({remaining_min} min). No se necesita renovación.")
+            _logger.warning(f"🚨 [{_peru_time_str()}] Boot: refresh falló → lanzando Playwright...")
+            try:
+                from telegram_alert import send_alert
+                await send_alert(
+                    f"🔄 *Servidor Reiniciado*\n\n"
+                    f"⏰ {_peru_time_str()}\n"
+                    f"❌ Refresh token expirado o no disponible\n\n"
+                    f"🚨 *Lanzando renovación Playwright automáticamente...*"
+                )
+            except Exception:
+                pass
+            try:
+                import httpx as _httpx
+                async with _httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.post("http://localhost:8000/api/start-renovation")
+                    _logger.info(f"🚀 [{_peru_time_str()}] Playwright lanzado en boot (status {resp.status_code}).")
+            except Exception as e:
+                _logger.error(f"❌ [{_peru_time_str()}] Error lanzando Playwright en boot: {e}")
 
     boot_task = asyncio.create_task(startup_validator())
+
 
     yield  # Servidor corriendo
 
