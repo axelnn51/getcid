@@ -21,6 +21,18 @@ import logging
 logger = logging.getLogger("TokenRefresher")
 
 # Usar directorio persistente si existe (Docker volume)
+# IMPORTANTE: se evalúa en tiempo de llamada (no de import) para evitar
+# race conditions con el montaje del volumen Docker al arrancar.
+def _get_persist_dir() -> str:
+    return "/app/persist" if os.path.isdir("/app/persist") else "."
+
+def _get_refresh_token_file() -> str:
+    return os.path.join(_get_persist_dir(), "ms_refresh_token.json")
+
+def _get_token_cache_file() -> str:
+    return os.path.join(_get_persist_dir(), "ms_token.json")
+
+# Compatibilidad: mantener como propiedades para código que ya las importa como módulo
 PERSIST_DIR = "/app/persist" if os.path.isdir("/app/persist") else "."
 REFRESH_TOKEN_FILE = os.path.join(PERSIST_DIR, "ms_refresh_token.json")
 TOKEN_CACHE_FILE = os.path.join(PERSIST_DIR, "ms_token.json")  # Persistente: sobrevive reinicios
@@ -76,12 +88,15 @@ async def refresh_access_token() -> str:
     Usa el Refresh Token guardado para obtener un nuevo Access Token.
     Retorna el access token o None si falla.
     """
-    if not os.path.exists(REFRESH_TOKEN_FILE):
-        logger.warning("No hay refresh token guardado.")
+    _refresh_file = _get_refresh_token_file()
+    _token_file = _get_token_cache_file()
+    
+    if not os.path.exists(_refresh_file):
+        logger.warning(f"No hay refresh token guardado (buscado en {_refresh_file}).")
         return None
 
     try:
-        with open(REFRESH_TOKEN_FILE, 'r') as f:
+        with open(_refresh_file, 'r') as f:
             data = json.load(f)
     except Exception as e:
         logger.error(f"Error leyendo refresh token: {e}")
@@ -132,12 +147,13 @@ async def refresh_access_token() -> str:
                 expires_in = token_data.get("expires_in", 3600)
 
                 if new_access_token:
-                    # Guardar el nuevo access token
-                    with open(TOKEN_CACHE_FILE, 'w') as f:
+                    # Guardar el nuevo access token en el path dinámico (siempre al volumen persistente)
+                    with open(_token_file, 'w') as f:
                         json.dump({
                             'token': new_access_token,
                             'expires_at': time.time() + expires_in - 120  # 2 min antes para seguridad
                         }, f)
+                    logger.info(f"Token guardado en: {_token_file}")
                     logger.info(f"Nuevo access token obtenido. Expira en {expires_in // 60} minutos.")
 
                     # Actualizar el refresh token (Microsoft da uno nuevo cada vez)
@@ -195,8 +211,9 @@ async def refresh_access_token() -> str:
 def save_refresh_token(refresh_token: str, client_id: str, scopes: str = ""):
     """Guarda el refresh token en disco con metadata."""
     token_type = _detect_token_type(client_id)
-
-    with open(REFRESH_TOKEN_FILE, 'w') as f:
+    _rf = _get_refresh_token_file()
+    logger.info(f"Guardando refresh token en: {_rf}")
+    with open(_rf, 'w') as f:
         json.dump({
             'refresh_token': refresh_token,
             'client_id': client_id,
@@ -219,11 +236,12 @@ def reset_expiration_alerts():
 
 def get_refresh_token_status() -> dict:
     """Retorna el estado del refresh token con información REAL del tipo."""
-    if not os.path.exists(REFRESH_TOKEN_FILE):
-        return {"status": "no_token", "message": "No hay refresh token guardado."}
+    _rf = _get_refresh_token_file()
+    if not os.path.exists(_rf):
+        return {"status": "no_token", "message": f"No hay refresh token guardado (buscado en {_rf})."}
 
     try:
-        with open(REFRESH_TOKEN_FILE, 'r') as f:
+        with open(_rf, 'r') as f:
             data = json.load(f)
 
         saved_at = data.get('saved_at', 0)

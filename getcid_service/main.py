@@ -60,16 +60,51 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️ [{_peru_time_str()}] No se pudo iniciar Cron Diario: {e}")
         cron_task = None
 
-    # ── BOOT VALIDATOR: siempre refresca el token en boot, nunca confía solo en el archivo ──
+    # ── BOOT VALIDATOR: refresca el token en boot, nunca confía solo en el archivo ──
     async def startup_validator():
         """
-        Se ejecuta 15 segundos después del boot.
-        NO confía en el archivo local (puede estar obsoleto tras restart).
-        Siempre intenta refresh real contra Microsoft, sin CAPTCHA.
-        Si falla → lanza Playwright.
+        Se ejecuta poco después del boot.
+        1. Si hay token en caché aún válido y con >10 min de vida → lo conserva (restart rápido).
+        2. Si hay refresh token válido → refresca el access token vía API (sin CAPTCHA).
+        3. Si todo falla → lanza Playwright.
         """
-        await asyncio.sleep(15)  # Esperar a que uvicorn esté 100% listo
         _logger = logging.getLogger("BootValidator")
+
+        # Paso 0: Verificar caché de access token (puede ser válido tras restart rápido)
+        cached_ok = False
+        try:
+            import json as _json
+            import time as _time
+            if os.path.exists(TOKEN_CACHE_FILE):
+                with open(TOKEN_CACHE_FILE, 'r') as _f:
+                    _td = _json.load(_f)
+                remaining = _td.get('expires_at', 0) - _time.time()
+                if remaining > 600:  # Más de 10 min de vida restante
+                    cached_ok = True
+                    _logger.info(
+                        f"✅ [{_peru_time_str()}] Boot: access token en caché válido "
+                        f"({int(remaining // 60)} min restantes). Sin necesidad de refresh."
+                    )
+        except Exception:
+            pass
+
+        if cached_ok:
+            # Token bueno: solo esperamos 5 s a que uvicorn esté listo y listo
+            await asyncio.sleep(5)
+            try:
+                from telegram_alert import send_alert
+                await send_alert(
+                    f"🔄 *Servidor Reiniciado*\n\n"
+                    f"⏰ {_peru_time_str()}\n"
+                    f"✅ Access Token: en caché y válido (sin re-login)\n\n"
+                    f"✅ *Sistema operativo normalmente.*"
+                )
+            except Exception:
+                pass
+            return
+
+        # Paso 1: Sin token válido en caché → esperar a uvicorn y refrescar
+        await asyncio.sleep(15)  # Esperar a que uvicorn esté 100% listo
         _logger.info(f"🔄 [{_peru_time_str()}] Boot Validator: intentando refresh proactivo real...")
 
         refresh_ok = False
@@ -211,8 +246,14 @@ async def api_getcid(req: IIDRequest):
         import traceback
         result = await process_iid(req.iid)
         
-        # Si el token expiró, disparar renovación infinita y avisar al cliente
-        if not result.get("success") and "Token expirado" in result.get("error", ""):
+        # Si el token expiró (por cualquier señal: texto, código HTTP 401 o 403), disparar renovación infinita
+        error_text = result.get("error", "")
+        token_expired = (
+            "Token expirado" in error_text
+            or "Error: 401" in error_text
+            or "Error: 403" in error_text
+        )
+        if not result.get("success") and token_expired:
             import logging
             logger = logging.getLogger("API")
             logger.warning(f"🔴 [{_peru_time_str()}] Token expirado detectado en petición de CID.")

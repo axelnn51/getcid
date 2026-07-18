@@ -33,6 +33,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
+// Necesario cuando Express corre detrás de un proxy/Docker que agrega X-Forwarded-For
+// (requerido por express-rate-limit para identificar IPs correctamente)
+app.set('trust proxy', 1);
+
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());

@@ -106,7 +106,9 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
                 req_headers["DPoP"] = generate_dpop_token(htu, htm, nonce)
                 resp = await client.post(endpoint, json=payload_data, headers=req_headers)
             
-            if resp.status_code == 403:
+            if resp.status_code in (401, 403):
+                # 401 Unauthorized y 403 Forbidden ambos indican token expirado/inválido.
+                # El mensaje "Token expirado" es el que main.py busca para disparar renovación automática.
                 return {"success": False, "error": "Token expirado o Denegado."}
             elif resp.status_code != 200:
                 return {"success": False, "error": f"Error: {resp.status_code}"}

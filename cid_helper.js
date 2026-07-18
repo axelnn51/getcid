@@ -55,6 +55,14 @@ async function getConfirmationID(iid) {
 
     // Clasificación de errores basada en el mensaje de error de Python
     const errorText = (data.error || '').toLowerCase();
+    const errorCode = (data.code || '').toUpperCase();
+    
+    // Token en renovación automática (Python lo detectó y ya lanzó Playwright)
+    if (errorCode === 'MS_TOKEN_RENEWING' || errorText.includes('ciclo infinito') || errorText.includes('token expiró')) {
+      throw new CIDError('MS_TOKEN_RENEWING',
+        '🔄 *Sistema en renovación de token*\nEl servicio está obteniendo credenciales nuevas automáticamente. Por favor, reintenta en 2–3 minutos.',
+        { iid: cleanIid });
+    }
     
     if (errorText.includes('checksum')) {
       throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
