@@ -60,89 +60,122 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️ [{_peru_time_str()}] No se pudo iniciar Cron Diario: {e}")
         cron_task = None
 
-    # ── BOOT VALIDATOR: refresca el token en boot, nunca confía solo en el archivo ──
+    # ── BOOT VALIDATOR: valida el token REALMENTE contra Microsoft al arrancar ──
     async def startup_validator():
         """
-        Se ejecuta poco después del boot.
-        1. Si hay token en caché aún válido y con >10 min de vida → lo conserva (restart rápido).
-        2. Si hay refresh token válido → refresca el access token vía API (sin CAPTCHA).
-        3. Si todo falla → lanza Playwright.
+        Se ejecuta al boot. NO confía en el expires_at del archivo — lo valida
+        realmente contra Microsoft para garantizar que el primer CID funcione.
+
+        Flujo:
+        1. Token en caché con >5 min → prueba DPoP contra MS
+           ✅ MS acepta → listo, notifica
+           ❌ MS rechaza → va al paso 2
+        2. Refresh token disponible → obtiene nuevo access token → valida
+           ✅ válido → listo, notifica
+           ❌ falla → paso 3
+        3. Lanza Playwright (renovación completa)
         """
         _logger = logging.getLogger("BootValidator")
+        await asyncio.sleep(8)  # Dar tiempo a uvicorn para estar 100% listo
 
-        # Paso 0: Verificar caché de access token (puede ser válido tras restart rápido)
-        cached_ok = False
+        _logger.info(f"🔍 [{_peru_time_str()}] Boot Validator: iniciando validación real del token...")
+
+        async def _validate_token_against_ms(token: str) -> bool:
+            """
+            Valida el token contra Microsoft con un IID dummy.
+            Retorna True si el token es aceptado (cualquier respuesta que no sea 401/403).
+            """
+            try:
+                result = await process_iid(
+                    "000000000000000000000000000000000000000000000000000000",
+                    token
+                )
+                error = result.get("error", "")
+                # 401/403 = token rechazado. Cualquier otro error = token válido (IID inválido, etc.)
+                if "Token expirado" in error or "Error: 401" in error or "Error: 403" in error:
+                    _logger.warning(f"❌ [{_peru_time_str()}] Token rechazado por Microsoft (401/403)")
+                    return False
+                _logger.info(f"✅ [{_peru_time_str()}] Token validado por Microsoft (respuesta: {error[:60] if error else 'OK'})")
+                return True
+            except Exception as e:
+                _logger.warning(f"⚠️ [{_peru_time_str()}] Error en validación contra MS: {e}")
+                return False
+
+        token_validated = False
+        token_source = "ninguno"
+
+        # ── PASO 1: Verificar token en caché ──
         try:
             import json as _json
             import time as _time
             if os.path.exists(TOKEN_CACHE_FILE):
                 with open(TOKEN_CACHE_FILE, 'r') as _f:
                     _td = _json.load(_f)
+                cached_token = _td.get('token')
                 remaining = _td.get('expires_at', 0) - _time.time()
-                if remaining > 600:  # Más de 10 min de vida restante
-                    cached_ok = True
+
+                if cached_token and remaining > 300:  # >5 min en el archivo
                     _logger.info(
-                        f"✅ [{_peru_time_str()}] Boot: access token en caché válido "
-                        f"({int(remaining // 60)} min restantes). Sin necesidad de refresh."
+                        f"🔍 [{_peru_time_str()}] Token en caché ({int(remaining // 60)} min según archivo). "
+                        f"Validando contra Microsoft..."
                     )
-        except Exception:
-            pass
-
-        if cached_ok:
-            # Token bueno: solo esperamos 5 s a que uvicorn esté listo y listo
-            await asyncio.sleep(5)
-            try:
-                from telegram_alert import send_alert
-                await send_alert(
-                    f"🔄 *Servidor Reiniciado*\n\n"
-                    f"⏰ {_peru_time_str()}\n"
-                    f"✅ Access Token: en caché y válido (sin re-login)\n\n"
-                    f"✅ *Sistema operativo normalmente.*"
-                )
-            except Exception:
-                pass
-            return
-
-        # Paso 1: Sin token válido en caché → esperar a uvicorn y refrescar
-        await asyncio.sleep(15)  # Esperar a que uvicorn esté 100% listo
-        _logger.info(f"🔄 [{_peru_time_str()}] Boot Validator: intentando refresh proactivo real...")
-
-        refresh_ok = False
-        new_token = None
-
-        try:
-            from token_refresher import refresh_access_token, get_refresh_token_status
-            rs = get_refresh_token_status()
-            refresh_status = rs.get("status", "unknown")
-
-            if refresh_status == "valid":
-                new_token = await refresh_access_token()
-                refresh_ok = bool(new_token)
+                    token_validated = await _validate_token_against_ms(cached_token)
+                    if token_validated:
+                        token_source = f"caché ({int(remaining // 60)} min restantes)"
+                    else:
+                        _logger.warning(f"⚠️ [{_peru_time_str()}] Token en caché RECHAZADO por MS. Intentando refresh token...")
+                else:
+                    _logger.info(f"⏰ [{_peru_time_str()}] Token en caché expirado o ausente. Saltando al refresh token.")
         except Exception as e:
-            _logger.warning(f"⚠️ [{_peru_time_str()}] Error en refresh de boot: {e}")
+            _logger.warning(f"⚠️ [{_peru_time_str()}] Error leyendo caché: {e}")
 
-        if refresh_ok:
-            _logger.info(f"✅ [{_peru_time_str()}] Boot: token refrescado correctamente, sistema listo.")
+        # ── PASO 2: Refresh token (si el caché falló) ──
+        if not token_validated:
+            try:
+                from token_refresher import refresh_access_token, get_refresh_token_status
+                rs = get_refresh_token_status()
+                if rs.get("status") == "valid":
+                    _logger.info(f"🔄 [{_peru_time_str()}] Intentando refresh token contra Microsoft...")
+                    new_token = await refresh_access_token()
+                    if new_token:
+                        _logger.info(f"🔍 [{_peru_time_str()}] Nuevo access token obtenido. Validando...")
+                        token_validated = await _validate_token_against_ms(new_token)
+                        if token_validated:
+                            token_source = "refresh token (sin CAPTCHA)"
+                        else:
+                            _logger.error(f"❌ [{_peru_time_str()}] Nuevo token también rechazado por MS.")
+                    else:
+                        _logger.warning(f"⚠️ [{_peru_time_str()}] Refresh token no pudo obtener access token.")
+                else:
+                    _logger.warning(f"⚠️ [{_peru_time_str()}] Refresh token no disponible ({rs.get('status', 'unknown')}).")
+            except Exception as e:
+                _logger.warning(f"⚠️ [{_peru_time_str()}] Error en refresh de boot: {e}")
+
+        # ── RESULTADO ──
+        if token_validated:
+            _logger.info(f"🎉 [{_peru_time_str()}] Boot: sistema listo. Token válido vía {token_source}.")
             try:
                 from telegram_alert import send_alert
                 await send_alert(
                     f"🔄 *Servidor Reiniciado*\n\n"
                     f"⏰ {_peru_time_str()}\n"
-                    f"✅ Access Token: refrescado al arrancar\n"
-                    f"✅ Refresh Token: válido\n\n"
-                    f"✅ *Sistema operativo normalmente.*"
+                    f"✅ Token validado contra Microsoft\n"
+                    f"📦 Fuente: {token_source}\n\n"
+                    f"✅ *Sistema listo desde el primer CID.*"
                 )
             except Exception:
                 pass
         else:
-            _logger.warning(f"🚨 [{_peru_time_str()}] Boot: refresh falló → lanzando Playwright...")
+            # ── PASO 3: Playwright (último recurso) ──
+            _logger.warning(f"🚨 [{_peru_time_str()}] Boot: todo falló → lanzando Playwright...")
             try:
                 from telegram_alert import send_alert
                 await send_alert(
                     f"🔄 *Servidor Reiniciado*\n\n"
                     f"⏰ {_peru_time_str()}\n"
-                    f"❌ Refresh token expirado o no disponible\n\n"
-                    f"🚨 *Lanzando renovación Playwright automáticamente...*"
+                    f"❌ Token inválido + refresh token fallido\n\n"
+                    f"🚨 *Lanzando renovación Playwright automáticamente...*\n"
+                    f"⏳ El sistema estará listo en ~2 minutos."
                 )
             except Exception:
                 pass
