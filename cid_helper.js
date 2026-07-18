@@ -35,7 +35,9 @@ async function getConfirmationID(iid) {
   console.log(`[CID] Solicitando IID al microservicio Python: ${GETCID_SERVICE_URL}`);
   
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000); // 45s porque Playwright puede tardar si hace login
+  // 90s: el sistema Python puede tardar hasta ~45s internamente (refresh + espera de Playwright)
+  // antes de devolver el CID o el error final
+  const timeout = setTimeout(() => controller.abort(), 90000);
 
   try {
     const response = await fetch(`${GETCID_SERVICE_URL}/api/getcid`, {
@@ -81,7 +83,7 @@ async function getConfirmationID(iid) {
     console.error('[CID_HELPER ERROR] Falló la petición a getcid_python:', err);
     if (err instanceof CIDError) throw err;
     if (err.name === 'AbortError') {
-      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl servicio Python tardó más de 45 segundos.', { iid: cleanIid });
+      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl servicio tardó más de 90 segundos. Intenta de nuevo.', { iid: cleanIid });
     }
     throw new CIDError('NETWORK_ERROR', `❌ *Error de conexión interna:* No se pudo alcanzar getcid_python. Detalle: ${err.message}`, { iid: cleanIid });
   }

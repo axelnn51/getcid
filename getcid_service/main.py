@@ -17,6 +17,12 @@ _last_token_expired_alert = 0
 _TOKEN_ALERT_COOLDOWN = 1800  # 30 minutos
 
 # ============================================================
+# EVENTO GLOBAL: se dispara cuando llega un token nuevo
+# Permite que peticiones de CID en espera reintentan inmediatamente
+# ============================================================
+_token_renewed_event = asyncio.Event()
+
+# ============================================================
 # ESTADO GLOBAL PARA CAPTCHA REMOTO
 # ============================================================
 captcha_event = asyncio.Event()
@@ -273,51 +279,103 @@ async def solve_captcha(req: dict):
 
 @app.post("/api/getcid")
 async def api_getcid(req: IIDRequest):
-    """Endpoint de la API para procesar el IID."""
-    global _last_token_expired_alert
+    """
+    Endpoint de la API para procesar el IID.
+
+    Sistema de resiliencia de 3 niveles cuando el token expira:
+      Nivel 1 (rápido, ~3s): Refresh token sin CAPTCHA → reintenta CID → devuelve CID sin que el usuario note nada.
+      Nivel 2 (espera, hasta 38s): Playwright corriendo en background → espera el nuevo token → reintenta CID → devuelve CID.
+      Nivel 3 (error): Si todo lo anterior falla → avisa al usuario que espere 2-3 min.
+    """
+    global _last_token_expired_alert, _token_renewed_event
+    import logging as _logging
+    _log = _logging.getLogger("API")
     try:
         import traceback
+
+        def _is_token_expired(res: dict) -> bool:
+            err = res.get("error", "")
+            return "Token expirado" in err or "Error: 401" in err or "Error: 403" in err
+
+        # ── Intento 1: token actual ──
         result = await process_iid(req.iid)
-        
-        # Si el token expiró (por cualquier señal: texto, código HTTP 401 o 403), disparar renovación infinita
-        error_text = result.get("error", "")
-        token_expired = (
-            "Token expirado" in error_text
-            or "Error: 401" in error_text
-            or "Error: 403" in error_text
-        )
-        if not result.get("success") and token_expired:
-            import logging
-            logger = logging.getLogger("API")
-            logger.warning(f"🔴 [{_peru_time_str()}] Token expirado detectado en petición de CID.")
-            
-            await start_renovation()
-            
-            # Alerta Telegram con cooldown de 30 min
-            now = time.time()
-            if now - _last_token_expired_alert > _TOKEN_ALERT_COOLDOWN:
-                _last_token_expired_alert = now
-                try:
-                    from telegram_alert import send_alert
-                    await send_alert(
-                        f"🔴 *Token Expirado — CID Fallido*\n\n"
-                        f"⏰ {_peru_time_str()}\n"
-                        f"El token expiró al intentar activar.\n"
-                        f"El sistema **ya activó el ciclo infinito** para obtener uno nuevo automáticamente."
-                    )
-                except:
-                    pass
-            
-            return JSONResponse(status_code=400, content={
-                "success": False, 
-                "error": "🔄 El sistema detectó que el token expiró y ya está trabajando en ciclo infinito para obtener uno nuevo. Reintenta en unos minutos.",
-                "code": "MS_TOKEN_RENEWING"
-            })
-            
+
         if result.get("success"):
             return JSONResponse(status_code=200, content=result)
-        else:
+
+        if not _is_token_expired(result):
+            # Error que no es de token (checksum, bloqueado, etc.) → devolver directo
             return JSONResponse(status_code=400, content=result)
+
+        # ═══ TOKEN EXPIRADO — sistema de auto-recuperación ═══
+        _log.warning(f"🔴 [{_peru_time_str()}] Token expirado. Nivel 1: intentando refresh rápido...")
+
+        # ── Nivel 1: Refresh token (sin CAPTCHA, ~2-3 segundos) ──
+        try:
+            from token_refresher import refresh_access_token
+            new_token = await refresh_access_token()
+            if new_token:
+                _log.info(f"🔄 [{_peru_time_str()}] Nuevo token obtenido. Reintentando CID...")
+                result = await process_iid(req.iid, new_token)
+                if result.get("success"):
+                    _log.info(f"✅ [{_peru_time_str()}] CID obtenido tras refresh automático (transparente al usuario).")
+                    return JSONResponse(status_code=200, content=result)
+                if _is_token_expired(result):
+                    _log.warning(f"⚠️ [{_peru_time_str()}] Nuevo token también rechazado por MS. Nivel 2...")
+                else:
+                    # Error de IID, no de token
+                    return JSONResponse(status_code=400, content=result)
+        except Exception as re:
+            _log.error(f"❌ [{_peru_time_str()}] Error en refresh rápido: {re}")
+
+        # ── Nivel 2: Playwright en background + esperar token nuevo ──
+        _log.warning(f"🚀 [{_peru_time_str()}] Nivel 2: lanzando Playwright y esperando token nuevo (máx 38s)...")
+        await start_renovation()
+
+        # Esperar a que /api/settoken dispare _token_renewed_event
+        try:
+            _token_renewed_event.clear()
+            await asyncio.wait_for(_token_renewed_event.wait(), timeout=38)
+            _log.info(f"🎉 [{_peru_time_str()}] Token nuevo recibido durante espera. Reintentando CID...")
+            # Leer el token nuevo del caché
+            try:
+                import json as _j
+                with open(TOKEN_CACHE_FILE, 'r') as _f:
+                    _td = _j.load(_f)
+                fresh_token = _td.get('token')
+                if fresh_token:
+                    result = await process_iid(req.iid, fresh_token)
+                    if result.get("success"):
+                        _log.info(f"✅ [{_peru_time_str()}] CID obtenido tras espera de Playwright (transparente al usuario).")
+                        return JSONResponse(status_code=200, content=result)
+            except Exception as te:
+                _log.error(f"❌ [{_peru_time_str()}] Error leyendo token tras espera: {te}")
+        except asyncio.TimeoutError:
+            _log.warning(f"⏱ [{_peru_time_str()}] Timeout de 38s: Playwright no terminó a tiempo. Nivel 3.")
+
+        # ── Nivel 3: error — el usuario debe esperar ──
+        _log.error(f"🚨 [{_peru_time_str()}] Todos los niveles fallaron. Devolviendo MS_TOKEN_RENEWING al usuario.")
+
+        now = time.time()
+        if now - _last_token_expired_alert > _TOKEN_ALERT_COOLDOWN:
+            _last_token_expired_alert = now
+            try:
+                from telegram_alert import send_alert
+                await send_alert(
+                    f"🔴 *Token Expirado — CID Fallido*\n\n"
+                    f"⏰ {_peru_time_str()}\n"
+                    f"El token expiró y el refresh rápido + Playwright tardaron más de 38s.\n"
+                    f"El sistema sigue trabajando en background."
+                )
+            except:
+                pass
+
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "error": "🔄 El sistema está renovando credenciales automáticamente. Reintenta en 1-2 minutos.",
+            "code": "MS_TOKEN_RENEWING"
+        })
+
     except Exception as e:
         error_trace = traceback.format_exc()
         return JSONResponse(status_code=500, content={"success": False, "error": f"CRITICAL PYTHON ERROR: {str(e)}\n{error_trace}"})
@@ -325,6 +383,7 @@ async def api_getcid(req: IIDRequest):
 @app.post("/api/settoken")
 async def set_token(req: TokenRequest):
     """Recibe un token de Microsoft generado localmente y lo guarda en caché."""
+    global _token_renewed_event
     try:
         import os
         last_run = 0
@@ -345,10 +404,15 @@ async def set_token(req: TokenRequest):
                 'expires_at': expires_at,
                 'last_playwright_run': last_run
             }, f)
-        
+
+        # ★ NOTIFICAR a peticiones de CID en espera que hay token nuevo
+        _token_renewed_event.set()
+        # Resetear para el siguiente ciclo (async safe: los waiters ya despertaron)
+        asyncio.get_event_loop().call_later(0.1, _token_renewed_event.clear)
+
         minutes_left = req.duration // 60
         return JSONResponse(status_code=200, content={
-            "success": True, 
+            "success": True,
             "message": f"Token guardado exitosamente. Válido por {minutes_left} minutos.",
             "expires_at": expires_at
         })
