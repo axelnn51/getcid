@@ -907,9 +907,18 @@ function startBot() {
         { command: 'systemstatus', description: 'Ver contenedores y servicios' },
         { command: 'deviceauth', description: 'Login interactivo (Solución CAPTCHA)' },
         { command: 'settoken', description: 'Forzar Access Token manual' },
+        { command: 'setrefreshtoken', description: 'Cargar Refresh Token manual' },
         { command: 'revert', description: 'Revertir a token anterior' },
-        { command: 'stats', description: 'Estadísticas de uso' }
+        { command: 'stats', description: 'Estadísticas de uso' },
+        { command: 'restart', description: 'Reiniciar el bot (Node.js)' }
     ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
+
+    // Comando oculto para reiniciar el bot
+    bot.command('restart', async (ctx) => {
+        if (!ADMIN_IDS.includes(String(ctx.from.id))) return;
+        await ctx.reply('🔄 Reiniciando servidor Node.js. Volveré en unos segundos...');
+        process.exit(1);
+    });
 
     bot.launch()
         .then(() => {
