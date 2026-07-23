@@ -897,6 +897,20 @@ function startBot() {
     }, 60 * 1000); // Verificar cada minuto
 
     // ARRANCAR
+    // Configurar menú desplegable de comandos
+    bot.telegram.setMyCommands([
+        { command: 'start', description: 'Menú principal' },
+        { command: 'help', description: 'Ayuda sobre uso' },
+        { command: 'cid', description: 'Obtener CID (uso: /cid [IID])' },
+        { command: 'check', description: 'Revisar Key' },
+        { command: 'tokenstatus', description: 'Estado del token de Microsoft' },
+        { command: 'systemstatus', description: 'Ver contenedores y servicios' },
+        { command: 'deviceauth', description: 'Login interactivo (Solución CAPTCHA)' },
+        { command: 'settoken', description: 'Forzar Access Token manual' },
+        { command: 'revert', description: 'Revertir a token anterior' },
+        { command: 'stats', description: 'Estadísticas de uso' }
+    ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
+
     bot.launch()
         .then(() => {
             console.log('🤖 Bot de Telegram iniciado correctamente');

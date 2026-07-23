@@ -206,15 +206,15 @@ async def run():
         start_wait = time.time()
         max_wait = 360  # 6 minutos (suficiente para agotar todos los intentos de IA antes de pedir ayuda)
 
-        # Limitar los intentos de la IA a 3 en total (sin importar cuántas keys haya) para no hacer esperar al humano
+        # Calcular intentos máximos de IA: 3 intentos por cada API key configurada
         gemini_keys_raw = os.getenv("GEMINI_API_KEY") or ""
         num_api_keys = len([k for k in gemini_keys_raw.split(",") if k.strip()]) or 1
         ai_enabled = (os.getenv("AI_SOLVER_ENABLED") or "").strip().lower() == "true"
-        max_ai_attempts = 3  # Fijo a 3 intentos máximos para pasar a modo manual rápido
+        max_ai_attempts = num_api_keys * 3  # Vuelve a 12 (ej: 4 keys * 3)
         ai_fail_count = 0
         last_ai_clicks = -1
         print(f"  🤖 IA {'ACTIVADA' if ai_enabled else 'DESACTIVADA'}")
-        print(f"  🔑 API Keys detectadas: {num_api_keys}. Intentos máximos de IA configurados a {max_ai_attempts}.")
+        print(f"  🔑 API Keys detectadas: {num_api_keys} × 3 intentos = {max_ai_attempts} intentos máx")
         print(f"  📝 ENV DEBUG: AI_SOLVER_ENABLED='{os.getenv('AI_SOLVER_ENABLED')}' | GEMINI_API_KEY={len(gemini_keys_raw)} chars\n")
 
         MIN_CAPTURE_WAIT = 5  # Mínimo 5 segundos antes de aceptar un token (evitar cache viejo)
@@ -318,16 +318,24 @@ async def run():
                 rate_limit_msg = page.get_by_text(re.compile("Too Many Requests|rate limit|demasiadas solicitudes", re.IGNORECASE))
                 if await rate_limit_msg.count() > 0:
                     if await rate_limit_msg.first.is_visible(timeout=100):
-                        print("\n🚫 ¡RATE LIMITED POR MICROSOFT! Abortando renovación.")
+                        print("\n🚫 ¡RATE LIMITED POR MICROSOFT! Borrando caché para reintentar.")
                         try:
+                            # Borrar caché guardado para no arrastrar el bloqueo
+                            state_dir = os.path.join(base_dir, "states")
+                            state_file = os.path.join(state_dir, "state_renovar.json")
+                            if os.path.exists(state_file):
+                                os.remove(state_file)
+                                print("🗑️ Caché de sesión eliminado exitosamente.")
+                                
                             async with httpx.AsyncClient(timeout=10) as http:
                                 await http.post(
                                     f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                                    json={"chat_id": ADMIN_CHAT_ID, "text": "🚫 *Rate Limited*\n\nMicrosoft devolvió 'Too Many Requests'.\nEspera 1 hora antes de reintentar.", "parse_mode": "Markdown"}
+                                    json={"chat_id": ADMIN_CHAT_ID, "text": "⚠️ *Rate Limited Detectado*\n\nSe borró el caché de sesión. Reintentando de forma limpia...", "parse_mode": "Markdown"}
                                 )
-                        except: pass
+                        except Exception as e: 
+                            print(f"Error limpiando caché: {e}")
                         await context.close()
-                        return
+                        return False # Devuelve False para que main.py lo vuelva a intentar en el siguiente ciclo
 
                 # 0.2 Error de Microsoft ("Our services aren't available right now") -> Recargar
                 error_msg = page.get_by_text(re.compile("services aren't available right now|servicios no están disponibles", re.IGNORECASE))
@@ -416,7 +424,10 @@ async def run():
                                             print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
                                             last_ai_clicks = clicks
                                         else:
-                                            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ La IA falló o no está configurada. Cayendo al método manual por Telegram...")
+                                            import random
+                                            clicks = random.randint(0, 5)
+                                            print(f"[{time.strftime('%H:%M:%S')}] 🎲 La IA falló o está sin cuota. Adivinando al azar: {clicks} clics.")
+                                            last_ai_clicks = clicks
 
                                 # Si la IA falló, pedir ayuda humana (PLAN B)
                                 if clicks == -1:
