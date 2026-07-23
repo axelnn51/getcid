@@ -337,11 +337,11 @@ async def run():
                         await context.close()
                         return False # Devuelve False para que main.py lo vuelva a intentar en el siguiente ciclo
 
-                # 0.2 Error de Microsoft ("Our services aren't available right now") -> Recargar
-                error_msg = page.get_by_text(re.compile("services aren't available right now|servicios no están disponibles", re.IGNORECASE))
+                # 0.2 Error de Microsoft ("Our services aren't available right now" o 504 Gateway Timeout) -> Recargar
+                error_msg = page.get_by_text(re.compile("services aren't available right now|servicios no están disponibles|Azure Front Door|Gateway Timeout", re.IGNORECASE))
                 if await error_msg.count() > 0:
                     if await error_msg.first.is_visible(timeout=100):
-                        print("🔄 Microsoft dio error 500. Recargando la página automáticamente...")
+                        print("🔄 Microsoft dio error 500/504 (Azure Front Door). Recargando la página automáticamente...")
                         await page.reload()
                         await page.wait_for_timeout(3000)
                         continue
