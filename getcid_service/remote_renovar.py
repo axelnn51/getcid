@@ -89,15 +89,21 @@ def print_banner():
     print("=" * 65 + "\n")
 
 
-captured_token = None
-captured_refresh_token = None
-captured_client_id = None
+# ─── Estado de captura: clase local para evitar contaminación entre ejecuciones ───
+class _CaptureState:
+    """Contenedor de estado aislado por ejecución. Evita globals que persisten entre intentos."""
+    def __init__(self):
+        self.token = None
+        self.refresh_token = None
+        self.client_id = None
+        self.token_capture_time = None
+
+# Referencia global solo para compatibilidad con on_request (closure)
+_state = _CaptureState()
 
 async def run():
-    global captured_token, captured_refresh_token, captured_client_id
-    captured_token = None
-    captured_refresh_token = None
-    captured_client_id = None
+    global _state
+    _state = _CaptureState()  # Estado LIMPIO cada ejecución
     
     previous_token = None
     try:
@@ -132,25 +138,14 @@ async def run():
     print(f"📱 Telegram: Chat ID {ADMIN_CHAT_ID}\n")
 
     async with async_playwright() as p:
-        # Abrir Chrome REAL (visible para que resuelvas el CAPTCHA)
-        print("🚀 Abriendo Chrome con Perfil Permanente (Nivel Máximo de Evasión)...")
-        # Usar volumen persistente si estamos en Docker, sino carpeta local
+        # ─── PERFIL LIMPIO: crear directorio temporal para cada ejecución ───
+        # Reutilizar chrome_profile acumula basura (Login Data, Service Workers, 
+        # IndexedDB) que interfiere con Arkose Labs y provoca "Something went wrong".
+        import tempfile
+        import shutil
         base_dir = "/app/persist" if os.path.exists("/app/persist") else os.path.dirname(__file__)
-        profile_dir = os.path.join(base_dir, "chrome_profile")
-        os.makedirs(profile_dir, exist_ok=True)
-
-        # ─── LIMPIAR MSAL CACHE para forzar login fresco ───
-        # Esto evita que el navegador reutilice tokens viejos del cache
-        print("🧹 Limpiando MSAL cache del perfil para forzar login fresco...")
-        for msal_dir in ["Session Storage", "Local Storage"]:
-            msal_path = os.path.join(profile_dir, "Default", msal_dir)
-            if os.path.isdir(msal_path):
-                try:
-                    import shutil
-                    shutil.rmtree(msal_path, ignore_errors=True)
-                    print(f"   ✅ {msal_dir} limpiado")
-                except Exception as e:
-                    print(f"   ⚠️ No se pudo limpiar {msal_dir}: {e}")
+        profile_dir = tempfile.mkdtemp(prefix="getcid_chrome_", dir=base_dir)
+        print(f"🚀 Abriendo Chrome con perfil LIMPIO temporal: {os.path.basename(profile_dir)}")
 
         context = await p.chromium.launch_persistent_context(
             user_data_dir=profile_dir,
@@ -159,18 +154,15 @@ async def run():
                 '--no-sandbox',
                 '--disable-blink-features=AutomationControlled',
                 '--disable-dev-shm-usage',
+                '--disable-extensions',
+                '--disable-component-extensions-with-background-pages',
+                '--disable-background-networking',
+                '--disable-sync',
             ],
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 900}
         )
-        
-        # ─── LIMPIAR COOKIES ───
-        # Evita que un auto-login por cookies mantenga vivo un bug de caché de sesión
-        try:
-            await context.clear_cookies()
-            print("   ✅ Cookies limpiadas exitosamente.")
-        except Exception as e:
-            print(f"   ⚠️ No se pudieron limpiar las cookies: {e}")
+        print("   ✅ Chrome lanzado con perfil limpio (sin basura acumulada).")
         
         # En contextos persistentes, la primera página ya viene abierta
         page = context.pages[0] if context.pages else await context.new_page()
@@ -181,24 +173,22 @@ async def run():
             await stealth.apply_stealth_async(page)
 
         # ─── Interceptar el Bearer token de las requests ───
-        token_capture_time = None  # Track WHEN the token was captured
+        _warned_duplicate = False
         async def on_request(request):
-            global captured_token
-            nonlocal token_capture_time
+            nonlocal _warned_duplicate
             if "api/productActivation" in request.url or "visualsupport.microsoft.com/api/" in request.url:
                 auth = request.headers.get("authorization", "")
                 if "Bearer" in auth:
                     token = auth.replace("Bearer ", "").strip()
-                    # Ignorar si es exactamente el mismo token que ya teníamos (falso positivo)
+                    # Ignorar si es exactamente el mismo token que ya teníamos (falso positivo de cache)
                     if previous_token and token == previous_token:
-                        # Solo hacer print una vez por request si es idéntico para no spamear
-                        if not hasattr(on_request, "warned"):
+                        if not _warned_duplicate:
                             print(f"\n⚠️ Token interceptado es IDÉNTICO al anterior. Ignorando falso positivo.")
-                            on_request.warned = True
+                            _warned_duplicate = True
                     else:
-                        captured_token = token
-                        token_capture_time = time.time()
-                        print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(captured_token)} chars)")
+                        _state.token = token
+                        _state.token_capture_time = time.time()
+                        print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(token)} chars)")
 
         page.on("request", on_request)
 
@@ -228,22 +218,22 @@ async def run():
         print(f"  📝 ENV DEBUG: AI_SOLVER_ENABLED='{os.getenv('AI_SOLVER_ENABLED')}' | GEMINI_API_KEY={len(gemini_keys_raw)} chars\n")
 
         MIN_CAPTURE_WAIT = 5  # Mínimo 5 segundos antes de aceptar un token (evitar cache viejo)
+        reload_challenge_count = 0  # Contador de "Something went wrong" / "Reload Challenge"
+        MAX_RELOAD_ATTEMPTS = 3  # Máximo de reloads antes de abortar esta ejecución
 
         while time.time() - start_wait < max_wait:
             elapsed = int(time.time() - start_wait)
 
             # ¿Ya tenemos el token interceptado por red?
-            if captured_token and elapsed >= MIN_CAPTURE_WAIT:
+            if _state.token and elapsed >= MIN_CAPTURE_WAIT:
                 print(f"\n✅ Token capturado en red después de {elapsed}s")
                 if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                     print("📊 Registrando victoria para la IA...")
                     update_winrate(True)
                 
                 # ── CAPTURA ANTICIPADA DEL REFRESH TOKEN ──
-                # Esperar 2s para que el /welcome cargue el MSAL cache antes de salir del loop.
-                # Si lo dejamos para después del loop, la navegación destruye el contexto y falla.
-                if not captured_refresh_token:
-                    print("🔍 Extrayendo refresh token antes de salir del loop (evitar context destroyed)...")
+                if not _state.refresh_token:
+                    print("🔍 Extrayendo refresh token antes de salir del loop...")
                     await page.wait_for_timeout(2000)
                     for _sn, _js in [("sessionStorage", "window.sessionStorage"), ("localStorage", "window.localStorage")]:
                         try:
@@ -254,21 +244,21 @@ async def run():
                             for _k, _v in _storage.items():
                                 try:
                                     _parsed = json.loads(_v)
-                                    if isinstance(_parsed, dict) and "refreshtoken" in _k.lower() and "secret" in _parsed and not captured_refresh_token:
-                                        captured_refresh_token = _parsed["secret"]
-                                        captured_client_id = _parsed.get("client_id", SPA_CLIENT_ID)
-                                        print(f"   🎯 REFRESH TOKEN (anticipado) de {_sn}! ({len(captured_refresh_token)} chars)")
+                                    if isinstance(_parsed, dict) and "refreshtoken" in _k.lower() and "secret" in _parsed and not _state.refresh_token:
+                                        _state.refresh_token = _parsed["secret"]
+                                        _state.client_id = _parsed.get("client_id", SPA_CLIENT_ID)
+                                        print(f"   🎯 REFRESH TOKEN (anticipado) de {_sn}! ({len(_state.refresh_token)} chars)")
                                 except Exception:
                                     continue
                         except Exception as _e:
                             print(f"   ⚠️ No se pudo leer {_sn} anticipado: {_e}")
                 
                 break
-            elif captured_token and elapsed < MIN_CAPTURE_WAIT:
+            elif _state.token and elapsed < MIN_CAPTURE_WAIT:
                 # Token capturado demasiado rápido → probablemente del cache viejo
                 print(f"  ⚠️ Token capturado en {elapsed}s (< {MIN_CAPTURE_WAIT}s). Podría ser cache viejo, esperando más...")
-                captured_token = None
-                token_capture_time = None
+                _state.token = None
+                _state.token_capture_time = None
                 
             # ¿Llegamos a la página final de bienvenida?
             if "visualsupport.microsoft.com/welcome" in page.url:
@@ -285,7 +275,19 @@ async def run():
                     for js_code in ["window.sessionStorage", "window.localStorage"]:
                         raw = await page.evaluate(f"() => JSON.stringify({js_code})")
                         if raw and "accesstoken" in raw.lower() and "secret" in raw.lower():
-                            login_complete = True
+                            # Verificar que NO sea el mismo token viejo
+                            try:
+                                _storage_check = json.loads(raw)
+                                for _ck, _cv in _storage_check.items():
+                                    if "accesstoken" in _ck.lower():
+                                        _cp = json.loads(_cv)
+                                        if isinstance(_cp, dict) and "secret" in _cp:
+                                            if previous_token and _cp["secret"] == previous_token:
+                                                continue  # Token viejo, seguir buscando
+                                            login_complete = True
+                                            break
+                            except Exception:
+                                login_complete = True  # En caso de error, asumir que es nuevo
                             break
                     if login_complete:
                         print(f"\n✅ Login completado exitosamente. Extrayendo tokens del storage...")
@@ -334,6 +336,46 @@ async def run():
                         print("🔄 Microsoft dio error 500. Recargando la página automáticamente...")
                         await page.reload()
                         await page.wait_for_timeout(3000)
+                        continue
+
+                # 0.3 🔴 FIX CRÍTICO: "Something went wrong. Please reload the challenge"
+                # Esta pantalla de Arkose Labs NO se detectaba → causaba loops infinitos de screenshots
+                for _frame in page.frames:
+                    try:
+                        _sww = _frame.get_by_text(re.compile("Something went wrong|Algo salió mal|reload the challenge|recargar el desafío", re.IGNORECASE))
+                        if await _sww.count() > 0 and await _sww.first.is_visible(timeout=200):
+                            reload_challenge_count += 1
+                            print(f"\n🔴 'Something went wrong' detectado (intento {reload_challenge_count}/{MAX_RELOAD_ATTEMPTS})")
+                            
+                            if reload_challenge_count > MAX_RELOAD_ATTEMPTS:
+                                print(f"   ❌ Máximo de reloads alcanzado ({MAX_RELOAD_ATTEMPTS}). Abortando esta ejecución.")
+                                try:
+                                    async with httpx.AsyncClient(timeout=10) as http:
+                                        await http.post(
+                                            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                                            json={"chat_id": ADMIN_CHAT_ID, "text": f"🔴 *Arkose Labs bloqueó el CAPTCHA*\n\n'Something went wrong' apareció {reload_challenge_count} veces.\nAbortando este intento. Se reintentará en 2 min.", "parse_mode": "Markdown"}
+                                        )
+                                except: pass
+                                await context.close()
+                                # Limpiar perfil temporal
+                                try:
+                                    shutil.rmtree(profile_dir, ignore_errors=True)
+                                except: pass
+                                return False
+                            
+                            # Intentar click en "Reload Challenge"
+                            _reload_btn = _frame.get_by_role("button", name=re.compile("Reload|Recargar", re.IGNORECASE))
+                            if await _reload_btn.count() > 0:
+                                print("   🔄 Clickeando 'Reload Challenge'...")
+                                await _reload_btn.first.click()
+                                await page.wait_for_timeout(3000)
+                            else:
+                                # Si no hay botón, recargar la página completa
+                                print("   🔄 No se encontró botón. Recargando página completa...")
+                                await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
+                                await page.wait_for_timeout(3000)
+                            break  # Salir del loop de frames
+                    except Exception:
                         continue
 
                 # 0.5. Botón "Start" del CAPTCHA (Arkose Labs usa iframes anidados)
@@ -418,12 +460,17 @@ async def run():
                                                 files={"photo": f}
                                             )
                                     
-                                    print("⏳ Esperando respuesta del administrador en Telegram...")
+                                    print("⏳ Esperando respuesta del administrador en Telegram (Máximo 5 minutos)...")
                                     import main
                                     main.captcha_event.clear()
-                                    await main.captcha_event.wait()
-                                    clicks = main.captcha_clicks
-                                    print(f"👨‍💻 Recibida instrucción manual: {clicks} clics a la derecha.")
+                                    try:
+                                        await asyncio.wait_for(main.captcha_event.wait(), timeout=300)
+                                        clicks = main.captcha_clicks
+                                        print(f"👨‍💻 Recibida instrucción manual: {clicks} clics a la derecha.")
+                                    except asyncio.TimeoutError:
+                                        print("⏱️ Se acabó el tiempo de 5 minutos. Abortando este CAPTCHA.")
+                                        clicks = -1
+                                        break  # Salir del bucle del CAPTCHA y probar otra cuenta
                                 
                                 # Ejecutar los clics con calma para que la animación termine
                                 for i in range(clicks):
@@ -615,7 +662,7 @@ async def run():
             await page.wait_for_timeout(1000)
 
         # ─── PASO 4: Extraer tokens del Storage (MSAL cache) ───
-        if not captured_token:
+        if not _state.token:
             print("\n⚠️ No se capturó token del interceptor. Buscando en storage...")
         else:
             print("\n🔍 Buscando refresh token en storage del navegador...")
@@ -623,7 +670,6 @@ async def run():
         # MSAL.js guarda tokens en sessionStorage/localStorage con claves como:
         #   {homeAccountId}-{env}-accesstoken-{clientId}-{realm}-{scopes}
         #   {homeAccountId}-{env}-refreshtoken-{clientId}--
-        # Las claves usan MINÚSCULAS (refreshtoken, accesstoken)
         for storage_name, js_code in [("sessionStorage", "window.sessionStorage"), ("localStorage", "window.localStorage")]:
             try:
                 raw = await page.evaluate(f"() => JSON.stringify({js_code})")
@@ -639,46 +685,61 @@ async def run():
                         if not isinstance(parsed, dict):
                             continue
 
-                        # ── Refresh Token (MSAL key contiene 'refreshtoken') ──
-                        if "refreshtoken" in key_lower and "secret" in parsed and not captured_refresh_token:
-                            captured_refresh_token = parsed["secret"]
-                            captured_client_id = parsed.get("client_id", SPA_CLIENT_ID)
-                            print(f"   🎯 REFRESH TOKEN extraído de {storage_name}! ({len(captured_refresh_token)} chars)")
+                        # ── Refresh Token ──
+                        if "refreshtoken" in key_lower and "secret" in parsed and not _state.refresh_token:
+                            _state.refresh_token = parsed["secret"]
+                            _state.client_id = parsed.get("client_id", SPA_CLIENT_ID)
+                            print(f"   🎯 REFRESH TOKEN extraído de {storage_name}! ({len(_state.refresh_token)} chars)")
 
-                        # ── Access Token ──
-                        if "accesstoken" in key_lower and "secret" in parsed and not captured_token:
-                            captured_token = parsed["secret"]
-                            captured_client_id = parsed.get("client_id", SPA_CLIENT_ID)
-                            print(f"   🎯 ACCESS TOKEN extraído de {storage_name}! ({len(captured_token)} chars)")
+                        # ── Access Token (validar que no sea el viejo) ──
+                        if "accesstoken" in key_lower and "secret" in parsed and not _state.token:
+                            _candidate = parsed["secret"]
+                            if previous_token and _candidate == previous_token:
+                                print(f"   ⚠️ Access token en {storage_name} es IDÉNTICO al anterior. Descartando.")
+                            else:
+                                _state.token = _candidate
+                                _state.client_id = parsed.get("client_id", SPA_CLIENT_ID)
+                                print(f"   🎯 ACCESS TOKEN extraído de {storage_name}! ({len(_state.token)} chars)")
 
                     except (json.JSONDecodeError, KeyError, TypeError):
                         continue
 
                 # ── Búsqueda amplia: cualquier valor que parezca un refresh token ──
-                if not captured_refresh_token:
+                if not _state.refresh_token:
                     for key, value in storage.items():
                         if isinstance(value, str) and len(value) > 100 and "refresh" in key.lower():
-                            # Podría ser el token directo (no JSON)
                             if not value.startswith("{"):
-                                captured_refresh_token = value
+                                _state.refresh_token = value
                                 print(f"   🎯 REFRESH TOKEN (raw) de {storage_name}! ({len(value)} chars)")
                                 break
 
             except Exception as e:
                 print(f"   ⚠️ Error leyendo {storage_name}: {e}")
 
-        # Guardar storage state para la próxima vez (Por redundancia, aunque el perfil es persistente)
+        # Guardar storage state (las cookies de login) para referencia
         try:
-            state_dir = os.path.join(os.path.dirname(__file__), "states")
+            state_dir = os.path.join(base_dir, "states")
             os.makedirs(state_dir, exist_ok=True)
             state_file = os.path.join(state_dir, "state_renovar.json")
             await context.storage_state(path=state_file)
-            print("💾 Perfil permanente guardado/actualizado con éxito.")
+            print("💾 Estado de sesión guardado.")
         except:
             pass
 
         await context.close()
+        
+        # Limpiar perfil temporal para no acumular basura en disco
+        try:
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            print("🧹 Perfil temporal limpiado.")
+        except:
+            pass
 
+    # ─── Copiar estado a variables locales para compatibilidad con el resto del código ───
+    captured_token = _state.token
+    captured_refresh_token = _state.refresh_token
+    captured_client_id = _state.client_id
+    
     # ─── PASO 5: Validar tokens antes de reportar ───
     print("\n" + "=" * 65)
 

@@ -62,7 +62,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
             return {"success": False, "error": "No se pudo obtener el token de sesión de Microsoft."}
 
     endpoint = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
-    htu = "/api/productActivation/validateIID"
+    htu = endpoint  # DPoP RFC 9449: htu MUST be the full URL (scheme + host + path)
     htm = "POST"
     
     sid = f"app_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"

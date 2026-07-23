@@ -23,6 +23,16 @@ _TOKEN_ALERT_COOLDOWN = 1800  # 30 minutos
 _token_renewed_event = asyncio.Event()
 
 # ============================================================
+# LOCK GLOBAL DE RENOVACIÓN
+# Previene que múltiples componentes (boot, proactive, cron, API)
+# lancen Playwright simultáneamente
+# ============================================================
+renovation_lock = asyncio.Lock()
+_last_renovation_start = 0  # Timestamp de la última renovación iniciada
+RENOVATION_COOLDOWN = 300  # 5 minutos mínimo entre renovaciones
+MAX_RENOVATION_ATTEMPTS = 5  # Máximo de intentos antes de parar
+
+# ============================================================
 # ESTADO GLOBAL PARA CAPTCHA REMOTO
 # ============================================================
 captcha_event = asyncio.Event()
@@ -239,34 +249,59 @@ class TokenRequest(BaseModel):
 
 @app.post("/api/start-renovation")
 async def start_renovation():
-    """Inicia el script de Playwright en background para renovar el token. Modo Infinito."""
-    global renovation_task
+    """Inicia el script de Playwright en background para renovar el token. Con límite de intentos."""
+    global renovation_task, _last_renovation_start
     import logging
     logger = logging.getLogger("API")
     
     if renovation_task and not renovation_task.done():
         return JSONResponse(status_code=400, content={"success": False, "error": "Ya hay una renovación en progreso."})
     
-    async def infinite_renovation():
+    # Cooldown: no permitir renovaciones demasiado frecuentes
+    now = time.time()
+    elapsed_since_last = now - _last_renovation_start
+    if _last_renovation_start > 0 and elapsed_since_last < RENOVATION_COOLDOWN:
+        remaining = int(RENOVATION_COOLDOWN - elapsed_since_last)
+        logger.info(f"⏸ [{_peru_time_str()}] Renovación en cooldown. Faltan {remaining}s.")
+        return JSONResponse(status_code=429, content={"success": False, "error": f"Cooldown activo. Reintenta en {remaining}s."})
+    
+    _last_renovation_start = now
+    
+    async def limited_renovation():
         from remote_renovar import run as run_renovar
-        attempt = 1
-        while True:
-            logger.info(f"🔄 [{_peru_time_str()}] Iniciando obtención automática (Intento {attempt})...")
+        backoff_seconds = [120, 180, 300, 600, 900]  # 2m, 3m, 5m, 10m, 15m
+        
+        for attempt in range(1, MAX_RENOVATION_ATTEMPTS + 1):
+            logger.info(f"🔄 [{_peru_time_str()}] Obtención automática (Intento {attempt}/{MAX_RENOVATION_ATTEMPTS})...")
             try:
-                success = await run_renovar()
+                async with renovation_lock:
+                    success = await run_renovar()
                 if success:
                     logger.info(f"✅ [{_peru_time_str()}] Obtención exitosa en el intento {attempt}.")
-                    break
+                    return
             except Exception as e:
-                logger.error(f"❌ [{_peru_time_str()}] Error de excepción en obtención: {e}")
+                logger.error(f"❌ [{_peru_time_str()}] Error en obtención: {e}")
             
-            logger.warning(f"⚠️ [{_peru_time_str()}] Intento {attempt} fallido. Reintentando en 2 minutos para no ser bloqueados inmediatamente...")
-            attempt += 1
-            await asyncio.sleep(120)
+            if attempt < MAX_RENOVATION_ATTEMPTS:
+                wait_time = backoff_seconds[min(attempt - 1, len(backoff_seconds) - 1)]
+                logger.warning(f"⚠️ [{_peru_time_str()}] Intento {attempt} fallido. Reintentando en {wait_time//60}m...")
+                await asyncio.sleep(wait_time)
+        
+        # Todos los intentos fallaron
+        logger.error(f"🚨 [{_peru_time_str()}] {MAX_RENOVATION_ATTEMPTS} intentos agotados. Deteniendo.")
+        try:
+            from telegram_alert import send_alert
+            await send_alert(
+                f"🚨 *Renovación Fallida ({MAX_RENOVATION_ATTEMPTS} intentos)*\n\n"
+                f"⏰ {_peru_time_str()}\n"
+                f"Todos los intentos de obtener token fallaron.\n"
+                f"Usa `/settoken` manual o `/deviceauth` para recuperar el sistema."
+            )
+        except: pass
 
-    renovation_task = asyncio.create_task(infinite_renovation())
-    logger.info(f"🚀 [{_peru_time_str()}] Ciclo infinito de obtención de token iniciado.")
-    return {"success": True, "message": "Proceso de renovación infinito iniciado."}
+    renovation_task = asyncio.create_task(limited_renovation())
+    logger.info(f"🚀 [{_peru_time_str()}] Renovación con límite de {MAX_RENOVATION_ATTEMPTS} intentos iniciada.")
+    return {"success": True, "message": f"Proceso de renovación iniciado (máx {MAX_RENOVATION_ATTEMPTS} intentos)."}
 
 @app.post("/api/solve-captcha")
 async def solve_captcha(req: dict):

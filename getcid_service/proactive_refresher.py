@@ -135,7 +135,7 @@ _last_renovation_trigger = 0
 RENOVATION_COOLDOWN = 3600  # No lanzar más de 1 Playwright por hora
 
 async def _trigger_renovation():
-    """Lanza el ciclo infinito de renovación Playwright automáticamente."""
+    """Lanza el ciclo de renovación Playwright automáticamente, respetando el lock global."""
     global _last_renovation_trigger
 
     now = time.time()
@@ -143,13 +143,29 @@ async def _trigger_renovation():
         logger.info(f"⏸ [{_peru_time_str()}] Renovación Playwright en cooldown. No se lanza.")
         return
 
+    # Verificar si ya hay una renovación en progreso (desde main.py)
+    try:
+        from main import renovation_task, renovation_lock
+        if renovation_task and not renovation_task.done():
+            logger.info(f"⏸ [{_peru_time_str()}] Ya hay renovación en progreso (main.renovation_task). No se lanza otra.")
+            return
+        if renovation_lock.locked():
+            logger.info(f"⏸ [{_peru_time_str()}] renovation_lock está ocupado. No se lanza otra.")
+            return
+    except ImportError:
+        pass
+
     _last_renovation_trigger = now
     try:
         import httpx as _httpx
         async with _httpx.AsyncClient(timeout=10) as client:
             resp = await client.post("http://localhost:8000/api/start-renovation")
-            if resp.status_code in (200, 400):  # 400 = ya hay una renovación en progreso
-                logger.info(f"🚀 [{_peru_time_str()}] Renovación Playwright lanzada automáticamente (status {resp.status_code}).")
+            if resp.status_code == 200:
+                logger.info(f"🚀 [{_peru_time_str()}] Renovación Playwright lanzada (status {resp.status_code}).")
+            elif resp.status_code == 400:
+                logger.info(f"ℹ️ [{_peru_time_str()}] Ya hay renovación en progreso (400). OK.")
+            elif resp.status_code == 429:
+                logger.info(f"⏸ [{_peru_time_str()}] Renovación en cooldown del servidor (429).")
             else:
                 logger.error(f"❌ [{_peru_time_str()}] Error lanzando renovación: {resp.text}")
     except Exception as e:

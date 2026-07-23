@@ -14,7 +14,7 @@ ADMIN_IDS = [x.strip() for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
 
-async def send_alert(message: str):
+async def send_alert(message: str, reply_markup: dict = None):
     """Envía un mensaje de alerta a todos los admins por Telegram."""
     if not BOT_TOKEN or not ADMIN_IDS:
         logger.warning("BOT_TOKEN o ADMIN_IDS no configurados. Alerta no enviada.")
@@ -25,11 +25,14 @@ async def send_alert(message: str):
         async with httpx.AsyncClient(timeout=10) as client:
             for admin_id in ADMIN_IDS:
                 try:
-                    resp = await client.post(TELEGRAM_API, json={
+                    payload = {
                         "chat_id": admin_id,
                         "text": message,
                         "parse_mode": "Markdown"
-                    })
+                    }
+                    if reply_markup:
+                        payload["reply_markup"] = reply_markup
+                    resp = await client.post(TELEGRAM_API, json=payload)
                     if resp.status_code == 200:
                         sent = True
                     else:

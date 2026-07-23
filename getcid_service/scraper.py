@@ -1,5 +1,6 @@
 import asyncio
 import random
+import re
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 import os
@@ -189,6 +190,23 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                         logger.info(f"[{email}] Sesión renovada y guardada.")
                     except Exception as login_err:
                         logger.warning(f"[{email}] Login automático falló: {login_err}")
+                
+                # Detectar "Something went wrong" de Arkose Labs en cualquier frame
+                for _frame in page.frames:
+                    try:
+                        _sww = _frame.get_by_text(re.compile("Something went wrong|reload the challenge", re.IGNORECASE))
+                        if await _sww.count() > 0 and await _sww.first.is_visible(timeout=200):
+                            logger.warning(f"[{email}] 'Something went wrong' detectado en Arkose Labs. Recargando...")
+                            _reload_btn = _frame.get_by_role("button", name=re.compile("Reload|Recargar", re.IGNORECASE))
+                            if await _reload_btn.count() > 0:
+                                await _reload_btn.first.click()
+                                await page.wait_for_timeout(3000)
+                            else:
+                                await page.reload()
+                                await page.wait_for_timeout(3000)
+                            break
+                    except:
+                        continue
                     
                 await page.wait_for_timeout(2000 + random.randint(500, 1500))
 
