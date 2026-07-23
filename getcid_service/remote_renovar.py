@@ -346,6 +346,25 @@ async def run():
                         await page.wait_for_timeout(3000)
                         continue
 
+                # 0.2.5 Error de Contraseña ("Password sign-in isn't available" o "Try another method")
+                pwd_err_msg = page.get_by_text(re.compile("Password sign-in isn't available|Try another method|Contraseña incorrecta", re.IGNORECASE))
+                if await pwd_err_msg.count() > 0 and await pwd_err_msg.first.is_visible(timeout=100):
+                    print(f"\n🚫 ¡ERROR DE CONTRASEÑA EN MICROSOFT! (La cuenta {MS_EMAIL} requiere código o está mal la clave). Borrando caché y saltando...")
+                    try:
+                        async with httpx.AsyncClient(timeout=10) as http:
+                            await http.post(
+                                f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                                json={"chat_id": ADMIN_CHAT_ID, "text": f"🚫 *Login Fallido*\n\nLa cuenta `{MS_EMAIL}` rechazó el inicio de sesión con contraseña.\nPasando a la siguiente...", "parse_mode": "Markdown"}
+                            )
+                        # Borrar caché guardado para no arrastrar el bloqueo
+                        state_dir = os.path.join(base_dir, "states")
+                        state_file = os.path.join(state_dir, "state_renovar.json")
+                        if os.path.exists(state_file):
+                            os.remove(state_file)
+                    except: pass
+                    await context.close()
+                    return False
+
                 # 0.3 🔴 FIX CRÍTICO: "Something went wrong. Please reload the challenge"
                 # Esta pantalla de Arkose Labs NO se detectaba → causaba loops infinitos de screenshots
                 for _frame in page.frames:
