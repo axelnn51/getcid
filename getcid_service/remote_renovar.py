@@ -206,15 +206,15 @@ async def run():
         start_wait = time.time()
         max_wait = 360  # 6 minutos (suficiente para agotar todos los intentos de IA antes de pedir ayuda)
 
-        # Calcular intentos máximos de IA: 3 intentos por cada API key configurada
+        # Limitar los intentos de la IA a 3 en total (sin importar cuántas keys haya) para no hacer esperar al humano
         gemini_keys_raw = os.getenv("GEMINI_API_KEY") or ""
         num_api_keys = len([k for k in gemini_keys_raw.split(",") if k.strip()]) or 1
         ai_enabled = (os.getenv("AI_SOLVER_ENABLED") or "").strip().lower() == "true"
-        max_ai_attempts = num_api_keys * 3  # 4 keys × 3 = 12 intentos máximos
+        max_ai_attempts = 3  # Fijo a 3 intentos máximos para pasar a modo manual rápido
         ai_fail_count = 0
         last_ai_clicks = -1
         print(f"  🤖 IA {'ACTIVADA' if ai_enabled else 'DESACTIVADA'}")
-        print(f"  🔑 API Keys detectadas: {num_api_keys} × 3 intentos = {max_ai_attempts} intentos máx")
+        print(f"  🔑 API Keys detectadas: {num_api_keys}. Intentos máximos de IA configurados a {max_ai_attempts}.")
         print(f"  📝 ENV DEBUG: AI_SOLVER_ENABLED='{os.getenv('AI_SOLVER_ENABLED')}' | GEMINI_API_KEY={len(gemini_keys_raw)} chars\n")
 
         MIN_CAPTURE_WAIT = 5  # Mínimo 5 segundos antes de aceptar un token (evitar cache viejo)
