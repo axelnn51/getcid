@@ -802,150 +802,150 @@ async def run():
         except:
             pass
 
-    # ─── Copiar estado a variables locales para compatibilidad con el resto del código ───
-    captured_token = _state.token
-    captured_refresh_token = _state.refresh_token
-    captured_client_id = _state.client_id
+        # ─── Copiar estado a variables locales para compatibilidad con el resto del código ───
+        captured_token = _state.token
+        captured_refresh_token = _state.refresh_token
+        captured_client_id = _state.client_id
     
-    # ─── PASO 5: Validar tokens antes de reportar ───
-    print("\n" + "=" * 65)
+        # ─── PASO 5: Validar tokens antes de reportar ───
+        print("\n" + "=" * 65)
 
-    if not captured_token and not captured_refresh_token:
-        print("  ❌ NO SE CAPTURÓ NINGÚN TOKEN")
-        print("  Posibles causas:")
-        print("  • No completaste el login / CAPTCHA")
-        print("  • La página no cargó correctamente")
-        print("  • Microsoft bloqueó la sesión")
-        print("=" * 65)
-        # Notificar fallo a Telegram
-        try:
-            async with httpx.AsyncClient(timeout=10) as http:
-                await http.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nNo se capturó ningún token. Revisa el servidor.", "parse_mode": "Markdown"}
-                )
-        except: pass
-        return False  # No usar sys.exit() porque mataría el servidor FastAPI si se ejecuta desde el cron
+        if not captured_token and not captured_refresh_token:
+            print("  ❌ NO SE CAPTURÓ NINGÚN TOKEN")
+            print("  Posibles causas:")
+            print("  • No completaste el login / CAPTCHA")
+            print("  • La página no cargó correctamente")
+            print("  • Microsoft bloqueó la sesión")
+            print("=" * 65)
+            # Notificar fallo a Telegram
+            try:
+                async with httpx.AsyncClient(timeout=10) as http:
+                    await http.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                        json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nNo se capturó ningún token. Revisa el servidor.", "parse_mode": "Markdown"}
+                    )
+            except: pass
+            return False  # No usar sys.exit() porque mataría el servidor FastAPI si se ejecuta desde el cron
 
-    # ─── VALIDACIÓN: Verificar que el token REALMENTE funcione ───
-    if captured_token:
-        print("\n🔍 Validando access token contra Microsoft API...")
-        token_valid = await validate_token(captured_token)
-        if not token_valid:
-            print("  ❌ TOKEN CAPTURADO ES INVÁLIDO. Descartando.")
-            captured_token = None
-            # Intentar usar el refresh token para obtener uno nuevo
-            if captured_refresh_token:
-                print("  🔄 Intentando generar access token desde refresh token...")
-                try:
-                    import token_refresher
-                    token_refresher.save_refresh_token(captured_refresh_token, captured_client_id or SPA_CLIENT_ID, "")
-                    new_token = await token_refresher.refresh_access_token()
-                    if new_token:
-                        captured_token = new_token
-                        print("  ✅ Nuevo access token generado desde refresh token!")
-                        token_valid = await validate_token(captured_token)
-                        if not token_valid:
-                            print("  ❌ Incluso el nuevo token es inválido.")
-                            captured_token = None
-                except Exception as e:
-                    print(f"  ⚠️ Error generando token desde refresh: {e}")
+        # ─── VALIDACIÓN: Verificar que el token REALMENTE funcione ───
+        if captured_token:
+            print("\n🔍 Validando access token contra Microsoft API...")
+            token_valid = await validate_token(captured_token)
+            if not token_valid:
+                print("  ❌ TOKEN CAPTURADO ES INVÁLIDO. Descartando.")
+                captured_token = None
+                # Intentar usar el refresh token para obtener uno nuevo
+                if captured_refresh_token:
+                    print("  🔄 Intentando generar access token desde refresh token...")
+                    try:
+                        import token_refresher
+                        token_refresher.save_refresh_token(captured_refresh_token, captured_client_id or SPA_CLIENT_ID, "")
+                        new_token = await token_refresher.refresh_access_token()
+                        if new_token:
+                            captured_token = new_token
+                            print("  ✅ Nuevo access token generado desde refresh token!")
+                            token_valid = await validate_token(captured_token)
+                            if not token_valid:
+                                print("  ❌ Incluso el nuevo token es inválido.")
+                                captured_token = None
+                    except Exception as e:
+                        print(f"  ⚠️ Error generando token desde refresh: {e}")
     
-    if not captured_token:
-        print("  ❌ NO HAY TOKEN VÁLIDO DESPUÉS DE LA VALIDACIÓN")
+        if not captured_token:
+            print("  ❌ NO HAY TOKEN VÁLIDO DESPUÉS DE LA VALIDACIÓN")
+            print("=" * 65)
+            try:
+                async with httpx.AsyncClient(timeout=10) as http:
+                    await http.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                        json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nToken capturado pero es inválido (403). Se necesita re-login manual.", "parse_mode": "Markdown"}
+                    )
+            except: pass
+            return
+
+        print("  🎉 ¡TOKENS CAPTURADOS Y VALIDADOS!")
+        print(f"  🔑 Access Token: ✅ VALIDADO")
+        print(f"  🔄 Refresh Token: {'✅ SÍ' if captured_refresh_token else '❌ NO'}")
+        print(f"  🆔 Client ID: {captured_client_id or SPA_CLIENT_ID}")
         print("=" * 65)
-        try:
-            async with httpx.AsyncClient(timeout=10) as http:
-                await http.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={"chat_id": ADMIN_CHAT_ID, "text": "❌ *Renovación Fallida*\nToken capturado pero es inválido (403). Se necesita re-login manual.", "parse_mode": "Markdown"}
-                )
-        except: pass
-        return
 
-    print("  🎉 ¡TOKENS CAPTURADOS Y VALIDADOS!")
-    print(f"  🔑 Access Token: ✅ VALIDADO")
-    print(f"  🔄 Refresh Token: {'✅ SÍ' if captured_refresh_token else '❌ NO'}")
-    print(f"  🆔 Client ID: {captured_client_id or SPA_CLIENT_ID}")
-    print("=" * 65)
+        client_id = captured_client_id or SPA_CLIENT_ID
+        success = False
 
-    client_id = captured_client_id or SPA_CLIENT_ID
-    success = False
+        # ─── PASO 6: Guardar Tokens Directamente ───
+        if captured_refresh_token:
+            try:
+                import token_refresher
+                token_refresher.save_refresh_token(captured_refresh_token, client_id, "")
+                print("💾 Refresh token guardado localmente.")
+            except Exception as e:
+                print(f"⚠️ Error guardando refresh token: {e}")
 
-    # ─── PASO 6: Guardar Tokens Directamente ───
-    if captured_refresh_token:
+        # ─── PASO 6.5: Resetear alertas de expiración ───
         try:
             import token_refresher
-            token_refresher.save_refresh_token(captured_refresh_token, client_id, "")
-            print("💾 Refresh token guardado localmente.")
+            token_refresher.reset_expiration_alerts()
+            print("🔄 Alertas de expiración reseteadas.")
         except Exception as e:
-            print(f"⚠️ Error guardando refresh token: {e}")
+            print(f"⚠️ Error reseteando alertas: {e}")
 
-    # ─── PASO 6.5: Resetear alertas de expiración ───
-    try:
-        import token_refresher
-        token_refresher.reset_expiration_alerts()
-        print("🔄 Alertas de expiración reseteadas.")
-    except Exception as e:
-        print(f"⚠️ Error reseteando alertas: {e}")
+        # ─── PASO 7: Actualizar Access Token en Memoria ───
+        for server_url in [GETCID_SERVER, "http://localhost:8000"]:
+            try:
+                async with httpx.AsyncClient(timeout=10) as http:
+                    if captured_token:
+                        resp = await http.post(
+                            f"{server_url}/api/settoken",
+                            json={"token": captured_token, "duration": 3500, "is_playwright": True}
+                        )
+                        if resp.json().get("success"):
+                            print(f"✅ Access token actualizado en {server_url}")
+                            success = True
+                            break
+            except:
+                pass
 
-    # ─── PASO 7: Actualizar Access Token en Memoria ───
-    for server_url in [GETCID_SERVER, "http://localhost:8000"]:
-        try:
-            async with httpx.AsyncClient(timeout=10) as http:
-                if captured_token:
-                    resp = await http.post(
-                        f"{server_url}/api/settoken",
-                        json={"token": captured_token, "duration": 3500, "is_playwright": True}
-                    )
-                    if resp.json().get("success"):
-                        print(f"✅ Access token actualizado en {server_url}")
-                        success = True
-                        break
-        except:
-            pass
-
-    # ─── PASO 8: Notificar a Telegram ───
-    if captured_token:
-        try:
-            async with httpx.AsyncClient(timeout=30) as http:
-                # Obtener winrate actual
-                winrate_str = ""
-                try:
-                    if os.path.exists("captcha_stats.json"):
-                        with open("captcha_stats.json", "r") as f:
-                            stats = json.load(f)
-                        total = stats["success"] + stats["fail"]
-                        rate = (stats["success"] / total) * 100 if total > 0 else 0
-                        winrate_str = f"\n📊 *Winrate IA:* {stats['success']}/{total} ({rate:.0f}%)"
-                except:
-                    pass
+        # ─── PASO 8: Notificar a Telegram ───
+        if captured_token:
+            try:
+                async with httpx.AsyncClient(timeout=30) as http:
+                    # Obtener winrate actual
+                    winrate_str = ""
+                    try:
+                        if os.path.exists("captcha_stats.json"):
+                            with open("captcha_stats.json", "r") as f:
+                                stats = json.load(f)
+                            total = stats["success"] + stats["fail"]
+                            rate = (stats["success"] / total) * 100 if total > 0 else 0
+                            winrate_str = f"\n📊 *Winrate IA:* {stats['success']}/{total} ({rate:.0f}%)"
+                    except:
+                        pass
                 
-                await http.post(
-                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                    json={
-                        "chat_id": ADMIN_CHAT_ID,
-                        "text": (
-                            "✅ *Token Renovado y Validado*\n\n"
-                            f"🔑 Access Token: ✅ (`{captured_token[:15]}...{captured_token[-5:]}`)\n"
-                            f"🔄 Refresh Token: {'✅ Guardado' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
-                            f"📅 Próxima renovación: medianoche"
-                            f"{winrate_str}"
-                        ),
-                        "parse_mode": "Markdown"
-                    }
-                )
-                print("✅ Mensaje de éxito enviado a Telegram!")
-        except Exception as e:
-            print(f"⚠️ Error enviando éxito a Telegram: {e}")
+                    await http.post(
+                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                        json={
+                            "chat_id": ADMIN_CHAT_ID,
+                            "text": (
+                                "✅ *Token Renovado y Validado*\n\n"
+                                f"🔑 Access Token: ✅ (`{captured_token[:15]}...{captured_token[-5:]}`)\n"
+                                f"🔄 Refresh Token: {'✅ Guardado' if captured_refresh_token else '❌ (SPA no lo expone)'}\n"
+                                f"📅 Próxima renovación: medianoche"
+                                f"{winrate_str}"
+                            ),
+                            "parse_mode": "Markdown"
+                        }
+                    )
+                    print("✅ Mensaje de éxito enviado a Telegram!")
+            except Exception as e:
+                print(f"⚠️ Error enviando éxito a Telegram: {e}")
 
-    print("\n" + "=" * 65)
-    if success or captured_refresh_token:
-        print("  🎉 ¡TODO LISTO! El sistema ya tiene los nuevos tokens.")
-        return True
-    else:
-        print("  ⚠️ Token capturado pero hubo problemas al guardarlo.")
-        return False
+        print("\n" + "=" * 65)
+        if success or captured_refresh_token:
+            print("  🎉 ¡TODO LISTO! El sistema ya tiene los nuevos tokens.")
+            return True
+        else:
+            print("  ⚠️ Token capturado pero hubo problemas al guardarlo.")
+            return False
 
     except Exception as e:
         # ─── CATCH-ALL: cualquier error no capturado ───
