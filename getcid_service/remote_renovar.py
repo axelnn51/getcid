@@ -210,8 +210,11 @@ async def run():
                 stealth = Stealth()
                 await stealth.apply_stealth_async(page)
                 
-                # INJECT: Intercept crypto.subtle.generateKey to capture the DPoP key when it is generated
+                # INJECT: Disable Web Workers so MSAL falls back to main thread crypto
                 await context.add_init_script("""
+                    window.Worker = function() {
+                        throw new Error("Web Workers are disabled to force main thread execution");
+                    };
                     window.myExtractedKeys = [];
                     const originalGenerateKey = window.crypto.subtle.generateKey;
                     window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
@@ -809,23 +812,44 @@ async def run():
                     print(f"   ⚠️ Error leyendo {storage_name}: {e}")
 
             # ── Búsqueda de clave DPoP privada ──
-            print("\n🔍 Extrayendo clave privada DPoP interceptada...")
-            jwk = await page.evaluate('''() => {
-                if (!window.myExtractedKeys || window.myExtractedKeys.length === 0) return null;
-                // Filtrar para buscar claves de firma (EC o RSA) si es posible
-                const dpopKeys = window.myExtractedKeys.filter(k => 
-                    k.algorithm === 'ECDSA' || k.algorithm === 'RSASSA-PKCS1-v1_5' || k.algorithm === 'RSA-PSS' || 
-                    (typeof k.algorithm === 'object' && (k.algorithm.name === 'ECDSA' || k.algorithm.name === 'RSASSA-PKCS1-v1_5' || k.algorithm.name === 'RSA-PSS'))
-                );
-                if (dpopKeys.length > 0) {
-                    return JSON.stringify(dpopKeys[dpopKeys.length - 1].jwk);
-                }
-                // Si no hay filtro, devolver la última generada
-                return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1].jwk);
+            # ── Búsqueda de clave DPoP privada ──
+            print("\n🔍 Extrayendo clave privada DPoP desde cualquier IndexedDB...")
+            jwk = await page.evaluate('''async () => {
+                try {
+                    const dbs = await indexedDB.databases();
+                    for (const dbInfo of dbs) {
+                        try {
+                            const db = await new Promise((resolve, reject) => {
+                                const req = indexedDB.open(dbInfo.name);
+                                req.onsuccess = () => resolve(req.result);
+                                req.onerror = () => reject(req.error);
+                            });
+                            for (const storeName of db.objectStoreNames) {
+                                try {
+                                    const tx = db.transaction(storeName, 'readonly');
+                                    const keys = await new Promise((resolve) => {
+                                        const req = tx.objectStore(storeName).getAll();
+                                        req.onsuccess = () => resolve(req.result);
+                                    });
+                                    for (const item of keys) {
+                                        if (item && item.keyPair && item.keyPair.privateKey) {
+                                            const jwk = await window.crypto.subtle.exportKey('jwk', item.keyPair.privateKey);
+                                            return JSON.stringify(jwk);
+                                        }
+                                        if (item && item.privateKey) {
+                                            const jwk = await window.crypto.subtle.exportKey('jwk', item.privateKey);
+                                            return JSON.stringify(jwk);
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
+                        } catch(e) {}
+                    }
+                    return null;
+                } catch(e) { return null; }
             }''')
             if jwk:
-                print("   🎯 CLAVE DPoP extraída exitosamente!")
-                # Guardar el JWK en un archivo para que core.py lo use
+                print("   🎯 CLAVE DPoP extraída exitosamente de IndexedDB!")
                 try:
                     dpop_file = os.path.join(persist_dir, "ms_dpop_key.json")
                     with open(dpop_file, "w") as f:
@@ -833,7 +857,7 @@ async def run():
                 except Exception as e:
                     print(f"   ⚠️ Error guardando DPoP key: {e}")
             else:
-                print("   ⚠️ No se pudo extraer la clave DPoP de window.myExtractedKeys.")
+                print("   ⚠️ No se encontró ninguna clave DPoP en IndexedDB.")
 
             # Guardar storage state (las cookies de login) para referencia
             try:
