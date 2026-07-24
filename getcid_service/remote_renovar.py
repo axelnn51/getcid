@@ -209,6 +209,18 @@ async def run():
             if has_stealth:
                 stealth = Stealth()
                 await stealth.apply_stealth_async(page)
+                
+                # INJECT: Make all generated ECDSA/RSA keys extractable so we can export the DPoP key
+                await context.add_init_script("""
+                    const originalGenerateKey = window.crypto.subtle.generateKey;
+                    window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
+                        if (algorithm.name === 'ECDSA' || algorithm.name === 'RSASSA-PKCS1-v1_5' || algorithm.name === 'RSA-PSS') {
+                            return await originalGenerateKey.call(this, algorithm, true, keyUsages);
+                        }
+                        return await originalGenerateKey.call(this, algorithm, extractable, keyUsages);
+                    };
+                """)
+
 
             # ─── Interceptar el Bearer token de las requests ───
             _warned_duplicate = False
@@ -783,6 +795,38 @@ async def run():
 
                 except Exception as e:
                     print(f"   ⚠️ Error leyendo {storage_name}: {e}")
+
+            # ── Búsqueda de clave DPoP privada ──
+            print("\n🔍 Extrayendo clave privada DPoP desde IndexedDB...")
+            jwk = await page.evaluate('''async () => {
+                try {
+                    const db = await new Promise((resolve, reject) => {
+                        const req = indexedDB.open('msal.dpop');
+                        req.onsuccess = () => resolve(req.result);
+                        req.onerror = () => reject(req.error);
+                    });
+                    const tx = db.transaction('dpopKeys', 'readonly');
+                    const keys = await new Promise((resolve) => {
+                        const req = tx.objectStore('dpopKeys').getAll();
+                        req.onsuccess = () => resolve(req.result);
+                    });
+                    if (keys.length === 0) return null;
+                    const pk = keys[0].keyPair.privateKey;
+                    const jwk = await window.crypto.subtle.exportKey('jwk', pk);
+                    return JSON.stringify(jwk);
+                } catch(e) { return null; }
+            }''')
+            if jwk:
+                print("   🎯 CLAVE DPoP extraída exitosamente!")
+                # Guardar el JWK en un archivo para que core.py lo use
+                try:
+                    dpop_file = os.path.join(persist_dir, "ms_dpop_key.json")
+                    with open(dpop_file, "w") as f:
+                        f.write(jwk)
+                except Exception as e:
+                    print(f"   ⚠️ Error guardando DPoP key: {e}")
+            else:
+                print("   ⚠️ No se pudo extraer la clave DPoP (puede que MSAL use otro formato o falle la inyección).")
 
             # Guardar storage state (las cookies de login) para referencia
             try:

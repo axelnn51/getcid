@@ -16,26 +16,77 @@ from scraper import extract_ms_token
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("GetCID_Core")
 
-private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
-public_numbers = private_key.public_key().public_numbers()
+def _load_or_generate_key():
+    import os
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.backends import default_backend
+    key_path = "/app/persist/ms_dpop_key.json"
+    if not os.path.exists(key_path):
+        key_path = "ms_dpop_key.json"
+        
+    if os.path.exists(key_path):
+        try:
+            with open(key_path, "r") as f:
+                jwk_data = json.load(f)
+            if jwk_data.get("kty") == "EC":
+                # Convert base64url to int
+                import base64
+                def b64url_to_int(s):
+                    s = s + "=" * (4 - len(s) % 4)
+                    return int.from_bytes(base64.urlsafe_b64decode(s), "big")
+                d = b64url_to_int(jwk_data["d"])
+                x = b64url_to_int(jwk_data["x"])
+                y = b64url_to_int(jwk_data["y"])
+                
+                pn = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1())
+                private_numbers = ec.EllipticCurvePrivateNumbers(d, pn)
+                pk = private_numbers.private_key(default_backend())
+                logger.info("✅ Clave DPoP de MSAL cargada exitosamente.")
+                return pk, jwk_data
+            elif jwk_data.get("kty") == "RSA":
+                from cryptography.hazmat.primitives.asymmetric import rsa
+                import base64
+                def b64url_to_int(s):
+                    s = s + "=" * (4 - len(s) % 4)
+                    return int.from_bytes(base64.urlsafe_b64decode(s), "big")
+                d = b64url_to_int(jwk_data["d"])
+                p = b64url_to_int(jwk_data["p"])
+                q = b64url_to_int(jwk_data["q"])
+                dp = b64url_to_int(jwk_data["dp"])
+                dq = b64url_to_int(jwk_data["dq"])
+                qi = b64url_to_int(jwk_data["qi"])
+                e = b64url_to_int(jwk_data["e"])
+                n = b64url_to_int(jwk_data["n"])
+                pn = rsa.RSAPublicNumbers(e, n)
+                private_numbers = rsa.RSAPrivateNumbers(p, q, d, dp, dq, qi, pn)
+                pk = private_numbers.private_key(default_backend())
+                logger.info("✅ Clave DPoP de MSAL (RSA) cargada exitosamente.")
+                return pk, jwk_data
+        except Exception as e:
+            logger.warning(f"⚠️ Error cargando DPoP key de MSAL: {e}. Generando nueva...")
 
-def int_to_base64url(i: int) -> str:
-    b = i.to_bytes((i.bit_length() + 7) // 8, byteorder='big')
-    return base64.urlsafe_b64encode(b).decode('utf-8').rstrip('=')
+    pk = ec.generate_private_key(ec.SECP256R1(), default_backend())
+    pub = pk.public_key().public_numbers()
+    def int_to_base64url(i: int) -> str:
+        b = i.to_bytes(32, byteorder='big')
+        return base64.urlsafe_b64encode(b).decode('utf-8').rstrip('=')
+    gen_jwk = {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": int_to_base64url(pub.x),
+        "y": int_to_base64url(pub.y)
+    }
+    return pk, gen_jwk
 
-jwk = {
-    "crv": "P-256",
-    "kty": "EC",
-    "x": int_to_base64url(public_numbers.x),
-    "y": int_to_base64url(public_numbers.y)
-}
+private_key, jwk = _load_or_generate_key()
 
 canonical_jwk = json.dumps(jwk, separators=(',', ':')).encode('utf-8')
 jkt_hash = hashlib.sha256(canonical_jwk).digest()
 jkt = base64.urlsafe_b64encode(jkt_hash).decode('utf-8').rstrip('=')
 
 def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str = None) -> str:
-    header = {"alg": "ES256", "typ": "dpop+jwt", "jwk": jwk}
+    alg = "RS256" if jwk.get("kty") == "RSA" else "ES256"
+    header = {"alg": alg, "typ": "dpop+jwt", "jwk": jwk}
     payload = {
         "htu": htu,
         "htm": htm,
@@ -49,7 +100,7 @@ def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str
         ath_hash = hashlib.sha256(access_token.encode('ascii')).digest()
         payload["ath"] = base64.urlsafe_b64encode(ath_hash).decode('utf-8').rstrip('=')
 
-    token = jwt.encode(payload, private_key, algorithm="ES256", headers=header)
+    token = jwt.encode(payload, private_key, algorithm=alg, headers=header)
     return token
 
 async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:

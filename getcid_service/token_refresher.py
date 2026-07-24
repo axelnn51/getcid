@@ -157,11 +157,15 @@ async def refresh_access_token() -> str:
                 expires_in = token_data.get("expires_in", 3600)
 
                 if new_access_token:
+                    token_type_response = token_data.get("token_type", "unknown")
+                    logger.info(f"Token type returned by MS: {token_type_response}")
+                    
                     # Guardar el nuevo access token en el path dinámico (siempre al volumen persistente)
                     with open(_token_file, 'w') as f:
                         json.dump({
                             'token': new_access_token,
-                            'expires_at': time.time() + expires_in - 120  # 2 min antes para seguridad
+                            'expires_at': time.time() + expires_in - 120,  # 2 min antes para seguridad
+                            'token_type': token_type_response
                         }, f)
                     logger.info(f"Token guardado en: {_token_file}")
                     logger.info(f"Nuevo access token obtenido. Expira en {expires_in // 60} minutos.")
