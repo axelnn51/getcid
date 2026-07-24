@@ -384,7 +384,7 @@ async def run():
                         continue
 
                 # 0.2.5 Error de Contraseña ("Password sign-in isn't available" o "Try another method")
-                pwd_err_msg = page.get_by_text(re.compile("Password sign-in isn't available|Try another method|Contraseña incorrecta", re.IGNORECASE))
+                pwd_err_msg = page.get_by_text(re.compile("Password sign-in isn't available|Contraseña incorrecta", re.IGNORECASE))
                 if await pwd_err_msg.count() > 0 and await pwd_err_msg.first.is_visible(timeout=100):
                     print(f"\n🚫 ¡ERROR DE CONTRASEÑA EN MICROSOFT! (La cuenta {MS_EMAIL} requiere código o está mal la clave). Borrando caché y saltando...")
                     try:
