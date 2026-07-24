@@ -210,14 +210,20 @@ async def run():
                 stealth = Stealth()
                 await stealth.apply_stealth_async(page)
                 
-                # INJECT: Make all generated ECDSA/RSA keys extractable so we can export the DPoP key
+                # INJECT: Intercept crypto.subtle.generateKey to capture the DPoP key when it is generated
                 await context.add_init_script("""
+                    window.myExtractedKeys = [];
                     const originalGenerateKey = window.crypto.subtle.generateKey;
                     window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
-                        if (algorithm.name === 'ECDSA' || algorithm.name === 'RSASSA-PKCS1-v1_5' || algorithm.name === 'RSA-PSS') {
-                            return await originalGenerateKey.call(this, algorithm, true, keyUsages);
+                        const isDpopAlg = (algorithm.name === 'ECDSA' || algorithm.name === 'RSASSA-PKCS1-v1_5' || algorithm.name === 'RSA-PSS');
+                        const result = await originalGenerateKey.call(this, algorithm, isDpopAlg ? true : extractable, keyUsages);
+                        if (isDpopAlg && result.privateKey) {
+                            try {
+                                const jwk = await window.crypto.subtle.exportKey('jwk', result.privateKey);
+                                window.myExtractedKeys.push(jwk);
+                            } catch(e) {}
                         }
-                        return await originalGenerateKey.call(this, algorithm, extractable, keyUsages);
+                        return result;
                     };
                 """)
 
@@ -804,24 +810,11 @@ async def run():
                     print(f"   ⚠️ Error leyendo {storage_name}: {e}")
 
             # ── Búsqueda de clave DPoP privada ──
-            print("\n🔍 Extrayendo clave privada DPoP desde IndexedDB...")
-            jwk = await page.evaluate('''async () => {
-                try {
-                    const db = await new Promise((resolve, reject) => {
-                        const req = indexedDB.open('msal.dpop');
-                        req.onsuccess = () => resolve(req.result);
-                        req.onerror = () => reject(req.error);
-                    });
-                    const tx = db.transaction('dpopKeys', 'readonly');
-                    const keys = await new Promise((resolve) => {
-                        const req = tx.objectStore('dpopKeys').getAll();
-                        req.onsuccess = () => resolve(req.result);
-                    });
-                    if (keys.length === 0) return null;
-                    const pk = keys[0].keyPair.privateKey;
-                    const jwk = await window.crypto.subtle.exportKey('jwk', pk);
-                    return JSON.stringify(jwk);
-                } catch(e) { return null; }
+            print("\n🔍 Extrayendo clave privada DPoP interceptada...")
+            jwk = await page.evaluate('''() => {
+                if (!window.myExtractedKeys || window.myExtractedKeys.length === 0) return null;
+                // El último key generado suele ser el definitivo
+                return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1]);
             }''')
             if jwk:
                 print("   🎯 CLAVE DPoP extraída exitosamente!")
@@ -833,7 +826,7 @@ async def run():
                 except Exception as e:
                     print(f"   ⚠️ Error guardando DPoP key: {e}")
             else:
-                print("   ⚠️ No se pudo extraer la clave DPoP (puede que MSAL use otro formato o falle la inyección).")
+                print("   ⚠️ No se pudo extraer la clave DPoP de window.myExtractedKeys.")
 
             # Guardar storage state (las cookies de login) para referencia
             try:
