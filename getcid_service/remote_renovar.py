@@ -1015,5 +1015,8 @@ async def safe_run():
 
 
 if __name__ == "__main__":
-    asyncio.run(safe_run())
+    import sys
+    success = asyncio.run(safe_run())
+    if not success:
+        sys.exit(1)
 

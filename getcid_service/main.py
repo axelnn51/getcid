@@ -268,14 +268,34 @@ async def start_renovation():
     _last_renovation_start = now
     
     async def limited_renovation():
-        from remote_renovar import safe_run as run_renovar
+        import subprocess
+        import sys
         backoff_seconds = [120, 180, 300, 600, 900]  # 2m, 3m, 5m, 10m, 15m
         
         for attempt in range(1, MAX_RENOVATION_ATTEMPTS + 1):
             logger.info(f"🔄 [{_peru_time_str()}] Obtención automática (Intento {attempt}/{MAX_RENOVATION_ATTEMPTS})...")
             try:
                 async with renovation_lock:
-                    success = await run_renovar()
+                    # Ejecutar en un proceso separado para aislar Playwright y su propio event loop,
+                    # previniendo el error "Target page, context or browser has been closed" causado 
+                    # por conflictos de event loop (uvloop vs asyncio) o limpieza de hilos en FastAPI.
+                    process = await asyncio.create_subprocess_exec(
+                        sys.executable, "remote_renovar.py",
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        cwd=os.path.dirname(os.path.abspath(__file__))
+                    )
+                    
+                    while True:
+                        line = await process.stdout.readline()
+                        if not line:
+                            break
+                        # Opcional: imprimir logs del subprocess si se desea
+                        logger.info(f"[Playwright] {line.decode('utf-8', errors='ignore').strip()}")
+                        
+                    await process.wait()
+                    success = process.returncode == 0
+                    
                 if success:
                     logger.info(f"✅ [{_peru_time_str()}] Obtención exitosa en el intento {attempt}.")
                     return
