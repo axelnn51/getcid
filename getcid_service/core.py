@@ -30,7 +30,6 @@ def _load_or_generate_key():
                 jwk_data = json.load(f)
             if jwk_data.get("kty") == "EC":
                 # Convert base64url to int
-                import base64
                 def b64url_to_int(s):
                     s = s + "=" * (4 - len(s) % 4)
                     return int.from_bytes(base64.urlsafe_b64decode(s), "big")
@@ -45,7 +44,6 @@ def _load_or_generate_key():
                 return pk, jwk_data
             elif jwk_data.get("kty") == "RSA":
                 from cryptography.hazmat.primitives.asymmetric import rsa
-                import base64
                 def b64url_to_int(s):
                     s = s + "=" * (4 - len(s) % 4)
                     return int.from_bytes(base64.urlsafe_b64decode(s), "big")
