@@ -102,4 +102,4 @@ echo "[STARTUP] Procesos Chrome: $(pgrep -c chrome 2>/dev/null || echo '0')"
 echo "[STARTUP] ─────────────────────────"
 
 echo "[STARTUP] 🚀 Iniciando servidor uvicorn..."
-exec python -u -m uvicorn main:app --host 0.0.0.0 --port 8000
+exec python -u -m uvicorn main:app --host 0.0.0.0 --port 8000 --loop asyncio
