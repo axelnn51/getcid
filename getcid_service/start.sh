@@ -1,15 +1,37 @@
 #!/bin/bash
-# Script de arranque para GetCID Python Service
+# Script de arranque hardened para GetCID Python Service
+# Anti-caídas: limpia zombies, verifica Xvfb, y hace cleanup agresivo
 
-echo "[STARTUP] Limpiando posibles locks de X11 de reinicios anteriores..."
-rm -rf /tmp/.X*-lock
-rm -rf /tmp/.X11-unix/X99
+set -o pipefail
 
+echo "[STARTUP] ══════════════════════════════════════════════"
+echo "[STARTUP] 🚀 GetCID Python Service — Arranque Anti-Caídas"
+echo "[STARTUP] ══════════════════════════════════════════════"
+
+# ─── PASO 0: Matar CUALQUIER proceso huérfano de runs anteriores ───
+echo "[STARTUP] 🧹 Limpiando procesos huérfanos de Chrome/Xvfb..."
+pkill -9 -f "chrome" 2>/dev/null || true
+pkill -9 -f "chromium" 2>/dev/null || true
+pkill -9 -f "Xvfb" 2>/dev/null || true
+# Esperar a que mueran completamente
+sleep 1
+
+# Limpiar locks de X11 de reinicios anteriores
+rm -rf /tmp/.X*-lock 2>/dev/null || true
+rm -rf /tmp/.X11-unix/X99 2>/dev/null || true
+# Limpiar archivos temporales de Chrome acumulados (pueden ser GB)
+rm -rf /tmp/getcid_chrome_* 2>/dev/null || true
+rm -rf /tmp/.org.chromium.Chromium* 2>/dev/null || true
+rm -rf /tmp/playwright* 2>/dev/null || true
+echo "[STARTUP] ✅ Limpieza de huérfanos completada."
+
+# ─── PASO 1: Crear estructura de directorios persistentes ───
 echo "[STARTUP] Creando estructura de directorios persistentes..."
 mkdir -p /app/persist/states
 mkdir -p /app/persist/chrome_profile
 chmod -R 777 /app/persist 2>/dev/null || true
 
+# ─── PASO 2: Verificar estado de tokens ───
 echo "[STARTUP] ── Estado de tokens persistentes ──"
 if [ -f "/app/persist/ms_token.json" ]; then
     echo "[STARTUP] ✅ ms_token.json ENCONTRADO"
@@ -41,23 +63,43 @@ else
 fi
 echo "[STARTUP] ───────────────────────────────────"
 
+# ─── PASO 3: Iniciar Xvfb con reintentos ───
 echo "[STARTUP] Iniciando Xvfb (pantalla virtual)..."
-# Iniciar Xvfb en segundo plano
-Xvfb :99 -screen 0 1280x720x24 -nolisten tcp -ac &
-XVFB_PID=$!
+
+XVFB_STARTED=false
+for attempt in 1 2 3; do
+    # Limpiar locks antes de cada intento
+    rm -rf /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true
+    
+    Xvfb :99 -screen 0 1280x720x24 -nolisten tcp -ac &
+    XVFB_PID=$!
+    sleep 2
+    
+    if kill -0 $XVFB_PID 2>/dev/null; then
+        echo "[STARTUP] ✅ Xvfb arrancó correctamente en display :99 (PID: $XVFB_PID) — intento $attempt"
+        XVFB_STARTED=true
+        break
+    else
+        echo "[STARTUP] ⚠️ Xvfb falló en intento $attempt/3. Reintentando..."
+        sleep 1
+    fi
+done
+
+if [ "$XVFB_STARTED" = false ]; then
+    echo "[STARTUP] ❌ Xvfb falló después de 3 intentos. Playwright podría no funcionar."
+    echo "[STARTUP] ⚠️ Continuando de todas formas (el refresh token funciona sin Xvfb)..."
+fi
 
 export DISPLAY=:99
 export PYTHONUNBUFFERED=1
 export GETCID_SERVER="http://localhost:8000"
 
-sleep 2
+# ─── PASO 4: Reportar uso de recursos ───
+echo "[STARTUP] ── Recursos del sistema ──"
+echo "[STARTUP] RAM: $(free -h 2>/dev/null | awk 'NR==2{print $3"/"$2}' || echo 'N/A')"
+echo "[STARTUP] Disco /app/persist: $(du -sh /app/persist 2>/dev/null | cut -f1 || echo 'N/A')"
+echo "[STARTUP] Procesos Chrome: $(pgrep -c chrome 2>/dev/null || echo '0')"
+echo "[STARTUP] ─────────────────────────"
 
-if kill -0 $XVFB_PID 2>/dev/null; then
-    echo "[STARTUP] ✅ Xvfb arrancó correctamente en display :99 (PID: $XVFB_PID)"
-else
-    echo "[STARTUP] ❌ Xvfb falló al iniciar. Revisa los logs arriba."
-fi
-
-echo "[STARTUP] Iniciando servidor uvicorn..."
+echo "[STARTUP] 🚀 Iniciando servidor uvicorn..."
 exec python -u -m uvicorn main:app --host 0.0.0.0 --port 8000
-

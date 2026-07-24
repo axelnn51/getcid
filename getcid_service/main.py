@@ -268,7 +268,7 @@ async def start_renovation():
     _last_renovation_start = now
     
     async def limited_renovation():
-        from remote_renovar import run as run_renovar
+        from remote_renovar import safe_run as run_renovar
         backoff_seconds = [120, 180, 300, 600, 900]  # 2m, 3m, 5m, 10m, 15m
         
         for attempt in range(1, MAX_RENOVATION_ATTEMPTS + 1):
@@ -364,15 +364,32 @@ async def api_getcid(req: IIDRequest):
             _log.error(f"❌ [{_peru_time_str()}] Error en refresh rápido: {re}")
 
         # ── Nivel 2: Playwright en background + esperar token nuevo ──
-        _log.warning(f"🚀 [{_peru_time_str()}] Nivel 2: lanzando Playwright y esperando token nuevo (máx 38s)...")
+        _log.warning(f"🚀 [{_peru_time_str()}] Nivel 2: lanzando Playwright y esperando token nuevo (máx 60s)...")
         await start_renovation()
 
         # Esperar a que /api/settoken dispare _token_renewed_event
+        token_acquired = False
         try:
             _token_renewed_event.clear()
-            await asyncio.wait_for(_token_renewed_event.wait(), timeout=38)
+            await asyncio.wait_for(_token_renewed_event.wait(), timeout=60)  # 60s (antes 38s)
             _log.info(f"🎉 [{_peru_time_str()}] Token nuevo recibido durante espera. Reintentando CID...")
-            # Leer el token nuevo del caché
+            token_acquired = True
+        except asyncio.TimeoutError:
+            _log.warning(f"⏱ [{_peru_time_str()}] Timeout de 60s. Verificando si el token llegó de todas formas...")
+            # A veces el token llega justo después del timeout — verificar caché una vez más
+            try:
+                import json as _j
+                if os.path.exists(TOKEN_CACHE_FILE):
+                    with open(TOKEN_CACHE_FILE, 'r') as _f:
+                        _td = _j.load(_f)
+                    if _td.get('expires_at', 0) - time.time() > 300:  # Token con >5min restantes
+                        token_acquired = True
+                        _log.info(f"✅ [{_peru_time_str()}] Token encontrado en caché post-timeout!")
+            except Exception:
+                pass
+
+        if token_acquired:
+            # Leer el token nuevo del caché e intentar CID
             try:
                 import json as _j
                 with open(TOKEN_CACHE_FILE, 'r') as _f:
@@ -385,8 +402,6 @@ async def api_getcid(req: IIDRequest):
                         return JSONResponse(status_code=200, content=result)
             except Exception as te:
                 _log.error(f"❌ [{_peru_time_str()}] Error leyendo token tras espera: {te}")
-        except asyncio.TimeoutError:
-            _log.warning(f"⏱ [{_peru_time_str()}] Timeout de 38s: Playwright no terminó a tiempo. Nivel 3.")
 
         # ── Nivel 3: error — el usuario debe esperar ──
         _log.error(f"🚨 [{_peru_time_str()}] Todos los niveles fallaron. Devolviendo MS_TOKEN_RENEWING al usuario.")
@@ -399,7 +414,7 @@ async def api_getcid(req: IIDRequest):
                 await send_alert(
                     f"🔴 *Token Expirado — CID Fallido*\n\n"
                     f"⏰ {_peru_time_str()}\n"
-                    f"El token expiró y el refresh rápido + Playwright tardaron más de 38s.\n"
+                    f"El token expiró y el refresh rápido + Playwright tardaron más de 60s.\n"
                     f"El sistema sigue trabajando en background."
                 )
             except:
@@ -412,6 +427,7 @@ async def api_getcid(req: IIDRequest):
         })
 
     except Exception as e:
+        import traceback
         error_trace = traceback.format_exc()
         return JSONResponse(status_code=500, content={"success": False, "error": f"CRITICAL PYTHON ERROR: {str(e)}\n{error_trace}"})
 
@@ -605,6 +621,20 @@ async def system_status():
         status["device_auth"] = get_device_auth_status()
     except:
         status["device_auth"] = {"status": "not_available"}
+
+    # Zombie processes (Chrome leftover detection)
+    try:
+        import subprocess
+        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=5)
+        zombie_count = result.stdout.count('<defunct>')
+        chrome_count = result.stdout.lower().count('chrome')
+        status["processes"] = {
+            "zombie_count": zombie_count,
+            "chrome_count": chrome_count,
+            "warning": "Zombies detectados — reiniciar contenedor" if zombie_count > 5 else None
+        }
+    except:
+        status["processes"] = {"zombie_count": "unknown"}
 
     return status
 

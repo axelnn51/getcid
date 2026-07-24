@@ -101,6 +101,35 @@ class _CaptureState:
 # Referencia global solo para compatibilidad con on_request (closure)
 _state = _CaptureState()
 
+
+def _kill_orphan_chrome():
+    """Mata TODOS los procesos de Chrome/Chromium huérfanos antes de abrir uno nuevo.
+    Previene acumulación de procesos zombie que causan OOM y degradación del servidor."""
+    import subprocess
+    killed = 0
+    for proc_name in ['chrome', 'chromium', 'chrome_crashpad']:
+        try:
+            result = subprocess.run(
+                ['pkill', '-9', '-f', proc_name],
+                capture_output=True, timeout=5
+            )
+            if result.returncode == 0:
+                killed += 1
+        except Exception:
+            pass
+    # Limpiar perfiles temporales abandonados
+    import glob
+    base_dir = "/app/persist" if os.path.isdir("/app/persist") else "."
+    for old_profile in glob.glob(os.path.join(base_dir, "getcid_chrome_*")):
+        try:
+            import shutil
+            shutil.rmtree(old_profile, ignore_errors=True)
+        except Exception:
+            pass
+    if killed:
+        print(f"🧹 Limpiados {killed} grupos de procesos Chrome huérfanos.")
+    return killed
+
 async def run():
     global _state
     _state = _CaptureState()  # Estado LIMPIO cada ejecución
@@ -117,6 +146,9 @@ async def run():
         pass
     
     print_banner()
+
+    # ─── ANTI-ZOMBIE: Matar Chrome huérfano de runs anteriores ───
+    _kill_orphan_chrome()
 
     # Verificar que Playwright esté instalado
     try:
@@ -137,15 +169,20 @@ async def run():
     print(f"🌐 Servidor: {GETCID_SERVER}")
     print(f"📱 Telegram: Chat ID {ADMIN_CHAT_ID}\n")
 
-    async with async_playwright() as p:
-        # ─── PERFIL LIMPIO: crear directorio temporal para cada ejecución ───
-        # Reutilizar chrome_profile acumula basura (Login Data, Service Workers, 
-        # IndexedDB) que interfiere con Arkose Labs y provoca "Something went wrong".
-        import tempfile
-        import shutil
-        base_dir = "/app/persist" if os.path.exists("/app/persist") else os.path.dirname(__file__)
-        profile_dir = tempfile.mkdtemp(prefix="getcid_chrome_", dir=base_dir)
-        print(f"🚀 Abriendo Chrome con perfil LIMPIO temporal: {os.path.basename(profile_dir)}")
+    # ─── VARIABLE PARA CLEANUP EN finally ───
+    context = None
+    profile_dir = None
+    import tempfile
+    import shutil
+
+    try:
+        async with async_playwright() as p:
+            # ─── PERFIL LIMPIO: crear directorio temporal para cada ejecución ───
+            # Reutilizar chrome_profile acumula basura (Login Data, Service Workers, 
+            # IndexedDB) que interfiere con Arkose Labs y provoca "Something went wrong".
+            base_dir = "/app/persist" if os.path.exists("/app/persist") else os.path.dirname(__file__)
+            profile_dir = tempfile.mkdtemp(prefix="getcid_chrome_", dir=base_dir)
+            print(f"🚀 Abriendo Chrome con perfil LIMPIO temporal: {os.path.basename(profile_dir)}")
 
         context = await p.chromium.launch_persistent_context(
             user_data_dir=profile_dir,
@@ -910,6 +947,73 @@ async def run():
         print("  ⚠️ Token capturado pero hubo problemas al guardarlo.")
         return False
 
+    except Exception as e:
+        # ─── CATCH-ALL: cualquier error no capturado ───
+        print(f"\n💥 ERROR CRÍTICO EN PLAYWRIGHT: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                await http.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={"chat_id": ADMIN_CHAT_ID, "text": f"💥 *Error Crítico en Playwright*\n\n`{str(e)[:200]}`\n\nEl sistema se recuperará automáticamente.", "parse_mode": "Markdown"}
+                )
+        except:
+            pass
+        return False
+
+    finally:
+        # ─── LIMPIEZA GARANTIZADA: se ejecuta SIEMPRE, incluso en crash ───
+        print("\n🧹 [FINALLY] Ejecutando limpieza garantizada...")
+        
+        # 1. Cerrar contexto si quedó abierto
+        if context is not None:
+            try:
+                await context.close()
+                print("   ✅ Contexto de Playwright cerrado.")
+            except Exception as e:
+                print(f"   ⚠️ Error cerrando contexto: {e}")
+        
+        # 2. Limpiar perfil temporal
+        if profile_dir and os.path.exists(profile_dir):
+            try:
+                shutil.rmtree(profile_dir, ignore_errors=True)
+                print(f"   ✅ Perfil temporal {os.path.basename(profile_dir)} eliminado.")
+            except Exception:
+                pass
+        
+        # 3. Matar CUALQUIER proceso Chrome que haya quedado vivo
+        _kill_orphan_chrome()
+        print("🧹 [FINALLY] Limpieza completada.\n")
+
+
+async def safe_run():
+    """Wrapper anti-caídas: ejecuta run() con timeout global de 5 minutos.
+    Si Playwright se queda colgado (CAPTCHA, página lenta, etc.), se mata forzosamente.
+    """
+    MAX_RUN_TIMEOUT = 300  # 5 minutos máximo por ejecución completa
+    
+    try:
+        result = await asyncio.wait_for(run(), timeout=MAX_RUN_TIMEOUT)
+        return result
+    except asyncio.TimeoutError:
+        print(f"\n⏱️ TIMEOUT GLOBAL: run() tardó más de {MAX_RUN_TIMEOUT}s. Matando Chrome forzosamente...")
+        _kill_orphan_chrome()
+        try:
+            async with httpx.AsyncClient(timeout=10) as http:
+                await http.post(
+                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                    json={"chat_id": ADMIN_CHAT_ID, "text": f"⏱️ *Timeout en Playwright ({MAX_RUN_TIMEOUT}s)*\n\nEl proceso se mató automáticamente. Se reintentará.", "parse_mode": "Markdown"}
+                )
+        except:
+            pass
+        return False
+    except Exception as e:
+        print(f"\n💥 ERROR EN safe_run: {e}")
+        _kill_orphan_chrome()
+        return False
+
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    asyncio.run(safe_run())
+

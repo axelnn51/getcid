@@ -920,36 +920,100 @@ function startBot() {
         process.exit(1);
     });
 
-    bot.launch()
-        .then(() => {
-            console.log('🤖 Bot de Telegram iniciado correctamente');
+    // ─── AUTO-RECONEXIÓN ANTI-CAÍDAS ───
+    // Si el polling de Telegram muere (error de red, 409 Conflict, timeout),
+    // el bot se reconecta automáticamente con backoff exponencial
+    let reconnectAttempts = 0;
+    const MAX_RECONNECT_DELAY = 60000; // 60 segundos máximo
+    
+    async function launchWithAutoReconnect() {
+        while (true) {
+            try {
+                // Si hay otra instancia usando el mismo token (409 Conflict),
+                // primero limpiamos el webhook/getUpdates viejo
+                if (reconnectAttempts > 0) {
+                    try {
+                        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                    } catch (e) { /* ignore */ }
+                    
+                    const delay = Math.min(5000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
+                    console.log(`🔄 [RECONNECT] Intento ${reconnectAttempts} — esperando ${delay/1000}s...`);
+                    await new Promise(r => setTimeout(r, delay));
+                }
+                
+                await bot.launch({ dropPendingUpdates: true });
+                
+                // Si llegamos aquí, el bot se conectó exitosamente
+                if (reconnectAttempts > 0) {
+                    console.log(`✅ [RECONNECT] Bot reconectado tras ${reconnectAttempts} intentos.`);
+                    for (const adminId of ADMIN_IDS) {
+                        bot.telegram.sendMessage(adminId,
+                            `🟢 *Bot RECONECTADO*\n\n` +
+                            `Tras ${reconnectAttempts} intentos de reconexión.\n` +
+                            `Hora: ${new Date().toLocaleString('es-PE')}`,
+                            { parse_mode: 'Markdown' }
+                        ).catch(() => {});
+                    }
+                }
+                reconnectAttempts = 0;
+                
+                console.log('🤖 Bot de Telegram iniciado correctamente');
 
-            // Notificar al admin que el bot está en línea
-            for (const adminId of ADMIN_IDS) {
-                bot.telegram.sendMessage(adminId,
-                    `🟢 *GETCID Bot en línea*\n\n` +
-                    `Servidor iniciado: ${new Date().toLocaleString('es-PE')}\n` +
-                    `Motor OCR: ✅ Cargado\n` +
-                    `Web: ✅ Puerto ${process.env.PORT || 3000}\n` +
-                    `WooCommerce: ${process.env.WC_CONSUMER_KEY ? '✅' : '❌'}\n\n` +
-                    `Comandos admin:\n` +
-                    `/addcredits <id> <n>\n` +
-                    `/stats\n` +
-                    `/tokenstatus\n` +
-                    `/systemstatus\n` +
-                    `/deviceauth\n` +
-                    `/settoken <token>\n` +
-                    `/setrefreshtoken <json>`,
-                    { parse_mode: 'Markdown' }
-                ).catch(err => console.log(`⚠️ No se pudo notificar al admin ${adminId}: ${err.message}`));
+                // Notificar al admin que el bot está en línea
+                for (const adminId of ADMIN_IDS) {
+                    bot.telegram.sendMessage(adminId,
+                        `🟢 *GETCID Bot en línea*\n\n` +
+                        `Servidor iniciado: ${new Date().toLocaleString('es-PE')}\n` +
+                        `Motor OCR: ✅ Cargado\n` +
+                        `Web: ✅ Puerto ${process.env.PORT || 3000}\n` +
+                        `WooCommerce: ${process.env.WC_CONSUMER_KEY ? '✅' : '❌'}\n\n` +
+                        `Comandos admin:\n` +
+                        `/addcredits <id> <n>\n` +
+                        `/stats\n` +
+                        `/tokenstatus\n` +
+                        `/systemstatus\n` +
+                        `/deviceauth\n` +
+                        `/settoken <token>\n` +
+                        `/setrefreshtoken <json>`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(err => console.log(`⚠️ No se pudo notificar al admin ${adminId}: ${err.message}`));
+                }
+                
+                // El bot queda en polling infinito. Solo salimos de este while si bot.launch() finaliza sin error.
+                break;
+                
+            } catch (err) {
+                reconnectAttempts++;
+                console.error(`❌ [RECONNECT] Error al iniciar bot (intento ${reconnectAttempts}):`, err.message);
+                
+                if (err.message.includes('401') || err.message.includes('404')) {
+                    console.error('   → Token de BOT inválido. Regenera el token en @BotFather.');
+                    console.error('   → NO se reintentará (error permanente).');
+                    break; // No reintentar, el token es malo
+                }
+                
+                if (err.message.includes('409')) {
+                    console.error('   → 409 Conflict: otra instancia está usando este token. Limpiando...');
+                }
+                
+                // Para otros errores (red, timeout, 429), reintentar
+                if (reconnectAttempts >= 10) {
+                    console.error('   → 10 intentos fallidos. Reiniciando proceso Node.js...');
+                    process.exit(1); // Docker restart: unless-stopped lo levantará
+                }
             }
-        })
-        .catch(err => {
-            console.error('❌ Error al iniciar bot de Telegram:', err.message);
-            if (err.message.includes('401') || err.message.includes('404')) {
-                console.error('   → Token inválido. Regenera el token en @BotFather');
-            }
-        });
+        }
+    }
+    
+    launchWithAutoReconnect();
+
+    // ─── MANEJO GLOBAL DE ERRORES DE POLLING ───
+    // Telegraf puede emitir errores de polling que NO son excepciones normales
+    // y si no se capturan, matan el proceso silenciosamente
+    bot.catch((err, ctx) => {
+        console.error(`❌ [BOT ERROR] Error en handler:`, err.message);
+        // NO relanzar — el bot sigue vivo
+    });
 
     process.once('SIGINT', () => bot.stop('SIGINT'));
     process.once('SIGTERM', () => bot.stop('SIGTERM'));

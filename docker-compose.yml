@@ -32,6 +32,7 @@ services:
     build: ./getcid_service
     container_name: getcid_python
     restart: unless-stopped
+    init: true  # Usa tini como PID 1 → mata procesos zombie de Chrome/Playwright automáticamente
     volumes:
       - ./python_data:/app/persist
     environment:
@@ -50,8 +51,8 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s  # 2 min: boot validator puede tardar con Playwright
 
   pid_checker_api:
     build: ./pid_checker_api

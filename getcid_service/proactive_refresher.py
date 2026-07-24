@@ -1,21 +1,24 @@
 """
-Capa 1: Proactive Token Refresher
-Background task que renueva el access token usando el refresh token cada 30 minutos, 24/7.
+Capa 1: Proactive Token Refresher — VERSIÓN ANTI-CAÍDAS
+Background task que renueva el access token usando el refresh token cada 25 minutos, 24/7.
 Evita que el token expire silenciosamente entre requests de clientes.
 
-- Con client_id SPA (24h): mantiene el token "caliente" renovando antes de expirar
-- Con client_id nativo (90d): renueva igualmente por seguridad
-- Envía alertas Telegram si falla 3+ veces consecutivas
-- NUNCA abre Playwright ni dispara remote_renovar (eso es responsabilidad del cron)
+MEJORAS V2:
+- Detecta cuándo el refresh token SPA está por expirar (>20h) y lanza Playwright preventivo
+- Reduce el intervalo de 30min a 25min para mayor margen de seguridad
+- Verifica que el access token realmente funcione (no solo que exista)
+- Envía alertas escalonadas por Telegram con información útil
 """
 import asyncio
 import datetime
 import time
 import logging
+import os
+import json
 
 logger = logging.getLogger("ProactiveRefresher")
 
-REFRESH_INTERVAL_SECONDS = 30 * 60  # 30 minutos
+REFRESH_INTERVAL_SECONDS = 25 * 60  # 25 minutos (antes era 30, más margen de seguridad)
 INITIAL_DELAY_SECONDS = 90  # Esperar 1.5 min después del arranque
 ALERT_THRESHOLD = 3  # Fallos consecutivos antes de alertar por Telegram
 ALERT_COOLDOWN = 3600  # 1 hora entre alertas de Telegram (no spamear)
@@ -36,6 +39,45 @@ def _peru_time_str():
     peru_tz = datetime.timezone(datetime.timedelta(hours=-5))
     peru_now = utc_now.astimezone(peru_tz)
     return peru_now.strftime('%Y-%m-%d %H:%M:%S PET')
+
+
+def _get_persist_dir() -> str:
+    return "/app/persist" if os.path.isdir("/app/persist") else "."
+
+
+def _check_spa_token_approaching_death() -> dict:
+    """Verifica si el refresh token SPA está próximo a expirar (>20h desde último Playwright).
+    Retorna dict con info del estado."""
+    try:
+        token_file = os.path.join(_get_persist_dir(), "ms_token.json")
+        if not os.path.exists(token_file):
+            return {"needs_playwright": False, "reason": "no_token_file"}
+        
+        with open(token_file, 'r') as f:
+            data = json.load(f)
+        
+        last_playwright = data.get('last_playwright_run', 0)
+        if last_playwright == 0:
+            return {"needs_playwright": False, "reason": "no_playwright_record"}
+        
+        hours_since_playwright = (time.time() - last_playwright) / 3600
+        
+        # El token SPA tiene hard limit de 24h. Si han pasado >20h, necesitamos renovar
+        # ANTES de que expire, no DESPUÉS (que es lo que causaba las caídas)
+        if hours_since_playwright >= 20:
+            return {
+                "needs_playwright": True,
+                "hours_since_playwright": round(hours_since_playwright, 1),
+                "reason": f"SPA token con {round(hours_since_playwright, 1)}h — se acerca al límite de 24h"
+            }
+        
+        return {
+            "needs_playwright": False,
+            "hours_since_playwright": round(hours_since_playwright, 1),
+            "reason": f"OK — {round(hours_since_playwright, 1)}h desde último Playwright"
+        }
+    except Exception as e:
+        return {"needs_playwright": False, "reason": f"error: {e}"}
 
 
 async def start_proactive_refresh():
@@ -64,7 +106,28 @@ async def start_proactive_refresh():
                 await asyncio.sleep(REFRESH_INTERVAL_SECONDS)
                 continue
 
-            # Intentar renovar
+            # ─── CHECK PREVENTIVO: ¿El token SPA está por morir? ───
+            spa_check = _check_spa_token_approaching_death()
+            if spa_check.get("needs_playwright"):
+                hours = spa_check.get("hours_since_playwright", "?")
+                logger.warning(
+                    f"🚨 [{_peru_time_str()}] Token SPA con {hours}h de antigüedad — "
+                    f"lanzando renovación PREVENTIVA (antes de que expire a las 24h)..."
+                )
+                try:
+                    from telegram_alert import send_alert
+                    await send_alert(
+                        f"🔄 *Renovación Preventiva*\n\n"
+                        f"⏰ {_peru_time_str()}\n"
+                        f"El token SPA tiene *{hours}h* de antigüedad.\n"
+                        f"Renovando ANTES de que expire a las 24h.\n\n"
+                        f"✅ Esto evita caídas del servicio."
+                    )
+                except Exception:
+                    pass
+                await _trigger_renovation()
+
+            # Intentar renovar access token via refresh token
             logger.info(f"🔄 [{_peru_time_str()}] Proactive refresh iniciando...")
             new_token = await refresh_access_token()
 
@@ -118,11 +181,14 @@ async def _send_failure_alert():
 
     try:
         from telegram_alert import send_alert
+        spa_check = _check_spa_token_approaching_death()
+        spa_info = f"\n📊 SPA: {spa_check.get('reason', 'N/A')}" if spa_check else ""
+        
         await send_alert(
             f"🔴 *ALERTA: Token Refresh Fallido*\n\n"
             f"⏰ {_peru_time_str()}\n"
             f"Fallos consecutivos: *{_consecutive_failures}*\n"
-            f"Total fallos: *{_total_failures}*\n\n"
+            f"Total fallos: *{_total_failures}*{spa_info}\n\n"
             f"El access token podría expirar pronto.\n"
             f"🤖 *Lanzando renovación automática via Playwright...*"
         )
@@ -132,7 +198,7 @@ async def _send_failure_alert():
 
 
 _last_renovation_trigger = 0
-RENOVATION_COOLDOWN = 3600  # No lanzar más de 1 Playwright por hora
+RENOVATION_COOLDOWN = 1800  # 30 min entre Playwright triggers (antes era 1h — más reactivo)
 
 async def _trigger_renovation():
     """Lanza el ciclo de renovación Playwright automáticamente, respetando el lock global."""
@@ -140,7 +206,8 @@ async def _trigger_renovation():
 
     now = time.time()
     if now - _last_renovation_trigger < RENOVATION_COOLDOWN:
-        logger.info(f"⏸ [{_peru_time_str()}] Renovación Playwright en cooldown. No se lanza.")
+        remaining = int(RENOVATION_COOLDOWN - (now - _last_renovation_trigger))
+        logger.info(f"⏸ [{_peru_time_str()}] Renovación Playwright en cooldown ({remaining}s restantes). No se lanza.")
         return
 
     # Verificar si ya hay una renovación en progreso (desde main.py)
@@ -174,6 +241,7 @@ async def _trigger_renovation():
 
 def get_refresher_status() -> dict:
     """Retorna el estado del proactive refresher."""
+    spa_check = _check_spa_token_approaching_death()
     return {
         "running": _running,
         "last_refresh_time": _last_refresh_time,
@@ -184,6 +252,8 @@ def get_refresher_status() -> dict:
         "total_failures": _total_failures,
         "interval_minutes": REFRESH_INTERVAL_SECONDS // 60,
         "alert_threshold": ALERT_THRESHOLD,
+        "spa_token_status": spa_check.get("reason", "N/A"),
+        "spa_needs_playwright": spa_check.get("needs_playwright", False),
     }
 
 
