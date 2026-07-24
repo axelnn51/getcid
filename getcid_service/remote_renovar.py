@@ -216,8 +216,8 @@ async def run():
                 nonlocal _warned_duplicate
                 if "api/productActivation" in request.url or "visualsupport.microsoft.com/api/" in request.url:
                     auth = request.headers.get("authorization", "")
-                    if "Bearer" in auth:
-                        token = auth.replace("Bearer ", "").strip()
+                    if "Bearer" in auth or "DPoP" in auth:
+                        token = auth.replace("Bearer ", "").replace("DPoP ", "").strip()
                         # Ignorar si es exactamente el mismo token que ya teníamos (falso positivo de cache)
                         if previous_token and token == previous_token:
                             if not _warned_duplicate:
