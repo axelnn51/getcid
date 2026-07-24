@@ -215,12 +215,11 @@ async def run():
                     window.myExtractedKeys = [];
                     const originalGenerateKey = window.crypto.subtle.generateKey;
                     window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
-                        const isDpopAlg = (algorithm.name === 'ECDSA' || algorithm.name === 'RSASSA-PKCS1-v1_5' || algorithm.name === 'RSA-PSS');
-                        const result = await originalGenerateKey.call(this, algorithm, isDpopAlg ? true : extractable, keyUsages);
-                        if (isDpopAlg && result.privateKey) {
+                        const result = await originalGenerateKey.call(this, algorithm, true, keyUsages);
+                        if (result.privateKey) {
                             try {
                                 const jwk = await window.crypto.subtle.exportKey('jwk', result.privateKey);
-                                window.myExtractedKeys.push(jwk);
+                                window.myExtractedKeys.push({algorithm: algorithm.name || algorithm, jwk: jwk});
                             } catch(e) {}
                         }
                         return result;
@@ -813,8 +812,16 @@ async def run():
             print("\n🔍 Extrayendo clave privada DPoP interceptada...")
             jwk = await page.evaluate('''() => {
                 if (!window.myExtractedKeys || window.myExtractedKeys.length === 0) return null;
-                // El último key generado suele ser el definitivo
-                return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1]);
+                // Filtrar para buscar claves de firma (EC o RSA) si es posible
+                const dpopKeys = window.myExtractedKeys.filter(k => 
+                    k.algorithm === 'ECDSA' || k.algorithm === 'RSASSA-PKCS1-v1_5' || k.algorithm === 'RSA-PSS' || 
+                    (typeof k.algorithm === 'object' && (k.algorithm.name === 'ECDSA' || k.algorithm.name === 'RSASSA-PKCS1-v1_5' || k.algorithm.name === 'RSA-PSS'))
+                );
+                if (dpopKeys.length > 0) {
+                    return JSON.stringify(dpopKeys[dpopKeys.length - 1].jwk);
+                }
+                // Si no hay filtro, devolver la última generada
+                return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1].jwk);
             }''')
             if jwk:
                 print("   🎯 CLAVE DPoP extraída exitosamente!")
