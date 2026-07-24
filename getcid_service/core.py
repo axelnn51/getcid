@@ -34,7 +34,7 @@ canonical_jwk = json.dumps(jwk, separators=(',', ':')).encode('utf-8')
 jkt_hash = hashlib.sha256(canonical_jwk).digest()
 jkt = base64.urlsafe_b64encode(jkt_hash).decode('utf-8').rstrip('=')
 
-def generate_dpop_token(htu: str, htm: str, nonce: str = None) -> str:
+def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str = None) -> str:
     header = {"alg": "ES256", "typ": "dpop+jwt", "jwk": jwk}
     payload = {
         "htu": htu,
@@ -45,6 +45,9 @@ def generate_dpop_token(htu: str, htm: str, nonce: str = None) -> str:
     }
     if nonce:
         payload["nonce"] = nonce
+    if access_token:
+        ath_hash = hashlib.sha256(access_token.encode('ascii')).digest()
+        payload["ath"] = base64.urlsafe_b64encode(ath_hash).decode('utf-8').rstrip('=')
 
     token = jwt.encode(payload, private_key, algorithm="ES256", headers=header)
     return token
@@ -83,7 +86,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
     
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {ms_session_token}",
+        "Authorization": f"DPoP {ms_session_token}",
         "x-session-id": sid,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
         "Accept": "application/json",
@@ -93,7 +96,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
 
     try:
         async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-            dpop = generate_dpop_token(htu, htm)
+            dpop = generate_dpop_token(htu, htm, access_token=ms_session_token)
             req_headers = headers.copy()
             req_headers["DPoP"] = dpop
             
@@ -103,7 +106,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
             if "dpop-nonce" in resp.headers or "DPoP-Nonce" in resp.headers:
                 nonce = resp.headers.get("dpop-nonce", resp.headers.get("DPoP-Nonce"))
                 logger.info(f"[{iid}] Nonce detectado, reintentando con firma completa...")
-                req_headers["DPoP"] = generate_dpop_token(htu, htm, nonce)
+                req_headers["DPoP"] = generate_dpop_token(htu, htm, nonce, access_token=ms_session_token)
                 resp = await client.post(endpoint, json=payload_data, headers=req_headers)
             
             if resp.status_code in (401, 403):
