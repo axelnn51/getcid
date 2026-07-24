@@ -129,15 +129,25 @@ async def refresh_access_token() -> str:
 
             logger.info(f"Enviando refresh con scopes: '{form_data['scope']}', redirect_uri: {form_data.get('redirect_uri', 'N/A')}")
 
+            # Generar DPoP proof para vincular el nuevo access token a la llave privada de core.py
+            from core import generate_dpop_token
+            dpop_proof = generate_dpop_token(
+                htu="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                htm="POST"
+            )
+            
+            headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Origin": "https://visualsupport.microsoft.com",
+                "Referer": "https://visualsupport.microsoft.com/",
+                "Accept": "application/json",
+                "DPoP": dpop_proof
+            }
+
             response = await client.post(
                 "https://login.microsoftonline.com/common/oauth2/v2.0/token",
                 data=form_data,
-                headers={
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Origin": "https://visualsupport.microsoft.com",
-                    "Referer": "https://visualsupport.microsoft.com/",
-                    "Accept": "application/json"
-                }
+                headers=headers
             )
 
             if response.status_code == 200:

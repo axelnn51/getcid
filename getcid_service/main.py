@@ -298,6 +298,16 @@ async def start_renovation():
                     
                 if success:
                     logger.info(f"✅ [{_peru_time_str()}] Obtención exitosa en el intento {attempt}.")
+                    # IMPORTANTE: El Access Token obtenido por Playwright está ligado a la llave DPoP del navegador.
+                    # Debemos usar el Refresh Token inmediatamente para obtener un NUEVO Access Token
+                    # ligado a la llave DPoP de este servidor (core.py).
+                    try:
+                        from token_refresher import refresh_access_token
+                        logger.info("🔄 Forzando refresh token para vincular DPoP a la llave del servidor...")
+                        await refresh_access_token()
+                        logger.info("✅ DPoP vinculado exitosamente.")
+                    except Exception as e:
+                        logger.error(f"⚠️ Error forzando refresh token DPoP: {e}")
                     return
             except Exception as e:
                 logger.error(f"❌ [{_peru_time_str()}] Error en obtención: {e}")
