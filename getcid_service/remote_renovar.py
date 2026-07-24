@@ -401,11 +401,18 @@ async def run():
                     if await pwd_err_msg.count() > 0 and await pwd_err_msg.first.is_visible(timeout=100):
                         print(f"\n🚫 ¡ERROR DE CONTRASEÑA EN MICROSOFT! (La cuenta {MS_EMAIL} requiere código o está mal la clave). Borrando caché y saltando...")
                         try:
+                            await page.screenshot(path="pwd_error.png")
                             async with httpx.AsyncClient(timeout=10) as http:
-                                await http.post(
-                                    f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                                    json={"chat_id": ADMIN_CHAT_ID, "text": f"🚫 *Login Fallido*\n\nLa cuenta `{MS_EMAIL}` rechazó el inicio de sesión con contraseña.\nPasando a la siguiente...", "parse_mode": "Markdown"}
-                                )
+                                with open("pwd_error.png", "rb") as f:
+                                    await http.post(
+                                        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+                                        data={
+                                            "chat_id": ADMIN_CHAT_ID,
+                                            "caption": f"🚫 *Login Fallido*\n\nLa cuenta `{MS_EMAIL}` rechazó el inicio de sesión con contraseña.\nPasando a la siguiente...",
+                                            "parse_mode": "Markdown"
+                                        },
+                                        files={"photo": f}
+                                    )
                             # Borrar caché guardado para no arrastrar el bloqueo
                             state_dir = os.path.join(base_dir, "states")
                             state_file = os.path.join(state_dir, "state_renovar.json")
