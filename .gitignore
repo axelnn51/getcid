@@ -2,6 +2,8 @@ node_modules/
 uploads/
 data/
 .env
+.env.local
+start_local.bat
 
 # Python
 __pycache__/
