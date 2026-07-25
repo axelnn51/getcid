@@ -15,6 +15,14 @@ Ejecuta esto cuando el token expire. Solo necesitas resolver el CAPTCHA.
 Uso: python renovar_token.py
 """
 
+import subprocess
+import glob
+
+if os.name == 'nt':
+    import sys
+    sys.stdout.reconfigure(encoding='utf-8')
+
+# Constantes
 import asyncio
 import json
 import re
@@ -504,12 +512,12 @@ async def run():
                                                 clicks = -1
                                             elapsed = time.time() - start_time
                                         
-                                            if 1 <= clicks <= 5:
+                                            if 0 <= clicks <= 5:
                                                 print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
                                                 last_ai_clicks = clicks
                                             else:
                                                 import random
-                                                clicks = random.randint(1, 5)
+                                                clicks = random.randint(0, 5)
                                                 print(f"[{time.strftime('%H:%M:%S')}] 🎲 La IA falló o está sin cuota. Adivinando al azar: {clicks} clics.")
                                                 last_ai_clicks = clicks
 

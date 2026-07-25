@@ -1,9 +1,16 @@
 import asyncio
 import random
 import re
+import os
+import sys
+import json
+import time
+
+if os.name == 'nt':
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
-import os
 from dotenv import load_dotenv
 import logging
 import json

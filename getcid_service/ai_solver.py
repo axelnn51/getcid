@@ -28,8 +28,8 @@ def resolver_captcha_con_ia(image_path: str) -> int:
         try:
             genai.configure(api_key=api_key)
             
-            # Usamos gemini-2.5-flash porque gemini-2.5-pro no está disponible en la capa gratuita (Free Tier).
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            # Usamos gemini-1.5-pro porque es el más capaz para lógica espacial y SÍ está disponible en Free Tier (50 req/día).
+            model = genai.GenerativeModel('gemini-1.5-pro')
             
             if idx == 0:
                 logger.info(f"🤖 Enviando imagen a Gemini Vision (Intentando con API Key {idx+1}/{len(api_keys)})...")
@@ -60,8 +60,8 @@ def resolver_captcha_con_ia(image_path: str) -> int:
                 "REGLA: Calcula cuántos clics a la derecha necesitas para que el animal u objeto de la derecha apunte en la misma dirección exacta que la mano de la izquierda.\n\n"
                 "REGLAS CRÍTICAS:\n"
                 "- Para el tren: ¡NUNCA vayas en reversa! Siempre sigue la dirección a la que apunta el frente del tren.\n"
-                "- La posición inicial NUNCA es la correcta. La respuesta NUNCA es 0.\n"
-                "- La respuesta final siempre es un número del 1 al 5.\n"
+                "- La posición inicial A VECES es la correcta. Si el tren o el animal ya está en la posición correcta desde el inicio, la respuesta es 0.\n"
+                "- La respuesta final siempre es un número del 0 al 5.\n"
                 "En la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (ejemplo: 3)."
             )
             
@@ -81,7 +81,7 @@ def resolver_captcha_con_ia(image_path: str) -> int:
             numbers = re.findall(r'\d+', text_res)
             if numbers:
                 num = int(numbers[-1])
-                if 1 <= num <= 5:
+                if 0 <= num <= 5:
                     return num
                     
             logger.warning(f"⚠️ La respuesta de la IA no fue un número válido (0-5): {text_res}")
