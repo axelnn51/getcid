@@ -6,9 +6,11 @@ import base64
 import hashlib
 import logging
 from typing import Dict
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import utils
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 import jwt
 import re
 from scraper import extract_ms_token
@@ -43,7 +45,6 @@ def _load_or_generate_key():
                 logger.info("✅ Clave DPoP de MSAL cargada exitosamente.")
                 return pk, jwk_data
             elif jwk_data.get("kty") == "RSA":
-                from cryptography.hazmat.primitives.asymmetric import rsa
                 def b64url_to_int(s):
                     s = s + "=" * (4 - len(s) % 4)
                     return int.from_bytes(base64.urlsafe_b64decode(s), "big")
@@ -63,16 +64,16 @@ def _load_or_generate_key():
         except Exception as e:
             logger.warning(f"⚠️ Error cargando DPoP key de MSAL: {e}. Generando nueva...")
 
-    pk = ec.generate_private_key(ec.SECP256R1(), default_backend())
+    pk = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
     pub = pk.public_key().public_numbers()
     def int_to_base64url(i: int) -> str:
-        b = i.to_bytes(32, byteorder='big')
+        b = i.to_bytes((i.bit_length() + 7) // 8, byteorder='big')
+        if not b: b = b'\x00'
         return base64.urlsafe_b64encode(b).decode('utf-8').rstrip('=')
     gen_jwk = {
-        "crv": "P-256",
-        "kty": "EC",
-        "x": int_to_base64url(pub.x),
-        "y": int_to_base64url(pub.y)
+        "e": int_to_base64url(pub.e),
+        "kty": "RSA",
+        "n": int_to_base64url(pub.n)
     }
     return pk, gen_jwk
 
@@ -89,8 +90,7 @@ def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str
         "htu": htu,
         "htm": htm,
         "jti": str(uuid.uuid4()),
-        "iat": int(time.time()),
-        "jkt": jkt
+        "iat": int(time.time())
     }
     if nonce:
         payload["nonce"] = nonce

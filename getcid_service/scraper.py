@@ -90,6 +90,25 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
     stealth = Stealth()
     await stealth.apply_stealth_async(page)
     
+    # Inyectar override para extraer DPoP key
+    await context.add_init_script("""
+        window.Worker = function() {
+            throw new Error("Web Workers are disabled to force main thread execution");
+        };
+        window.myExtractedKeys = [];
+        const originalGenerateKey = window.crypto.subtle.generateKey;
+        window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
+            const result = await originalGenerateKey.call(this, algorithm, true, keyUsages);
+            if (result.privateKey) {
+                try {
+                    const jwk = await window.crypto.subtle.exportKey('jwk', result.privateKey);
+                    window.myExtractedKeys.push({algorithm: algorithm.name || algorithm, jwk: jwk});
+                } catch(e) {}
+            }
+            return result;
+        };
+    """)
+    
     # Configurar interceptor de blob ANTES de navegar
     intercepted_data = None
     if setup_blob_interceptor:
@@ -333,6 +352,20 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
     except Exception as e:
         logger.error(f"[{email}] Error en Playwright: {e}")
     finally:
+        try:
+            jwk = await page.evaluate('''async () => {
+                if (window.myExtractedKeys && window.myExtractedKeys.length > 0) {
+                    return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1].jwk);
+                }
+                return null;
+            }''')
+            if jwk:
+                dpop_file = "/app/persist/ms_dpop_key.json" if os.path.exists("/app/persist") else "ms_dpop_key.json"
+                with open(dpop_file, "w") as f:
+                    f.write(jwk)
+                logger.info("✅ DPoP key guardado desde scraper.")
+        except:
+            pass
         await browser.close()
         return captured_token
 

@@ -816,6 +816,9 @@ async def run():
             print("\n🔍 Extrayendo clave privada DPoP desde cualquier IndexedDB...")
             jwk = await page.evaluate('''async () => {
                 try {
+                    if (window.myExtractedKeys && window.myExtractedKeys.length > 0) {
+                        return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1].jwk);
+                    }
                     const dbs = await indexedDB.databases();
                     for (const dbInfo of dbs) {
                         try {
