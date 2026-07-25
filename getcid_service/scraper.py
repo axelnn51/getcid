@@ -449,7 +449,7 @@ async def extract_refresh_token_from_cache(email: str):
                                 client_id=client_id,
                                 scopes=token_data.get('target', '')
                             )
-                            logger.info(f"Refresh token extraído y guardado. Válido por ~90 días.")
+                            logger.info(f"Refresh token extraído y guardado. Válido por ~24 horas (SPA).")
                             return
                     except (json.JSONDecodeError, KeyError):
                         continue

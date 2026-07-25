@@ -722,7 +722,7 @@ async def run():
                     
                     if await yes_btn.count() > 0:
                         if await yes_btn.first.is_visible(timeout=100):
-                            print("✅ 'Mantener sesión iniciada' (Sí) clickeado. (Brazalete extendido a 90 días)")
+                            print("✅ 'Mantener sesión iniciada' (Sí) clickeado. (Límite de 24 horas para SPA)")
                             await yes_btn.first.click()
                             await page.wait_for_timeout(2000)
                             continue
