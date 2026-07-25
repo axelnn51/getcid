@@ -504,12 +504,12 @@ async def run():
                                                 clicks = -1
                                             elapsed = time.time() - start_time
                                         
-                                            if 0 <= clicks <= 5:
+                                            if 1 <= clicks <= 5:
                                                 print(f"[{time.strftime('%H:%M:%S')}] ✅ La IA determinó que son {clicks} clics en {elapsed:.1f} segundos.")
                                                 last_ai_clicks = clicks
                                             else:
                                                 import random
-                                                clicks = random.randint(0, 5)
+                                                clicks = random.randint(1, 5)
                                                 print(f"[{time.strftime('%H:%M:%S')}] 🎲 La IA falló o está sin cuota. Adivinando al azar: {clicks} clics.")
                                                 last_ai_clicks = clicks
 

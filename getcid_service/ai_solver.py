@@ -81,7 +81,7 @@ def resolver_captcha_con_ia(image_path: str) -> int:
             numbers = re.findall(r'\d+', text_res)
             if numbers:
                 num = int(numbers[-1])
-                if 0 <= num <= 5:
+                if 1 <= num <= 5:
                     return num
                     
             logger.warning(f"⚠️ La respuesta de la IA no fue un número válido (0-5): {text_res}")
