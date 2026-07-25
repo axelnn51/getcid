@@ -183,25 +183,29 @@ async def lifespan(app: FastAPI):
                 pass
         else:
             # ── PASO 3: Playwright (último recurso) ──
-            _logger.warning(f"🚨 [{_peru_time_str()}] Boot: todo falló → lanzando Playwright...")
-            try:
-                from telegram_alert import send_alert
-                await send_alert(
-                    f"🔄 *Servidor Reiniciado*\n\n"
-                    f"⏰ {_peru_time_str()}\n"
-                    f"❌ Token inválido + refresh token fallido\n\n"
-                    f"🚨 *Lanzando renovación Playwright automáticamente...*\n"
-                    f"⏳ El sistema estará listo en ~2 minutos."
-                )
-            except Exception:
-                pass
-            try:
-                import httpx as _httpx
-                async with _httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.post("http://localhost:8000/api/start-renovation")
-                    _logger.info(f"🚀 [{_peru_time_str()}] Playwright lanzado en boot (status {resp.status_code}).")
-            except Exception as e:
-                _logger.error(f"❌ [{_peru_time_str()}] Error lanzando Playwright en boot: {e}")
+            # ── PASO 3: Playwright (último recurso) ──
+            if os.path.exists("/app/persist/system_paused.flag"):
+                _logger.warning(f"⏸ [{_peru_time_str()}] Boot: Token inválido, pero el sistema está PAUSADO. Saltando Playwright.")
+            else:
+                _logger.warning(f"🚨 [{_peru_time_str()}] Boot: todo falló → lanzando Playwright...")
+                try:
+                    from telegram_alert import send_alert
+                    await send_alert(
+                        f"🔄 *Servidor Reiniciado*\n\n"
+                        f"⏰ {_peru_time_str()}\n"
+                        f"❌ Token inválido + refresh token fallido\n\n"
+                        f"🚨 *Lanzando renovación Playwright automáticamente...*\n"
+                        f"⏳ El sistema estará listo en ~2 minutos."
+                    )
+                except Exception:
+                    pass
+                try:
+                    import httpx as _httpx
+                    async with _httpx.AsyncClient(timeout=10) as client:
+                        resp = await client.post("http://localhost:8000/api/start-renovation")
+                        _logger.info(f"🚀 [{_peru_time_str()}] Playwright lanzado en boot (status {resp.status_code}).")
+                except Exception as e:
+                    _logger.error(f"❌ [{_peru_time_str()}] Error lanzando Playwright en boot: {e}")
 
     boot_task = asyncio.create_task(startup_validator())
 
