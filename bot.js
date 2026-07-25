@@ -162,7 +162,8 @@ function startBot() {
                 ...Markup.keyboard([
                     ['🔄 Renovar Token', '📊 Estado Sistema'],
                     ['🔑 Estado Token', '🔐 Device Auth'],
-                    ['👥 Usuarios', '⚙️ Ayuda Admin']
+                    ['👥 Usuarios', '⚙️ Ayuda Admin'],
+                    ['🛑 Apagar Sistema', '▶️ Encender Sistema']
                 ]).resize()
             };
         }
@@ -218,6 +219,44 @@ function startBot() {
         }
     });
 
+    bot.hears('🛑 Apagar Sistema', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paused: true })
+            });
+            const data = await response.json();
+            if (data.success) {
+                ctx.reply('🛑 *SISTEMA APAGADO*\n\nEl sistema ya no intentará renovar el token automáticamente ni ejecutará el bot de Playwright. Para volver a activarlo usa el botón ▶️ Encender Sistema.', { parse_mode: 'Markdown' });
+            } else {
+                ctx.reply(`❌ Error: ${data.error}`);
+            }
+        } catch (err) {
+            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
+        }
+    });
+
+    bot.hears('▶️ Encender Sistema', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paused: false })
+            });
+            const data = await response.json();
+            if (data.success) {
+                ctx.reply('▶️ *SISTEMA ENCENDIDO*\n\nLa auto-renovación se ha reanudado.', { parse_mode: 'Markdown' });
+            } else {
+                ctx.reply(`❌ Error: ${data.error}`);
+            }
+        } catch (err) {
+            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
+        }
+    });
+
     bot.hears('👥 Usuarios', (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
         ctx.reply('Para gestionar usuarios usa los comandos manuales por ahora:\n`/addcredits <id> <n>`', { parse_mode: 'Markdown' });
@@ -230,7 +269,9 @@ function startBot() {
             '🔄 *Renovar Token* — Abrir Playwright para renovar\n' +
             '📊 *Estado Sistema* — Resumen rápido\n' +
             '🔑 *Estado Token* — Estado detallado del token\n' +
-            '🔐 *Device Auth* — Iniciar Device Code Flow (90 días)\n\n' +
+            '🔐 *Device Auth* — Iniciar Device Code Flow (90 días)\n' +
+            '🛑 *Apagar Sistema* — Pausar auto-renovación\n' +
+            '▶️ *Encender Sistema* — Reanudar auto-renovación\n\n' +
             '*Comandos manuales:*\n' +
             '/systemstatus — Estado completo\n' +
             '/tokenstatus — Estado del access token\n' +

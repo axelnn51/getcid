@@ -247,6 +247,30 @@ class TokenRequest(BaseModel):
 # ENDPOINTS EXISTENTES
 # ============================================================
 
+@app.post("/api/system-pause")
+async def toggle_system_pause(request: Request):
+    try:
+        data = await request.json()
+        pause = data.get("paused", True)
+        flag_file = "/app/persist/system_paused.flag"
+        
+        if pause:
+            with open(flag_file, "w") as f:
+                f.write(str(time.time()))
+            
+            # Matar procesos de chrome y remote_renovar
+            import subprocess
+            subprocess.run(["pkill", "-9", "-f", "remote_renovar.py"], capture_output=True)
+            subprocess.run(["pkill", "-9", "-f", "chrome"], capture_output=True)
+            
+            return JSONResponse(content={"success": True, "message": "Sistema pausado y procesos detenidos."})
+        else:
+            if os.path.exists(flag_file):
+                os.remove(flag_file)
+            return JSONResponse(content={"success": True, "message": "Sistema reanudado."})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
 @app.post("/api/start-renovation")
 async def start_renovation():
     """Inicia el script de Playwright en background para renovar el token. Con límite de intentos."""
@@ -256,6 +280,9 @@ async def start_renovation():
     
     if renovation_task and not renovation_task.done():
         return JSONResponse(status_code=400, content={"success": False, "error": "Ya hay una renovación en progreso."})
+        
+    if os.path.exists("/app/persist/system_paused.flag"):
+        return JSONResponse(status_code=403, content={"success": False, "error": "Sistema en pausa."})
     
     # Cooldown: no permitir renovaciones demasiado frecuentes
     now = time.time()

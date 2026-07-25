@@ -96,6 +96,11 @@ async def start_proactive_refresh():
 
     while _running:
         try:
+            if os.path.exists("/app/persist/system_paused.flag"):
+                logger.info(f"⏸ [{_peru_time_str()}] Sistema pausado. Saltando ciclo de refresco.")
+                await asyncio.sleep(60)
+                continue
+            
             from token_refresher import get_refresh_token_status, refresh_access_token
 
             # Verificar si hay refresh token configurado

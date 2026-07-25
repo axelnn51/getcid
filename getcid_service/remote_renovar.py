@@ -1094,8 +1094,12 @@ async def safe_run():
 
 
 if __name__ == "__main__":
+    import os
+    if os.path.exists("/app/persist/system_paused.flag") or os.path.exists("system_paused.flag"):
+        print("⏸ Sistema pausado. Cancelando script de renovación remota.")
+        import sys
+        sys.exit(0)
     import sys
     success = asyncio.run(safe_run())
     if not success:
         sys.exit(1)
-
