@@ -110,6 +110,8 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                 try {
                     const jwk = await window.crypto.subtle.exportKey('jwk', result.privateKey);
                     window.myExtractedKeys.push({algorithm: algorithm.name || algorithm, jwk: jwk});
+                    // NUEVO: Persistir la llave para que sobreviva a redirecciones
+                    window.localStorage.setItem('intercepted_dpop_jwk', JSON.stringify(jwk));
                 } catch(e) {}
             }
             return result;

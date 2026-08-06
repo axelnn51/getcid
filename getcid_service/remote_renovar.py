@@ -232,6 +232,8 @@ async def run():
                             try {
                                 const jwk = await window.crypto.subtle.exportKey('jwk', result.privateKey);
                                 window.myExtractedKeys.push({algorithm: algorithm.name || algorithm, jwk: jwk});
+                                // NUEVO: Persistir la llave para que sobreviva a redirecciones
+                                window.localStorage.setItem('intercepted_dpop_jwk', JSON.stringify(jwk));
                             } catch(e) {}
                         }
                         return result;
@@ -868,6 +870,10 @@ async def run():
             print("\n🔍 Extrayendo clave privada DPoP desde cualquier IndexedDB...")
             jwk = await page.evaluate('''async () => {
                 try {
+                    const fromStorage = window.localStorage.getItem('intercepted_dpop_jwk');
+                    if (fromStorage) {
+                        return fromStorage;
+                    }
                     if (window.myExtractedKeys && window.myExtractedKeys.length > 0) {
                         return JSON.stringify(window.myExtractedKeys[window.myExtractedKeys.length - 1].jwk);
                     }
@@ -906,7 +912,7 @@ async def run():
             if jwk:
                 print("   🎯 CLAVE DPoP extraída exitosamente de IndexedDB!")
                 try:
-                    dpop_file = os.path.join(persist_dir, "ms_dpop_key.json")
+                    dpop_file = os.path.join(base_dir, "ms_dpop_key.json")
                     with open(dpop_file, "w") as f:
                         f.write(jwk)
                 except Exception as e:
