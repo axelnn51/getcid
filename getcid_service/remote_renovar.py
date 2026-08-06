@@ -242,7 +242,7 @@ async def run():
             _warned_duplicate = False
             async def on_request(request):
                 nonlocal _warned_duplicate
-                if "api/productActivation" in request.url or "visualsupport.microsoft.com/api/" in request.url:
+                if "api/productActivation/validateIID" in request.url:
                     auth = request.headers.get("authorization", "")
                     if "Bearer" in auth or "DPoP" in auth:
                         token = auth.replace("Bearer ", "").replace("DPoP ", "").strip()
