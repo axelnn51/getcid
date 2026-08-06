@@ -111,9 +111,9 @@ def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str
     }
     if nonce:
         payload["nonce"] = nonce
-    if access_token:
-        ath_hash = hashlib.sha256(access_token.encode('ascii')).digest()
-        payload["ath"] = base64.urlsafe_b64encode(ath_hash).decode('utf-8').rstrip('=')
+    # NOTA: NO incluir 'ath' (access token hash). El frontend de Microsoft
+    # usa una implementación custom de DPoP que no vincula el token al proof.
+    # Incluir ath causa rechazo del servidor.
 
     token = jwt.encode(payload, private_key, algorithm=alg, headers=header)
     return token

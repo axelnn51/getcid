@@ -255,24 +255,28 @@ async def run():
                         except Exception as e:
                             print(f"   ⚠️ Error decodificando DPoP: {e}")
                             
-                if "api/productActivation/validateIID" in request.url:
+                if "api/productActivation" in request.url:
                     auth = request.headers.get("authorization", "")
                     if "Bearer" in auth or "DPoP" in auth:
                         token = auth.replace("Bearer ", "").replace("DPoP ", "").strip()
-                        if _state.token and token != _state.token and not _warned_duplicate:
-                            print(f"  ⚠️ Advertencia: Se capturó un token distinto al anterior. ¿Múltiples requests?")
-                            _warned_duplicate = True
-                        
-                        _state.token = token
-                        _state.dpop_hdr = request.headers.get("dpop")
-                        _state.token_capture_time = time.time()
-                        
-                        print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(_state.token)} chars)")
-                        print(f"   🔎 HEADERS del request: {request.url} -> {request.headers}")
-                        if _state.dpop_hdr:
-                            print(f"   🧠 DPoP Header incluido en el request a validateIID: {_state.dpop_hdr}")
+                        # Solo aceptar tokens JWT (empiezan con eyJ), ignorar tokens opacos
+                        if not token.startswith("eyJ"):
+                            print(f"\n⚠️ Token opaco ignorado ({len(token)} chars, empieza con {token[:10]}...)")
                         else:
-                            print("   ⚠️ ATENCIÓN: No se incluyó header DPoP en este request de la web.")
+                            if _state.token and token != _state.token and not _warned_duplicate:
+                                print(f"  ⚠️ Advertencia: Se capturó un token distinto al anterior. ¿Múltiples requests?")
+                                _warned_duplicate = True
+                            
+                            _state.token = token
+                            _state.dpop_hdr = request.headers.get("dpop")
+                            _state.token_capture_time = time.time()
+                            
+                            print(f"\n🎯 ¡ACCESS TOKEN JWT CAPTURADO! ({len(_state.token)} chars)")
+                            print(f"   🔎 Endpoint: {request.url}")
+                            if _state.dpop_hdr:
+                                print(f"   🧠 DPoP Header incluido: {_state.dpop_hdr[:40]}...")
+                            else:
+                                print("   ℹ️ Sin DPoP header (normal para productUIInfo)")
 
             page.on("request", on_request)
 
@@ -346,36 +350,6 @@ async def run():
                 
                 # ¿Llegamos a la página final de bienvenida?
                 if "visualsupport.microsoft.com/welcome" in page.url:
-                    if not _state.token:
-                        print("  ⚡ Inyectando fetch a validateIID para forzar a MSAL a usar DPoP...")
-                        try:
-                            await page.evaluate('''async () => {
-                                try {
-                                    await fetch("https://visualsupport.microsoft.com/api/productActivation/validateIID", {
-                                        method: "POST",
-                                        headers: {
-                                            "Content-Type": "application/json"
-                                        },
-                                        body: JSON.stringify({
-                                            "IID": "000000000000000000000000000000000000000000000000000000",
-                                            "ProductType": "windows",
-                                            "productGroup": "Windows",
-                                            "productName": "Windows 11",
-                                            "numberOfDigits": 6,
-                                            "Country": "CHN",
-                                            "Region": "APAC",
-                                            "InstalledDevices": 1,
-                                            "OverrideStatusCode": "MUL",
-                                            "InitialReasonCode": "45164"
-                                        })
-                                    });
-                                } catch (e) {
-                                    console.error("Error forzando fetch", e);
-                                }
-                            }''')
-                            await page.wait_for_timeout(2000)
-                        except Exception as e:
-                            print(f"Error inyectando fetch: {e}")
                     
                     print("\n✅ Llegamos a la página de bienvenida. Extrayendo tokens...")
                     if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
