@@ -242,29 +242,37 @@ async def run():
             _warned_duplicate = False
             async def on_request(request):
                 nonlocal _warned_duplicate
+                if "/oauth2/v2.0/token" in request.url:
+                    print(f"\n🚀 [MSAL TOKEN REQUEST] Intercepted request to {request.url}")
+                    dpop_hdr = request.headers.get("dpop")
+                    if dpop_hdr:
+                        print(f"   🧠 Header DPoP interceptado en /token: {dpop_hdr}")
+                        try:
+                            import jwt, json
+                            unv = jwt.get_unverified_header(dpop_hdr)
+                            payload = jwt.decode(dpop_hdr, options={"verify_signature": False})
+                            print(f"   🧠 Payload del DPoP: {json.dumps(payload)}")
+                        except Exception as e:
+                            print(f"   ⚠️ Error decodificando DPoP: {e}")
+                            
                 if "api/productActivation/validateIID" in request.url:
                     auth = request.headers.get("authorization", "")
                     if "Bearer" in auth or "DPoP" in auth:
                         token = auth.replace("Bearer ", "").replace("DPoP ", "").strip()
-                        # Ignorar si es exactamente el mismo token que ya teníamos (falso positivo de cache)
-                        if previous_token and token == previous_token:
-                            if not _warned_duplicate:
-                                print(f"\n⚠️ Token interceptado es IDÉNTICO al anterior. Ignorando falso positivo.")
-                                _warned_duplicate = True
+                        if _state.token and token != _state.token and not _warned_duplicate:
+                            print(f"  ⚠️ Advertencia: Se capturó un token distinto al anterior. ¿Múltiples requests?")
+                            _warned_duplicate = True
+                        
+                        _state.token = token
+                        _state.dpop_hdr = request.headers.get("dpop")
+                        _state.token_capture_time = time.time()
+                        
+                        print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(_state.token)} chars)")
+                        print(f"   🔎 HEADERS del request: {request.url} -> {request.headers}")
+                        if _state.dpop_hdr:
+                            print(f"   🧠 DPoP Header incluido en el request a validateIID: {_state.dpop_hdr}")
                         else:
-                            _state.token = token
-                            _state.token_capture_time = time.time()
-                            print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(token)} chars)")
-                            dpop_hdr = request.headers.get("dpop")
-                            print(f"   🔎 HEADERS del request: {request.url} -> {request.headers}")
-                            if dpop_hdr:
-                                print(f"   🧠 Header DPoP interceptado: {dpop_hdr[:20]}...{dpop_hdr[-20:]}")
-                                try:
-                                    import jwt
-                                    unv = jwt.get_unverified_header(dpop_hdr)
-                                    print(f"   🧠 JWK del browser: {unv.get('jwk')}")
-                                except Exception as e:
-                                    print(f"   ⚠️ Error decodificando DPoP del browser: {e}")
+                            print("   ⚠️ ATENCIÓN: No se incluyó header DPoP en este request de la web.")
 
             page.on("request", on_request)
 
@@ -338,6 +346,37 @@ async def run():
                 
                 # ¿Llegamos a la página final de bienvenida?
                 if "visualsupport.microsoft.com/welcome" in page.url:
+                    if not _state.token:
+                        print("  ⚡ Inyectando fetch a validateIID para forzar a MSAL a usar DPoP...")
+                        try:
+                            await page.evaluate('''async () => {
+                                try {
+                                    await fetch("https://visualsupport.microsoft.com/api/productActivation/validateIID", {
+                                        method: "POST",
+                                        headers: {
+                                            "Content-Type": "application/json"
+                                        },
+                                        body: JSON.stringify({
+                                            "IID": "000000000000000000000000000000000000000000000000000000",
+                                            "ProductType": "windows",
+                                            "productGroup": "Windows",
+                                            "productName": "Windows 11",
+                                            "numberOfDigits": 6,
+                                            "Country": "CHN",
+                                            "Region": "APAC",
+                                            "InstalledDevices": 1,
+                                            "OverrideStatusCode": "MUL",
+                                            "InitialReasonCode": "45164"
+                                        })
+                                    });
+                                } catch (e) {
+                                    console.error("Error forzando fetch", e);
+                                }
+                            }''')
+                            await page.wait_for_timeout(2000)
+                        except Exception as e:
+                            print(f"Error inyectando fetch: {e}")
+                    
                     print("\n✅ Llegamos a la página de bienvenida. Extrayendo tokens...")
                     if ai_enabled and last_ai_clicks != -1 and ai_fail_count < max_ai_attempts:
                         print("📊 Registrando victoria para la IA...")

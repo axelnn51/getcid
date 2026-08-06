@@ -131,7 +131,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
             return {"success": False, "error": "No se pudo obtener el token de sesión de Microsoft."}
 
     endpoint = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
-    htu = endpoint
+    htu = "/api/productActivation/validateIID"
     htm = "POST"
     
     sid = f"app_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
@@ -152,7 +152,7 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
     
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"DPoP {ms_session_token}",
+        "Authorization": f"Bearer {ms_session_token}",
         "x-session-id": sid,
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
         "Accept": "application/json",
