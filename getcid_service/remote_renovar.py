@@ -256,7 +256,7 @@ async def run():
                             _state.token_capture_time = time.time()
                             print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(token)} chars)")
                             dpop_hdr = request.headers.get("dpop")
-                            print(f"   🔎 HEADERS del request: {request.headers}")
+                            print(f"   🔎 HEADERS del request: {request.url} -> {request.headers}")
                             if dpop_hdr:
                                 print(f"   🧠 Header DPoP interceptado: {dpop_hdr[:20]}...{dpop_hdr[-20:]}")
                                 try:
