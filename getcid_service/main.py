@@ -92,6 +92,16 @@ async def lifespan(app: FastAPI):
         3. Lanza Playwright (renovación completa)
         """
         _logger = logging.getLogger("BootValidator")
+        
+        # Auto-recuperación de pausa: Si el sistema se reinició (ej. corte de luz), 
+        # quitamos la bandera de pausa para darle una nueva oportunidad de recuperar el token.
+        flag_file = "/app/persist/system_paused.flag"
+        if os.path.exists(flag_file):
+            try:
+                os.remove(flag_file)
+                _logger.info(f"♻️ [{_peru_time_str()}] Bandera de pausa eliminada en el arranque. Intentaremos una vez más.")
+            except: pass
+            
         await asyncio.sleep(8)  # Dar tiempo a uvicorn para estar 100% listo
 
         _logger.info(f"🔍 [{_peru_time_str()}] Boot Validator: iniciando validación real del token...")
