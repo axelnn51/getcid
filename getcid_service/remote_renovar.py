@@ -529,7 +529,7 @@ async def run():
                                             # Tomar tiempo antes
                                             start_time = time.time()
                                             try:
-                                                clicks = resolver_captcha_con_ia("captcha.png")
+                                                clicks = resolver_captcha_con_ia("captcha.png", ai_fail_count + 1)
                                             except Exception as ai_err:
                                                 print(f"[{time.strftime('%H:%M:%S')}] ❌ ERROR EJECUTANDO ai_solver: {ai_err}")
                                                 clicks = -1
@@ -602,18 +602,18 @@ async def run():
                                     for i in range(clicks):
                                         await right_arrow.first.click()
                                         print(f"   ▶ Clic {i+1}/{clicks}")
-                                        await page.wait_for_timeout(1200) # 1.2 segundos entre clics
-                                
+                                        await page.wait_for_timeout(600) # 600ms en vez de 1.2s
+
                                     # Esperar a que la última animación termine antes de enviar
                                     if clicks > 0:
-                                        await page.wait_for_timeout(1000)
-                                
+                                        await page.wait_for_timeout(500)
+
                                     # Clic en Submit
                                     submit_btn = frame.locator("button#home_children_button, button[type='submit'], button:has-text('Submit'), button:has-text('Enviar')")
                                     if await submit_btn.count() > 0:
                                         await submit_btn.first.click()
                                         print("✅ Botón Submit clickeado.")
-                                        await page.wait_for_timeout(3000)
+                                        await page.wait_for_timeout(2000)
                                 
                                     clicked_captcha = True
                                     break
@@ -648,7 +648,7 @@ async def run():
                                             pass
                                 
                                     await try_again_btn.first.click()
-                                    await page.wait_for_timeout(2000)
+                                    await page.wait_for_timeout(1500)
                                     clicked_captcha = True
                                     break
                             

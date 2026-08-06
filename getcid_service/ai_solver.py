@@ -1,100 +1,109 @@
 import os
-import re
+import json
 import random
 import logging
-import google.generativeai as genai
 from PIL import Image
+
+# Usando el nuevo SDK genai
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger("AISolver")
 
-def resolver_captcha_con_ia(image_path: str) -> int:
+def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
     """
-    Toma un screenshot del CAPTCHA de Arkose Labs, lo envía a Gemini 1.5 Pro,
-    y le pide que cuente cuántos clics a la derecha se necesitan para alinear la imagen.
-    Devuelve un entero (0-5) o -1 si falla.
+    Toma un screenshot del CAPTCHA de Arkose Labs, lo envía a Gemini,
+    y le pide que cuente cuántos clics a la derecha se necesitan.
+    Usa JSON estructurado para mayor precisión.
     """
     api_key_env = os.getenv("GEMINI_API_KEY")
     if not api_key_env or api_key_env == "tu_clave_api_aqui":
         logger.error("❌ GEMINI_API_KEY no está configurada o es inválida.")
         return -1
         
-    # Extraer todas las llaves separadas por coma
     api_keys = [k.strip() for k in api_key_env.split(",") if k.strip()]
-    
-    # Barajar aleatoriamente para distribuir la carga entre las llaves
     random.shuffle(api_keys)
+    
+    # Temperatura variable: primer intento conservador, intentos subsiguientes más creativos
+    temperature = 0.2 if attempt == 1 else 0.6
     
     for idx, api_key in enumerate(api_keys):
         try:
-            genai.configure(api_key=api_key)
-            
-            # Usamos gemini-2.5-flash porque gemini-2.5-pro no está disponible o no tiene cuota en Free Tier.
-            model = genai.GenerativeModel('gemini-2.5-flash')
+            client = genai.Client(api_key=api_key)
+            # Upgrade a gemini-3.6-flash
+            model_id = 'gemini-3.6-flash'
             
             if idx == 0:
-                logger.info(f"🤖 Enviando imagen a Gemini Vision (Intentando con API Key {idx+1}/{len(api_keys)})...")
+                logger.info(f"🤖 IA: Analizando con {model_id} (temp={temperature}, key={idx+1}/{len(api_keys)})...")
             
-            # Cargar la imagen local
             img = Image.open(image_path)
             
-            # El prompt estructurado paso a paso para forzar a la IA a enumerar los nodos
             prompt = (
-                "Eres un experto solucionando puzzles lógicos de CAPTCHAs de Arkose Labs. "
-                "Existen dos tipos principales. Lee la instrucción de la imagen para saber cuál es:\n\n"
-                "TIPO 1: POSICIÓN EN EL CAMINO (ej. 'move the train to the icon').\n"
-                "La imagen contiene dos partes: a la izquierda el icono objetivo, a la derecha un tren en una vía 3D con varios postes rojos que tienen iconos. "
-                "REGLA: Tienes que calcular cuántos clics ('avances') se necesitan para mover el tren por la vía hasta el icono objetivo.\n"
-                "Sigue ESTRICTAMENTE este análisis paso a paso:\n"
-                "1. IDENTIFICA EL OBJETIVO: ¿Cuál es el icono de la imagen izquierda?\n"
-                "2. POSICIÓN INICIAL: ¿Sobre qué icono (poste rojo) está estacionado el tren AZUL en la imagen derecha?\n"
-                "3. DIRECCIÓN: ¿Hacia dónde mira la cara frontal (la chimenea/ventana) del tren?\n"
-                "4. MAPEO DE LA VÍA: Sigue la línea punteada roja en la dirección que mira el tren. Enumera TODOS los iconos (postes) que encuentras en el camino, en orden, hasta llegar al icono objetivo. ¡No te saltes ninguno! La vía puede cruzarse o ser un bucle circular.\n"
-                "5. CONTEO: Cuenta los pasos (clics). Cada avance a un nuevo poste es 1 clic.\n"
-                "Ejemplo de razonamiento esperado:\n"
-                "- Objetivo: Diamante.\n"
-                "- Posición inicial: El tren está sobre el icono de una taza.\n"
-                "- Dirección: Mira hacia la derecha.\n"
-                "- Camino: Taza -> (clic 1) -> Engranaje -> (clic 2) -> Cadenas -> (clic 3) -> Diamante.\n"
-                "- Total clics: 3.\n\n"
-                "TIPO 2: ROTACIÓN (ej. 'Use the arrows to rotate the object to face the same direction as the hand').\n"
-                "REGLA: Calcula cuántos clics a la derecha necesitas para que el animal u objeto de la derecha apunte en la misma dirección exacta que la mano de la izquierda.\n\n"
-                "REGLAS CRÍTICAS:\n"
-                "- Para el tren: ¡NUNCA vayas en reversa! Siempre sigue la dirección a la que apunta el frente del tren.\n"
-                "- La posición inicial A VECES es la correcta. Si el tren o el animal ya está en la posición correcta desde el inicio, la respuesta es 0.\n"
-                "- La respuesta final siempre es un número del 0 al 5.\n"
-                "En la ÚLTIMA LÍNEA de tu respuesta escribe ÚNICAMENTE el número final de clics (ejemplo: 3)."
+                "Eres un experto en resolver CAPTCHAs lógicos de Arkose Labs.\n"
+                "TIPO 1 (Camino): Cuenta cuántos clics a la derecha se necesitan para que el tren azul avance hasta el icono objetivo de la izquierda.\n"
+                "TIPO 2 (Rotación): Cuenta cuántos clics a la derecha se necesitan para alinear el objeto de la derecha con la mano de la izquierda.\n\n"
+                "PIENSA DETENIDAMENTE. Tu salida DEBE ser estrictamente JSON válido, con las claves 'reasoning' (un string breve explicando tu conteo paso a paso) y 'clicks' (un entero entre 0 y 5).\n"
+                "Ejemplo:\n"
+                '{"reasoning": "El tren está en la taza. El objetivo es el diamante. El camino es Taza -> Engranaje -> Cadenas -> Diamante. Son 3 saltos.", "clicks": 3}'
             )
             
-            response = model.generate_content([prompt, img])
+            # Usar response_mime_type para forzar JSON
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+                response_mime_type="application/json"
+            )
             
-            # Extraer y limpiar el resultado
+            response = client.models.generate_content(
+                model=model_id,
+                contents=[prompt, img],
+                config=config
+            )
+            
             text_res = response.text.strip()
-            logger.info(f"🤖 IA Respuesta RAW: '{text_res}'")
+            
             try:
                 with open("last_reasoning.txt", "w", encoding="utf-8") as f:
                     f.write(text_res)
             except:
                 pass
-            
-            
-            # Extraemos solo el ÚLTIMO número de la respuesta (para evitar que agarre números de listas como '1.')
-            numbers = re.findall(r'\d+', text_res)
-            if numbers:
-                num = int(numbers[-1])
-                if 0 <= num <= 5:
-                    return num
-                    
-            logger.warning(f"⚠️ La respuesta de la IA no fue un número válido (0-5): {text_res}")
+                
+            try:
+                data = json.loads(text_res)
+                logger.info(f"🧠 Razonamiento IA: {data.get('reasoning', 'N/A')}")
+                clicks = int(data.get('clicks', -1))
+                if 0 <= clicks <= 5:
+                    return clicks
+                else:
+                    logger.warning(f"⚠️ Clics fuera de rango: {clicks}")
+            except json.JSONDecodeError:
+                logger.warning(f"⚠️ La respuesta no fue JSON válido: {text_res}")
+                
             return -1
             
         except Exception as e:
             error_msg = str(e)
-            if "429" in error_msg or "Quota" in error_msg or "403" in error_msg:
-                logger.warning(f"⚠️ API Key {idx+1}/{len(api_keys)} falló (429/403). Probando la siguiente si existe...")
+            if "429" in error_msg or "quota" in error_msg.lower() or "403" in error_msg:
+                logger.warning(f"⚠️ API Key {idx+1}/{len(api_keys)} falló por cuota. Probando siguiente...")
                 continue
             else:
-                logger.error(f"❌ Error al contactar con la API de Gemini: {e}")
-                return -1
+                # Tratar de hacer fallback a 2.5 flash si 3.6 falla por modelo no encontrado u otro error
+                if "not found" in error_msg.lower() or "invalid model" in error_msg.lower():
+                    logger.warning("⚠️ gemini-3.6-flash no disponible, intentando con gemini-2.5-flash...")
+                    try:
+                        response = client.models.generate_content(
+                            model="gemini-2.5-flash",
+                            contents=[prompt, img],
+                            config=config
+                        )
+                        data = json.loads(response.text.strip())
+                        logger.info(f"🧠 Razonamiento IA (fallback): {data.get('reasoning', 'N/A')}")
+                        return int(data.get('clicks', -1))
+                    except Exception as fallback_e:
+                        logger.error(f"❌ Fallback a 2.5-flash también falló: {fallback_e}")
+                        return -1
+                else:
+                    logger.error(f"❌ Error API: {e}")
+                    return -1
                 
-    logger.error("❌ Todas las llaves de Gemini fallaron o están sin cuota.")
+    logger.error("❌ Todas las llaves de Gemini fallaron.")
     return -1
