@@ -17,6 +17,7 @@ Uso: python renovar_token.py
 
 import subprocess
 import glob
+import os
 
 if os.name == 'nt':
     import sys
@@ -705,6 +706,50 @@ async def run():
                             await use_pwd_btn.first.click()
                             await page.wait_for_timeout(2000)
                             continue
+
+                    # 2.6 "Verify your email" / "Comprobar su correo" (Si nos obliga a código)
+                    verify_email_text = page.locator("text=/Verify your email|Comprobar su correo electrónico/i")
+                    if await verify_email_text.count() > 0 and await verify_email_text.first.is_visible(timeout=1000):
+                        print("⚠️ Microsoft obliga a usar código de correo.")
+                        proof_input = page.locator("input[type='email'], input[name='ProofConfirmation']")
+                        if await proof_input.count() > 0 and await proof_input.first.is_visible():
+                            from datetime import datetime
+                            import os
+                            start_time = datetime.now()
+                            recovery_email = os.getenv("GMAIL_RECOVERY_EMAIL")
+                            if not recovery_email:
+                                print(f"❌ ERROR FATAL: Falta GMAIL_RECOVERY_EMAIL en el .env")
+                                break
+                            print(f"📝 Rellenando email de recuperación para código: {recovery_email}")
+                            await proof_input.first.fill(recovery_email)
+                            await page.wait_for_timeout(1000)
+                            await page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']").first.click()
+                            print("   ✅ Solicitando código...")
+                            await page.wait_for_timeout(4000)
+                            
+                            # Extraer código IMAP
+                            import sys
+                            sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                            try:
+                                from gmail_reader import wait_for_microsoft_code
+                            except ImportError:
+                                from getcid_service.gmail_reader import wait_for_microsoft_code
+                            app_pwd = os.getenv("GMAIL_APP_PASSWORD")
+                            code = await wait_for_microsoft_code(recovery_email, app_pwd, start_time)
+                            if code:
+                                code_input = page.locator("input[name='otc'], input[type='text'], input[type='tel']")
+                                if await code_input.count() > 0 and await code_input.first.is_visible(timeout=2000):
+                                    await page.wait_for_timeout(3000)
+                                    print(f"🔑 Ingresando código IMAP: {code}")
+                                    await code_input.first.fill(code)
+                                    await page.wait_for_timeout(1000)
+                                    await page.locator("input[type='submit'], button[type='submit']").first.click()
+                                    await page.wait_for_timeout(3000)
+                                    continue
+                            else:
+                                print(f"❌ Abortando: No llegó el código IMAP para {MS_EMAIL}.")
+                                # Break para abortar o continuar bucle y que timeout falle? Break
+                                break
 
                     # 3. Input de Contraseña
                     pwd_input = page.locator("input[type='password'], input[name='passwd']")

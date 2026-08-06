@@ -294,6 +294,53 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                             await page.wait_for_timeout(random.randint(500, 1500))
                             await page.locator("input[type='submit']").click()
                             await page.wait_for_timeout(2000 + random.randint(500, 1500))
+                            
+                        # 1. Intentar hacer clic en "Use your password" si está visible
+                        use_pwd_btn = page.locator("text=/Use your password|Usar su contraseña/i")
+                        if await use_pwd_btn.count() > 0 and await use_pwd_btn.first.is_visible(timeout=1500):
+                            logger.info(f"[{email}] Clickeando 'Use your password'...")
+                            await use_pwd_btn.first.click()
+                            await page.wait_for_timeout(2000)
+                            
+                        # 2. Si definitivamente pide correo (Verify your email)
+                        verify_email_text = page.locator("text=/Verify your email|Comprobar su correo electrónico/i")
+                        if await verify_email_text.count() > 0 and await verify_email_text.first.is_visible(timeout=1500):
+                            logger.warning(f"[{email}] Microsoft obliga a usar código de correo.")
+                            proof_input = page.locator("input[type='email'], input[name='ProofConfirmation']")
+                            if await proof_input.count() > 0 and await proof_input.first.is_visible():
+                                from datetime import datetime
+                                import os
+                                start_time = datetime.now()
+                                recovery_email = os.getenv("GMAIL_RECOVERY_EMAIL")
+                                if not recovery_email:
+                                    logger.error(f"[{email}] ERROR FATAL: Falta GMAIL_RECOVERY_EMAIL en el .env")
+                                    return None
+                                await proof_input.first.fill(recovery_email)
+                                await page.wait_for_timeout(random.randint(500, 1000))
+                                await page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']").first.click()
+                                await page.wait_for_timeout(4000)
+                                
+                                # Extraer código IMAP
+                                import sys
+                                # Add the directory of the script to sys.path to allow importing gmail_reader
+                                sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+                                try:
+                                    from gmail_reader import wait_for_microsoft_code
+                                except ImportError:
+                                    from getcid_service.gmail_reader import wait_for_microsoft_code
+                                app_pwd = os.getenv("GMAIL_APP_PASSWORD")
+                                code = await wait_for_microsoft_code(recovery_email, app_pwd, start_time)
+                                if code:
+                                    code_input = page.locator("input[name='otc'], input[type='text'], input[type='tel']")
+                                    if await code_input.count() > 0 and await code_input.first.is_visible(timeout=2000):
+                                        await page.wait_for_timeout(random.randint(2000, 4000))
+                                        await code_input.first.fill(code)
+                                        await page.wait_for_timeout(800)
+                                        await page.locator("input[type='submit'], button[type='submit']").first.click()
+                                        await page.wait_for_timeout(3000)
+                                else:
+                                    logger.error(f"[{email}] Abortando: No llegó el código IMAP.")
+                                    return None
                         
                         if await page.locator("input[type='password']").is_visible(timeout=3000):
                             await page.locator("input[type='password']").fill(password)
@@ -301,6 +348,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                             await page.locator("input[type='submit']").click()
                             await page.wait_for_timeout(3000 + random.randint(500, 1500))
                             
+
                             if await page.locator("input[id='idBtn_Back']").is_visible(timeout=3000):
                                 await page.locator("input[id='idBtn_Back']").click()
                                 
