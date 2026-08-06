@@ -196,19 +196,23 @@ async def refresh_access_token() -> str:
                         try:
                             from telegram_alert import send_alert
                             import asyncio
+                            import httpx
                             
-                            reply_markup = {
-                                "inline_keyboard": [
-                                    [{"text": "🔄 Renovar Token Remoto", "callback_data": "start_renovation"}]
-                                ]
-                            }
+                            # Disparar la renovación automática en background sin esperar
+                            async def trigger_renovation():
+                                try:
+                                    async with httpx.AsyncClient(timeout=5) as http:
+                                        await http.post("http://localhost:8000/api/start-renovation")
+                                except:
+                                    pass
+                            
+                            asyncio.create_task(trigger_renovation())
                             
                             await send_alert(
                                 f"🔴 *REFRESH TOKEN EXPIRADO*\n\n"
                                 f"Error: `{error_code}`\n"
                                 f"Tipo: {token_type['label']}\n\n"
-                                f"El auto-renovador no puede continuar. Haz clic en el botón de abajo para renovar el token usando el navegador remoto de forma interactiva.",
-                                reply_markup=reply_markup
+                                f"⏳ El sistema ha iniciado la *auto-renovación silenciosa* en segundo plano. Te avisaré cuando termine."
                             )
                         except:
                             pass
