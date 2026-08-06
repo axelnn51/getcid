@@ -82,9 +82,18 @@ def _load_or_generate_key():
 private_key, jwk = _load_or_generate_key()
 
 def reload_dpop_key():
-    global private_key, jwk, canonical_jwk, jkt_hash, jkt
+    global private_key, jwk, public_jwk, canonical_jwk, jkt_hash, jkt
     private_key, jwk = _load_or_generate_key()
-    canonical_jwk = json.dumps(jwk, separators=(',', ':')).encode('utf-8')
+    
+    # Extract only public components for the header and thumbprint (RFC 7638)
+    if jwk.get("kty") == "RSA":
+        public_jwk = {k: jwk[k] for k in ["e", "kty", "n"] if k in jwk}
+    elif jwk.get("kty") == "EC":
+        public_jwk = {k: jwk[k] for k in ["crv", "kty", "x", "y"] if k in jwk}
+    else:
+        public_jwk = jwk.copy()
+        
+    canonical_jwk = json.dumps(public_jwk, sort_keys=True, separators=(',', ':')).encode('utf-8')
     jkt_hash = hashlib.sha256(canonical_jwk).digest()
     jkt = base64.urlsafe_b64encode(jkt_hash).decode('utf-8').rstrip('=')
 
@@ -92,8 +101,8 @@ def reload_dpop_key():
 reload_dpop_key()
 
 def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str = None) -> str:
-    alg = "RS256" if jwk.get("kty") == "RSA" else "ES256"
-    header = {"alg": alg, "typ": "dpop+jwt", "jwk": jwk}
+    alg = "RS256" if public_jwk.get("kty") == "RSA" else "ES256"
+    header = {"alg": alg, "typ": "dpop+jwt", "jwk": public_jwk}
     payload = {
         "htu": htu,
         "htm": htm,
