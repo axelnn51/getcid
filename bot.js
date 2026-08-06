@@ -944,14 +944,16 @@ function startBot() {
         { command: 'help', description: 'Ayuda sobre uso' },
         { command: 'cid', description: 'Obtener CID (uso: /cid [IID])' },
         { command: 'check', description: 'Revisar Key' },
-        { command: 'tokenstatus', description: 'Estado del token de Microsoft' },
-        { command: 'systemstatus', description: 'Ver contenedores y servicios' },
-        { command: 'deviceauth', description: 'Login interactivo (Solución CAPTCHA)' },
-        { command: 'settoken', description: 'Forzar Access Token manual' },
-        { command: 'setrefreshtoken', description: 'Cargar Refresh Token manual' },
-        { command: 'revert', description: 'Revertir a token anterior' },
-        { command: 'stats', description: 'Estadísticas de uso' },
-        { command: 'restart', description: 'Reiniciar el bot (Node.js)' }
+        { command: 'balance', description: 'Ver tus créditos' },
+        { command: 'addcredits', description: 'Admin: Agregar créditos' },
+        { command: 'tokenstatus', description: 'Admin: Estado del token de Microsoft' },
+        { command: 'systemstatus', description: 'Admin: Ver contenedores y servicios' },
+        { command: 'deviceauth', description: 'Admin: Login interactivo' },
+        { command: 'settoken', description: 'Admin: Forzar Access Token manual' },
+        { command: 'setrefreshtoken', description: 'Admin: Cargar Refresh Token' },
+        { command: 'revert', description: 'Admin: Revertir a token anterior' },
+        { command: 'stats', description: 'Admin: Estadísticas de uso' },
+        { command: 'restart', description: 'Admin: Reiniciar el bot' }
     ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
 
     // Comando oculto para reiniciar el bot
