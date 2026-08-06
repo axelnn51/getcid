@@ -13,7 +13,6 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 import jwt
 import re
-from scraper import extract_ms_token
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("GetCID_Core")
@@ -125,11 +124,22 @@ async def process_iid(iid: str, ms_session_token: str = None) -> Dict[str, str]:
         return {"success": False, "error": "El IID debe tener exactamente 54 o 63 dígitos numéricos."}
 
     if not ms_session_token:
-        logger.info("Token manual no provisto. Iniciando scraper para obtener token...")
-        ms_session_token = await extract_ms_token()
+        # Intentar cargar desde caché
+        try:
+            import json as _j
+            import os as _os
+            cache_file = "/app/persist/ms_token.json" if _os.path.exists("/app/persist") else "ms_token.json"
+            if _os.path.exists(cache_file):
+                with open(cache_file, 'r') as _f:
+                    data = _j.load(_f)
+                    if data.get('expires_at', 0) > time.time():
+                        ms_session_token = data.get('token')
+        except:
+            pass
+            
         if not ms_session_token:
-            return {"success": False, "error": "No se pudo obtener el token de sesión de Microsoft."}
-
+            logger.info("Token ausente o expirado en core.py. Retornando error para activar Nivel 1/2 en main.py.")
+            return {"success": False, "error": "Token expirado o ausente."}
     endpoint = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
     htu = "/api/productActivation/validateIID"
     htm = "POST"

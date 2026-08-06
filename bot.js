@@ -953,8 +953,35 @@ function startBot() {
         { command: 'setrefreshtoken', description: 'Admin: Cargar Refresh Token' },
         { command: 'revert', description: 'Admin: Revertir a token anterior' },
         { command: 'stats', description: 'Admin: Estadísticas de uso' },
+        { command: 'startrenovation', description: 'Admin: Forzar Auto-Renovación' },
         { command: 'restart', description: 'Admin: Reiniciar el bot' }
     ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
+
+    // Comandos para reanudar el sistema manualmente
+    const unpauseHandler = async (ctx) => {
+        if (!ADMIN_IDS.includes(String(ctx.from.id))) return;
+        try {
+            await ctx.reply('🔄 Eliminando estado de pausa y disparando Playwright...');
+            // 1. Quitar la pausa
+            await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paused: false })
+            });
+            // 2. Disparar renovación
+            const resp = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
+            const data = await resp.json();
+            if (data.success) {
+                await ctx.reply('✅ ' + data.message);
+            } else {
+                await ctx.reply('⚠️ Resultado: ' + data.error);
+            }
+        } catch (e) {
+            await ctx.reply('❌ Error comunicándose con la API: ' + e.message);
+        }
+    };
+    bot.command('startrenovation', unpauseHandler);
+    bot.command('unpause', unpauseHandler);
 
     // Comando oculto para reiniciar el bot
     bot.command('restart', async (ctx) => {
