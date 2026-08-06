@@ -258,6 +258,15 @@ async def run():
                             _state.token = token
                             _state.token_capture_time = time.time()
                             print(f"\n🎯 ¡ACCESS TOKEN CAPTURADO! ({len(token)} chars)")
+                            dpop_hdr = request.headers.get("dpop")
+                            if dpop_hdr:
+                                print(f"   🧠 Header DPoP interceptado: {dpop_hdr[:20]}...{dpop_hdr[-20:]}")
+                                try:
+                                    import jwt
+                                    unv = jwt.get_unverified_header(dpop_hdr)
+                                    print(f"   🧠 JWK del browser: {unv.get('jwk')}")
+                                except Exception as e:
+                                    print(f"   ⚠️ Error decodificando DPoP del browser: {e}")
 
             page.on("request", on_request)
 
