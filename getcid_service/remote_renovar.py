@@ -714,7 +714,6 @@ async def run():
                         proof_input = page.locator("input[type='email'], input[name='ProofConfirmation']")
                         if await proof_input.count() > 0 and await proof_input.first.is_visible():
                             from datetime import datetime
-                            import os
                             start_time = datetime.now()
                             recovery_email = os.getenv("GMAIL_RECOVERY_EMAIL")
                             if not recovery_email:
