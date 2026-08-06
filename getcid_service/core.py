@@ -82,12 +82,14 @@ def _load_or_generate_key():
 private_key, jwk = _load_or_generate_key()
 
 def reload_dpop_key():
-    global private_key, jwk
+    global private_key, jwk, canonical_jwk, jkt_hash, jkt
     private_key, jwk = _load_or_generate_key()
+    canonical_jwk = json.dumps(jwk, separators=(',', ':')).encode('utf-8')
+    jkt_hash = hashlib.sha256(canonical_jwk).digest()
+    jkt = base64.urlsafe_b64encode(jkt_hash).decode('utf-8').rstrip('=')
 
-canonical_jwk = json.dumps(jwk, separators=(',', ':')).encode('utf-8')
-jkt_hash = hashlib.sha256(canonical_jwk).digest()
-jkt = base64.urlsafe_b64encode(jkt_hash).decode('utf-8').rstrip('=')
+# Initialize globals immediately
+reload_dpop_key()
 
 def generate_dpop_token(htu: str, htm: str, nonce: str = None, access_token: str = None) -> str:
     alg = "RS256" if jwk.get("kty") == "RSA" else "ES256"
