@@ -200,10 +200,9 @@ async def lifespan(app: FastAPI):
                 except Exception:
                     pass
                 try:
-                    import httpx as _httpx
-                    async with _httpx.AsyncClient(timeout=10) as client:
-                        resp = await client.post("http://localhost:8000/api/start-renovation")
-                        _logger.info(f"🚀 [{_peru_time_str()}] Playwright lanzado en boot (status {resp.status_code}).")
+                    # Llamar directamente a la función en lugar de hacer HTTP a localhost (que falla al arrancar)
+                    await start_renovation()
+                    _logger.info(f"🚀 [{_peru_time_str()}] Playwright lanzado en boot directamente.")
                 except Exception as e:
                     _logger.error(f"❌ [{_peru_time_str()}] Error lanzando Playwright en boot: {e}")
 
