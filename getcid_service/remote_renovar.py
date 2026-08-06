@@ -219,11 +219,8 @@ async def run():
                 stealth = Stealth()
                 await stealth.apply_stealth_async(page)
                 
-                # INJECT: Disable Web Workers so MSAL falls back to main thread crypto
+                # INJECT: Intercept crypto.subtle.generateKey just in case it runs in main thread
                 await context.add_init_script("""
-                    window.Worker = function() {
-                        throw new Error("Web Workers are disabled to force main thread execution");
-                    };
                     window.myExtractedKeys = [];
                     const originalGenerateKey = window.crypto.subtle.generateKey;
                     window.crypto.subtle.generateKey = async function(algorithm, extractable, keyUsages) {
