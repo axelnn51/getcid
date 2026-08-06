@@ -915,6 +915,8 @@ async def run():
                     dpop_file = os.path.join(base_dir, "ms_dpop_key.json")
                     with open(dpop_file, "w") as f:
                         f.write(jwk)
+                    import core
+                    core.reload_dpop_key()
                 except Exception as e:
                     print(f"   ⚠️ Error guardando DPoP key: {e}")
             else:

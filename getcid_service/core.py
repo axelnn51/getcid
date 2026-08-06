@@ -25,6 +25,8 @@ def _load_or_generate_key():
     key_path = "/app/persist/ms_dpop_key.json"
     if not os.path.exists(key_path):
         key_path = "ms_dpop_key.json"
+        if not os.path.exists(key_path):
+            key_path = os.path.join(os.path.dirname(__file__), "ms_dpop_key.json")
         
     if os.path.exists(key_path):
         try:
@@ -78,6 +80,10 @@ def _load_or_generate_key():
     return pk, gen_jwk
 
 private_key, jwk = _load_or_generate_key()
+
+def reload_dpop_key():
+    global private_key, jwk
+    private_key, jwk = _load_or_generate_key()
 
 canonical_jwk = json.dumps(jwk, separators=(',', ':')).encode('utf-8')
 jkt_hash = hashlib.sha256(canonical_jwk).digest()

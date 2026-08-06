@@ -419,9 +419,11 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
                 dpop_file = "/app/persist/ms_dpop_key.json" if os.path.exists("/app/persist") else "ms_dpop_key.json"
                 with open(dpop_file, "w") as f:
                     f.write(jwk)
+                import core
+                core.reload_dpop_key()
                 logger.info("✅ DPoP key guardado desde scraper.")
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"⚠️ Error guardando DPoP key desde scraper: {e}")
         await browser.close()
         return captured_token
 
