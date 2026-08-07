@@ -196,12 +196,12 @@ async def refresh_access_token() -> str:
                         try:
                             from telegram_alert import send_alert
                             import asyncio
-                            import httpx
+                            import httpx as _httpx
                             
                             # Disparar la renovación automática en background sin esperar
                             async def trigger_renovation():
                                 try:
-                                    async with httpx.AsyncClient(timeout=5) as http:
+                                    async with _httpx.AsyncClient(timeout=5) as http:
                                         await http.post("http://localhost:8000/api/start-renovation")
                                 except:
                                     pass
