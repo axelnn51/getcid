@@ -51,7 +51,8 @@ class AuthManager:
         # Intentar extraer del network captures si existe
             if "tokens_network" in data and "refresh_token" in data["tokens_network"]:
                 self.refresh_token = data["tokens_network"]["refresh_token"]
-                logger.info("Refresh token cargado desde tokens_network.")
+                self.access_token = data["tokens_network"].get("access_token")
+                logger.info("Refresh y Access token cargados desde tokens_network.")
             else:
                 # Extraer desde storage_state (Cookies o LocalStorage)
                 # Esta lógica dependerá de exactamente dónde Microsoft guarda el token.
