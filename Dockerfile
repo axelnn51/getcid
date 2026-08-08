@@ -1,24 +1,23 @@
-FROM node:20-slim
-
-# Instalar dependencias del sistema para sharp y better-sqlite3
-RUN apt-get update && apt-get install -y \
-    python3 \
-    make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copiar package.json primero para cachear las dependencias
-COPY package*.json ./
-RUN npm ci --production
+# Instalar solo dependencias del sistema necesarias
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copiar el resto del código
-COPY . .
+# Copiar requirements y instalar dependencias Python
+# Excluimos playwright ya que no es necesario en el backend "Zero-Browser"
+COPY requirements.txt .
+RUN grep -v "playwright" requirements.txt > req_backend.txt && \
+    pip install --no-cache-dir -r req_backend.txt
 
-# Crear directorios necesarios
-RUN mkdir -p uploads data
+# Copiar el código fuente
+COPY core.py auth_http.py main.py ./
 
-EXPOSE 3000
+# Exponer el puerto
+EXPOSE 8000
 
-CMD ["node", "index.js"]
+# Comando para ejecutar la aplicación
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,76 +1,41 @@
+version: '3.8'
+
 services:
-  getcid:
+  getcid_backend:
     build: .
-    container_name: getcid
-    restart: unless-stopped
+    container_name: getcid_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mapeamos el archivo de sesión para que el demonio lo lea y lo modifique
+      - ./session_master.json:/app/session_master.json
+      # Mapeamos la carpeta de logs para persistencia
+      - ./logs:/app/logs
+    environment:
+      - TZ=America/Lima # Configurar tu zona horaria local
+
+  getcid_frontend:
+    build: ./frontend
+    container_name: getcid_frontend
+    restart: always
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/app/data
+      - ./frontend/data:/app/data
+      - ./frontend/uploads:/app/uploads
+      # Mapeamos la carpeta de logs compartida
+      - ./logs:/app/logs
+    command: sh -c "mkdir -p /app/logs && node index.js >> /app/logs/frontend.log 2>&1"
     environment:
       - NODE_ENV=production
-      - PORT=${PORT:-3000}
+      - PORT=3000
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - WC_URL=${WC_URL}
       - WC_CONSUMER_KEY=${WC_CONSUMER_KEY}
       - WC_CONSUMER_SECRET=${WC_CONSUMER_SECRET}
-      - GETCID_SERVICE_URL=http://getcid_python:8000
-      - PID_CHECKER_URL=http://pid_checker_api:8000
+      - GETCID_SERVICE_URL=http://getcid_backend:8000
     depends_on:
-      getcid_python:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-  getcid_python:
-    build: ./getcid_service
-    container_name: getcid_python
-    restart: unless-stopped
-    init: true  # Usa tini como PID 1 → mata procesos zombie de Chrome/Playwright automáticamente
-    volumes:
-      - ./python_data:/app/persist
-    environment:
-      - MS_ACCOUNTS=${MS_ACCOUNTS}
-      - MS_EMAIL=${MS_EMAIL}
-      - MS_PASSWORD=${MS_PASSWORD}
-      - FORCE_HEADLESS=true
-      - IS_SERVER=true
-      - BOT_TOKEN=${BOT_TOKEN}
-      - ADMIN_IDS=${ADMIN_IDS}
-      - NOCAPTCHAAI_API_KEY=${NOCAPTCHAAI_API_KEY}
-      - AI_SOLVER_ENABLED=${AI_SOLVER_ENABLED}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GETCID_SERVER=http://localhost:8000
-      - GMAIL_RECOVERY_EMAIL=${GMAIL_RECOVERY_EMAIL}
-      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
-      - CAPSOLVER_API_KEY=${CAPSOLVER_API_KEY}
-      - CAPMONSTER_API_KEY=${CAPMONSTER_API_KEY}
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s  # 2 min: boot validator puede tardar con Playwright
-
-  pid_checker_api:
-    build: ./pid_checker_api
-    container_name: pid_checker_api
-    restart: unless-stopped
-    ports:
-      - "8085:8000"
-    environment:
-      - APP_ENV=production
-      - RATE_LIMIT_PER_MINUTE=10
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
+      - getcid_backend
