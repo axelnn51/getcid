@@ -5,8 +5,6 @@ services:
     build: .
     container_name: getcid_backend
     restart: always
-    ports:
-      - "8000:8000"
     volumes:
       # Mapeamos el archivo de sesión para que el demonio lo lea y lo modifique
       - ./session_master.json:/app/session_master.json
