@@ -49,18 +49,18 @@ class AuthManager:
             return
             
         # Intentar extraer del network captures si existe
-            if "tokens_network" in data and "refresh_token" in data["tokens_network"]:
-                self.refresh_token = data["tokens_network"]["refresh_token"]
-                self.access_token = data["tokens_network"].get("access_token")
-                logger.info("Refresh y Access token cargados desde tokens_network.")
-            else:
-                # Extraer desde storage_state (Cookies o LocalStorage)
-                # Esta lógica dependerá de exactamente dónde Microsoft guarda el token.
-                # Normalmente está en el sessionStorage o localStorage.
-                logger.info("Analizando storage_state en busca de tokens...")
-                # TODO: Implementar extracción específica desde cookies/localStorage si es necesario.
-                # Por ahora asumimos que el script de extracción logra capturarlo en network.
-                pass
+        if "tokens_network" in data and "refresh_token" in data["tokens_network"]:
+            self.refresh_token = data["tokens_network"]["refresh_token"]
+            self.access_token = data["tokens_network"].get("access_token")
+            logger.info("Refresh y Access token cargados desde tokens_network.")
+        else:
+            # Extraer desde storage_state (Cookies o LocalStorage)
+            # Esta lógica dependerá de exactamente dónde Microsoft guarda el token.
+            # Normalmente está en el sessionStorage o localStorage.
+            logger.info("Analizando storage_state en busca de tokens...")
+            # TODO: Implementar extracción específica desde cookies/localStorage si es necesario.
+            # Por ahora asumimos que el script de extracción logra capturarlo en network.
+            pass
 
     async def refresh_access_token(self):
         if not self.refresh_token:

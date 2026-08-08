@@ -54,9 +54,13 @@ async def get_status():
 @app.post("/check_pid")
 async def check_pid(request: PIDRequest):
     if not auth_manager.access_token:
-        # Modo simulación o inicialización
-        logger.warning("No hay token de acceso válido. Usando modo simulación temporal.")
-        auth_manager.access_token = "SIMULATED_TOKEN_FOR_TESTING"
+        if auth_manager.refresh_token:
+            logger.info("No hay access_token, pero hay refresh_token. Solicitando uno nuevo a Microsoft...")
+            success = await auth_manager.refresh_access_token()
+            if not success:
+                raise HTTPException(status_code=401, detail="Fallo al renovar el token de acceso. Suba un nuevo session_master.json válido.")
+        else:
+            raise HTTPException(status_code=401, detail="Sistema no inicializado. Faltan tokens.")
 
     pid = request.pid.replace(" ", "").replace("-", "")
     
@@ -66,14 +70,6 @@ async def check_pid(request: PIDRequest):
 
     if len(pid) not in [54, 63] or not pid.isdigit():
         raise HTTPException(status_code=400, detail="El IID debe tener exactamente 54 o 63 dígitos numéricos.")
-
-    if auth_manager.access_token == "SIMULATED_TOKEN_FOR_TESTING":
-        return {
-            "success": True, 
-            "message": "Petición HTTP pura simulada correctamente",
-            "pid_received": pid,
-            "cid": "1234567-1234567-1234567-1234567-1234567-1234567-1234567-1234567"
-        }
 
     MICROSOFT_CID_ENDPOINT = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
     htu = "/api/productActivation/validateIID"
