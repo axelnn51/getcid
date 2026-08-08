@@ -319,6 +319,7 @@ async def run():
             
             last_action_time = time.time()
             loading_stuck_count = 0
+            action_counts = {}
 
             while time.time() - start_wait < max_wait:
                 elapsed = int(time.time() - start_wait)
@@ -771,17 +772,30 @@ async def run():
                     send_code_btn = page.locator("div[role='button'], a, button, div").filter(has_text=re.compile("Send a code to|Enviar un código a|Enviar código a", re.IGNORECASE))
                     if await send_code_btn.count() > 0:
                         if await send_code_btn.first.is_visible(timeout=100):
-                            print("🔄 Microsoft deshabilitó la contraseña. Clickeando en 'Enviar un código a...'")
-                            await send_code_btn.first.click()
-                            await page.wait_for_timeout(1000)
+                            action_counts["send_code"] = action_counts.get("send_code", 0) + 1
+                            if action_counts["send_code"] > 5:
+                                print("🔴 Bucle infinito detectado en 'Enviar código'. Forzando recarga...")
+                                await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
+                                await page.wait_for_timeout(3000)
+                                action_counts["send_code"] = 0
+                                last_action_time = time.time()
+                                continue
+                                
+                            print(f"🔄 Microsoft deshabilitó la contraseña. Clickeando en 'Enviar un código a...' (Intento {action_counts['send_code']})")
+                            await send_code_btn.first.click(force=True)
+                            await page.wait_for_timeout(1500)
                             # Después de seleccionar, podría haber un botón de Siguiente o Confirmar
                             next_btn = page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']")
                             if await next_btn.count() > 0 and await next_btn.first.is_visible(timeout=1000):
-                                await next_btn.first.click()
+                                await next_btn.first.click(force=True)
                                 print("   ✅ Botón Siguiente/Enviar clickeado.")
                             await page.wait_for_timeout(2000)
                             last_action_time = time.time()
                             continue
+                        else:
+                            action_counts["send_code"] = 0
+                    else:
+                        action_counts["send_code"] = 0
 
                     # 2.6 Confirmar correo completo (ProofConfirmation)
                     proof_input = page.locator("input[type='email'], input[name='ProofConfirmation']")
@@ -880,12 +894,15 @@ async def run():
                 if elapsed % 10 == 0 and elapsed > 0:
                     print(f"  ⏳ Esperando... ({elapsed}s)")
                 
-                    # ─── DEBUG: Enviar screenshot a Telegram si está atascado por mucho tiempo ───
-                    if elapsed % 30 == 0:
-                        try:
-                            print(f"  📸 Enviando screenshot de debug a Telegram...")
-                            await page.screenshot(path="debug_stuck.png")
-                            async with httpx.AsyncClient() as http:
+                # ─── DEBUG: Enviar screenshot a Telegram si está atascado por mucho tiempo ───
+                # Usar una variable para trackear cuándo enviamos el último debug
+                last_debug_sent = getattr(_state, "last_debug_sent", 0)
+                if elapsed - last_debug_sent >= 30 and elapsed >= 30:
+                    _state.last_debug_sent = elapsed
+                    try:
+                        print(f"  📸 Enviando screenshot de debug a Telegram...")
+                        await page.screenshot(path="debug_stuck.png")
+                        async with httpx.AsyncClient() as http:
                                 with open("debug_stuck.png", "rb") as f:
                                     await http.post(
                                         f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
