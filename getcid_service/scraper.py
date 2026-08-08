@@ -89,7 +89,7 @@ async def attempt_login_for_account(p, account: dict, is_first_account: bool) ->
         
     context = await browser.new_context(
         **context_options,
-        user_agent=CAPMONSTER_USER_AGENT
+        viewport={"width": 1280, "height": 900}
     )
     page = await context.new_page()
     
