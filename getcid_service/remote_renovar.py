@@ -913,8 +913,8 @@ async def run():
                                         },
                                         files={"photo": f}
                                     )
-                        except Exception as e:
-                            print(f"  ⚠️ Error enviando debug screenshot: {e}")
+                    except Exception as e:
+                        print(f"  ⚠️ Error enviando debug screenshot: {e}")
 
                 # Esperar un poco antes de volver a verificar el DOM
                 await page.wait_for_timeout(1000)
