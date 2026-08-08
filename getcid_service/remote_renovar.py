@@ -518,7 +518,7 @@ async def run():
                     loading_detected = False
                     for _frame in page.frames:
                         try:
-                            _loading = _frame.get_by_text(re.compile("Loading\.\.\. Please wait|Cargando", re.IGNORECASE))
+                            _loading = _frame.get_by_text(re.compile("^Loading", re.IGNORECASE))
                             if await _loading.count() > 0 and await _loading.first.is_visible(timeout=100):
                                 loading_detected = True
                                 break
@@ -775,6 +775,9 @@ async def run():
                             action_counts["send_code"] = action_counts.get("send_code", 0) + 1
                             if action_counts["send_code"] > 5:
                                 print("🔴 Bucle infinito detectado en 'Enviar código'. Forzando recarga...")
+                                html_content = await page.content()
+                                with open("debug_loop.html", "w", encoding="utf-8") as f:
+                                    f.write(html_content)
                                 await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
                                 await page.wait_for_timeout(3000)
                                 action_counts["send_code"] = 0
@@ -782,14 +785,47 @@ async def run():
                                 continue
                                 
                             print(f"🔄 Microsoft deshabilitó la contraseña. Clickeando en 'Enviar un código a...' (Intento {action_counts['send_code']})")
-                            await send_code_btn.first.click(force=True)
-                            await page.wait_for_timeout(1500)
-                            # Después de seleccionar, podría haber un botón de Siguiente o Confirmar
-                            next_btn = page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']")
-                            if await next_btn.count() > 0 and await next_btn.first.is_visible(timeout=1000):
-                                await next_btn.first.click(force=True)
-                                print("   ✅ Botón Siguiente/Enviar clickeado.")
-                            await page.wait_for_timeout(2000)
+                            try:
+                                # Microsoft suele usar div con role="radio" o input[type="radio"]
+                                radios = page.locator("input[type='radio'], [role='radio']")
+                                if await radios.count() > 0:
+                                    await radios.first.click(force=True)
+                                else:
+                                    # Fallback
+                                    await send_code_btn.first.click(force=True)
+                            except:
+                                pass
+                            
+                            await page.wait_for_timeout(1000)
+                            
+                            # Buscar el botón 'Siguiente' / 'Get code' correctamente
+                            next_btn = page.locator("button, input").filter(has_text=re.compile("Next|Siguiente|Get code|Obtener código|Continuar", re.IGNORECASE))
+                            if await next_btn.count() == 0:
+                                next_btn = page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']")
+                                
+                            if await next_btn.count() > 0:
+                                error_msg = page.locator("#idTd_SAOTCC_ErrorMsg, #iCodeError, .ext-error, #error, .alert-error, [role='alert']")
+                                if await error_msg.count() > 0 and await error_msg.first.is_visible(timeout=100):
+                                    print("🔴 Error visible en pantalla. Deteniendo clic a Siguiente.")
+                                    action_counts["send_code"] = action_counts.get("send_code", 0) + 1
+                                    if action_counts["send_code"] > 5:
+                                        print("🔴 Bucle infinito detectado en botón Siguiente. Forzando recarga...")
+                                        await page.reload()
+                                        await page.wait_for_timeout(3000)
+                                        action_counts["send_code"] = 0
+                                    continue
+                                
+                                try:
+                                    await next_btn.first.click(force=True)
+                                    print("   ✅ Botón Siguiente/Enviar clickeado.")
+                                except: pass
+                                
+                            # Presionar enter por si acaso el botón no se pudo clickear
+                            try:
+                                await page.keyboard.press("Enter")
+                            except: pass
+                            
+                            await page.wait_for_timeout(3000)
                             last_action_time = time.time()
                             continue
                         else:
@@ -815,7 +851,7 @@ async def run():
                         continue
 
                     # 2.7 Pantalla de ingresar código (Enter code)
-                    code_input = page.locator("input[name='otc']")
+                    code_input = page.locator("input[name='otc'], input[id='idTxtBx_SAOTCC_OTC'], input[type='tel'], input[name='iCode']")
                     if await code_input.count() > 0 and await code_input.first.is_visible(timeout=100):
                         print("🔑 Microsoft está pidiendo el código (Enter code)...")
                         from datetime import datetime
@@ -826,6 +862,7 @@ async def run():
                         if not recovery_email or not app_pwd:
                             print(f"❌ ERROR: Faltan GMAIL_RECOVERY_EMAIL o GMAIL_APP_PASSWORD en el .env")
                             break
+
                         
                         # Extraer código IMAP
                         import sys
