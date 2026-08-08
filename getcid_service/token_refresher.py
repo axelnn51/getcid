@@ -120,7 +120,9 @@ async def refresh_access_token() -> str:
                 "client_id": client_id,
                 "grant_type": "refresh_token",
                 "refresh_token": refresh_token,
-                "scope": scopes or "openid profile email"
+                "scope": scopes or "openid profile email",
+                "token_type": "pop",
+                "request_type": "pop"
             }
 
             # Microsoft REQUIERE redirect_uri para clientes SPA
