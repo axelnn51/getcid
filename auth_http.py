@@ -37,13 +37,18 @@ class AuthManager:
         self._load_session()
 
     def _load_session(self):
-        if not os.path.exists(SESSION_FILE):
-            logger.warning("No se encontró session_master.json. Esperando a que el Extractor Local lo genere...")
+        if not os.path.isfile(SESSION_FILE):
+            logger.warning("No se encontró session_master.json (o está montado como directorio). Esperando a que el Extractor Local lo genere...")
             return
 
-        with open(SESSION_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            # Intentar extraer del network captures si existe
+        try:
+            with open(SESSION_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as e:
+            logger.error(f"Error al leer session_master.json: {e}")
+            return
+            
+        # Intentar extraer del network captures si existe
             if "tokens_network" in data and "refresh_token" in data["tokens_network"]:
                 self.refresh_token = data["tokens_network"]["refresh_token"]
                 logger.info("Refresh token cargado desde tokens_network.")
