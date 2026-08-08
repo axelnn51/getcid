@@ -39,12 +39,15 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
             img = Image.open(image_path)
             
             prompt = (
-                "Eres un experto en resolver CAPTCHAs lógicos de Arkose Labs.\n"
-                "TIPO 1 (Camino): Cuenta detenidamente cuántos clics a la derecha se necesitan para que el tren azul avance paso a paso hasta llegar al nodo que contiene el icono objetivo de la izquierda. Verifica la secuencia visualmente.\n"
-                "TIPO 2 (Rotación): Cuenta cuántos clics a la derecha se necesitan para alinear el objeto de la derecha con la dirección de los dedos de la mano izquierda.\n\n"
-                "PIENSA DETENIDAMENTE y revisa tu cuenta. Tu salida DEBE ser estrictamente JSON válido, con las claves 'reasoning' (un string breve explicando tu conteo paso a paso a lo largo de la vía) y 'clicks' (un entero entre 0 y 5).\n"
-                "Ejemplo:\n"
-                '{"reasoning": "El tren azul está en la Taza. El objetivo es el Diamante. El camino visual es: Taza (0) -> Engranaje (1) -> Cadena (2) -> Diamante (3). Se requieren 3 clics.", "clicks": 3}'
+                "Eres un experto visual. Resuelve este CAPTCHA de Arkose Labs.\n"
+                "La imagen tiene dos partes: una imagen izquierda y una imagen derecha.\n"
+                "1. IDENTIFICA el ICONO OBJETIVO en la imagen de la izquierda (ej. una mano, estrella, hongo, etc.). ¡No te confundas con los iconos de la derecha!\n"
+                "2. UBICA el tren azul en el circuito de vías de la derecha.\n"
+                "3. CUENTA cuántos avances HACIA LA DERECHA (nodo por nodo) se necesitan para mover el tren hasta el ICONO OBJETIVO.\n"
+                "REGLA DE ORO: El tren NUNCA empieza en el nodo objetivo. El número de clics NUNCA ES CERO (0). Si crees que es 0, miraste mal el icono de la izquierda. Vuelve a mirar.\n\n"
+                "Tu salida DEBE ser estrictamente JSON válido con las claves:\n"
+                "- 'reasoning': Explica qué icono ves a la izquierda, en qué icono está el tren, y tu conteo.\n"
+                "- 'clicks': Un número entero entre 1 y 5.\n"
             )
             
             # Usar response_mime_type para forzar JSON
@@ -71,8 +74,11 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
                 data = json.loads(text_res)
                 logger.info(f"🧠 Razonamiento IA: {data.get('reasoning', 'N/A')}")
                 clicks = int(data.get('clicks', -1))
-                if 0 <= clicks <= 5:
+                if 1 <= clicks <= 5:
                     return clicks
+                elif clicks == 0:
+                    logger.warning(f"⚠️ La IA devolvió 0 (imposible). Adivinando entre 1 y 5...")
+                    return random.randint(1, 5)
                 else:
                     logger.warning(f"⚠️ Clics fuera de rango: {clicks}")
             except json.JSONDecodeError:
