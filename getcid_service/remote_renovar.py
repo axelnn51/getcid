@@ -77,8 +77,20 @@ def update_winrate(success):
 
 # ─── Configuración ───
 # Datos de la cuenta (se leen del .env)
-MS_EMAIL = os.getenv("MS_EMAIL") or "axelnn52@outlook.com"
-MS_PASSWORD = os.getenv("MS_PASSWORD") or "@Dotita123"
+def get_primary_account():
+    # Intentar obtener de MS_ACCOUNTS (formato email:password,...)
+    ms_accounts_env = os.getenv("MS_ACCOUNTS", "")
+    if ms_accounts_env:
+        first_acc = ms_accounts_env.split(",")[0]
+        if ":" in first_acc:
+            return first_acc.split(":", 1)
+    
+    # Fallback a MS_EMAIL / MS_PASSWORD individual
+    return os.getenv("MS_EMAIL", "axelnn52@outlook.com"), os.getenv("MS_PASSWORD", "@Dotita123")
+
+MS_EMAIL, MS_PASSWORD = get_primary_account()
+MS_EMAIL = MS_EMAIL.strip()
+MS_PASSWORD = MS_PASSWORD.strip()
 
 # URL del servidor Docker (cambiar si es diferente)
 GETCID_SERVER = os.getenv("GETCID_SERVER") or "http://localhost:8000"

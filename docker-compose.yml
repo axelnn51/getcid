@@ -47,6 +47,10 @@ services:
       - AI_SOLVER_ENABLED=${AI_SOLVER_ENABLED}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GETCID_SERVER=http://localhost:8000
+      - GMAIL_RECOVERY_EMAIL=${GMAIL_RECOVERY_EMAIL}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
+      - CAPSOLVER_API_KEY=${CAPSOLVER_API_KEY}
+      - CAPMONSTER_API_KEY=${CAPMONSTER_API_KEY}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)"]
       interval: 30s
