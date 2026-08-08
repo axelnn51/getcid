@@ -58,40 +58,92 @@ async def check_pid(request: PIDRequest):
         logger.warning("No hay token de acceso válido. Usando modo simulación temporal.")
         auth_manager.access_token = "SIMULATED_TOKEN_FOR_TESTING"
 
-    pid = request.pid
+    pid = request.pid.replace(" ", "").replace("-", "")
     
-    # Aquí va la URL real de Microsoft para validar el PID y obtener el CID.
-    # Dado que es un secreto/restringido, se deja el template exacto para inyectar el DPoP.
-    MICROSOFT_CID_ENDPOINT = "https://api.microsoft.com/cid/v1/get" # Reemplazar por la URL real
-    
-    # Generar la prueba DPoP específicamente para esta petición (HTM y HTU deben coincidir exactos)
-    dpop_proof = auth_manager.dpop_engine.generate_dpop_proof("POST", MICROSOFT_CID_ENDPOINT)
-    
-    headers = {
-        "Authorization": f"DPoP {auth_manager.access_token}",
-        "DPoP": dpop_proof,
-        "Content-Type": "application/json"
-    }
+    import time
+    import uuid
+    import re
+
+    if len(pid) not in [54, 63] or not pid.isdigit():
+        raise HTTPException(status_code=400, detail="El IID debe tener exactamente 54 o 63 dígitos numéricos.")
+
+    if auth_manager.access_token == "SIMULATED_TOKEN_FOR_TESTING":
+        return {
+            "success": True, 
+            "message": "Petición HTTP pura simulada correctamente",
+            "pid_received": pid,
+            "cid": "1234567-1234567-1234567-1234567-1234567-1234567-1234567-1234567"
+        }
+
+    MICROSOFT_CID_ENDPOINT = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
+    htu = "/api/productActivation/validateIID"
+    htm = "POST"
+    sid = f"app_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
+    digits = len(pid) // 9
     
     payload = {
-        "pid": pid
+        "IID": pid,
+        "ProductType": "windows",
+        "productGroup": "Windows",
+        "productName": "Windows 11",
+        "numberOfDigits": digits,
+        "Country": "CHN",
+        "Region": "APAC",
+        "InstalledDevices": 1,
+        "OverrideStatusCode": "MUL",
+        "InitialReasonCode": "45164"
     }
     
-    async with httpx.AsyncClient() as client:
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {auth_manager.access_token}",
+        "x-session-id": sid,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Origin": "https://visualsupport.microsoft.com",
+        "Referer": "https://visualsupport.microsoft.com/"
+    }
+    
+    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         try:
-            # Descomentar e implementar cuando se configure el endpoint real
-            # response = await client.post(MICROSOFT_CID_ENDPOINT, headers=headers, json=payload)
-            # return response.json()
+            # 1. Generar DPoP inicial
+            dpop_proof = auth_manager.dpop_engine.generate_dpop_proof(htm, htu) # Note: core.py used htu, htm, but my DPoP engine expects htm, htu?
+            req_headers = headers.copy()
+            req_headers["DPoP"] = dpop_proof
             
-            # Simulando respuesta para el template
-            return {
-                "success": True, 
-                "message": "Petición HTTP pura simulada correctamente",
-                "pid_received": pid,
-                "cid": "1234567-1234567-1234567-1234567-1234567-1234567-1234567-1234567"
-            }
+            logger.info(f"[{pid}] Iniciando desafío DPoP con Microsoft API...")
+            response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
+            
+            # 2. Manejar Nonce si Microsoft lo pide
+            if "dpop-nonce" in response.headers or "DPoP-Nonce" in response.headers:
+                nonce = response.headers.get("dpop-nonce", response.headers.get("DPoP-Nonce"))
+                logger.info(f"[{pid}] Nonce detectado, reintentando con firma completa...")
+                req_headers["DPoP"] = auth_manager.dpop_engine.generate_dpop_proof(htm, htu, nonce=nonce)
+                response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
+                
+            if response.status_code in (401, 403):
+                logger.error(f"[{pid}] Token expirado o Denegado (401/403). Forzando expiración.")
+                auth_manager.access_token = None # Forzar que el demonio lo renueve
+                raise HTTPException(status_code=401, detail="Token expirado o Denegado en Microsoft.")
+            elif response.status_code != 200:
+                logger.error(f"Error de Microsoft: {response.text}")
+                raise HTTPException(status_code=500, detail=f"Error {response.status_code} en Microsoft")
+                
+            data = response.json()
+            cid_value = data.get("cid") or data.get("CID") or data.get("confirmationId")
+            
+            if cid_value and isinstance(cid_value, str) and len(cid_value) >= 48:
+                formatted_cid = "-".join(re.findall(r'.{6}', cid_value)) if "-" not in cid_value else cid_value
+                return {"success": True, "cid": formatted_cid, "raw_cid": cid_value}
+                
+            if data.get("validChecksum") is False:
+                return {"success": False, "message": "IID con checksum inválido."}
+                
+            return {"success": False, "message": f"Respuesta inesperada de MS: {data}"}
+            
         except Exception as e:
-             raise HTTPException(status_code=500, detail=str(e))
+            logger.error(f"Error en API de Microsoft: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

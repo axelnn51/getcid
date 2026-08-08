@@ -29,7 +29,7 @@ class DPoPEngine:
     def _base64url_encode(self, data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b'=').decode('utf-8')
 
-    def generate_dpop_proof(self, method: str, url: str) -> str:
+    def generate_dpop_proof(self, method: str, url: str, nonce: str = None) -> str:
         """
         Genera el token DPoP requerido por Microsoft para las peticiones HTTP.
         """
@@ -47,6 +47,10 @@ class DPoPEngine:
             "htu": url,
             "iat": int(time.time())
         }
+        
+        if nonce:
+            payload["nonce"] = nonce
+
         
         # PyJWT maneja la firma usando la clave privada de cryptography
         # Solo necesitamos pasar la clave en formato PEM
