@@ -1166,7 +1166,7 @@ async def safe_run():
     """Wrapper anti-caídas: ejecuta run() con timeout global de 5 minutos.
     Si Playwright se queda colgado (CAPTCHA, página lenta, etc.), se mata forzosamente.
     """
-    MAX_RUN_TIMEOUT = 300  # 5 minutos máximo por ejecución completa
+    MAX_RUN_TIMEOUT = 900  # 15 minutos máximo por ejecución completa para dar tiempo a la IA
     
     try:
         result = await asyncio.wait_for(run(), timeout=MAX_RUN_TIMEOUT)

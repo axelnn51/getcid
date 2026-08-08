@@ -30,21 +30,21 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
     for idx, api_key in enumerate(api_keys):
         try:
             client = genai.Client(api_key=api_key)
-            # Upgrade a gemini-3.6-flash
-            model_id = 'gemini-3.6-flash'
+            # Primero intentamos con el modelo Pro para mejor razonamiento espacial
+            model_id = 'gemini-3.6-pro'
             
             if idx == 0:
-                logger.info(f"🤖 IA: Analizando con {model_id} (temp={temperature}, key={idx+1}/{len(api_keys)})...")
+                logger.info(f"🧠 IA: Analizando con {model_id} (temp={temperature}, key={idx+1}/{len(api_keys)})...")
             
             img = Image.open(image_path)
             
             prompt = (
                 "Eres un experto en resolver CAPTCHAs lógicos de Arkose Labs.\n"
-                "TIPO 1 (Camino): Cuenta cuántos clics a la derecha se necesitan para que el tren azul avance hasta el icono objetivo de la izquierda.\n"
-                "TIPO 2 (Rotación): Cuenta cuántos clics a la derecha se necesitan para alinear el objeto de la derecha con la mano de la izquierda.\n\n"
-                "PIENSA DETENIDAMENTE. Tu salida DEBE ser estrictamente JSON válido, con las claves 'reasoning' (un string breve explicando tu conteo paso a paso) y 'clicks' (un entero entre 0 y 5).\n"
+                "TIPO 1 (Camino): Cuenta detenidamente cuántos clics a la derecha se necesitan para que el tren azul avance paso a paso hasta llegar al nodo que contiene el icono objetivo de la izquierda. Verifica la secuencia visualmente.\n"
+                "TIPO 2 (Rotación): Cuenta cuántos clics a la derecha se necesitan para alinear el objeto de la derecha con la dirección de los dedos de la mano izquierda.\n\n"
+                "PIENSA DETENIDAMENTE y revisa tu cuenta. Tu salida DEBE ser estrictamente JSON válido, con las claves 'reasoning' (un string breve explicando tu conteo paso a paso a lo largo de la vía) y 'clicks' (un entero entre 0 y 5).\n"
                 "Ejemplo:\n"
-                '{"reasoning": "El tren está en la taza. El objetivo es el diamante. El camino es Taza -> Engranaje -> Cadenas -> Diamante. Son 3 saltos.", "clicks": 3}'
+                '{"reasoning": "El tren azul está en la Taza. El objetivo es el Diamante. El camino visual es: Taza (0) -> Engranaje (1) -> Cadena (2) -> Diamante (3). Se requieren 3 clics.", "clicks": 3}'
             )
             
             # Usar response_mime_type para forzar JSON
@@ -86,20 +86,20 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
                 logger.warning(f"⚠️ API Key {idx+1}/{len(api_keys)} falló por cuota. Probando siguiente...")
                 continue
             else:
-                # Tratar de hacer fallback a 2.5 flash si 3.6 falla por modelo no encontrado u otro error
+                # Tratar de hacer fallback a gemini-3.6-flash o 2.5-flash si 3.6-pro falla por modelo no encontrado
                 if "not found" in error_msg.lower() or "invalid model" in error_msg.lower():
-                    logger.warning("⚠️ gemini-3.6-flash no disponible, intentando con gemini-2.5-flash...")
+                    logger.warning("⚠️ gemini-3.6-pro no disponible, intentando con gemini-3.6-flash...")
                     try:
                         response = client.models.generate_content(
-                            model="gemini-2.5-flash",
+                            model="gemini-3.6-flash",
                             contents=[prompt, img],
                             config=config
                         )
                         data = json.loads(response.text.strip())
-                        logger.info(f"🧠 Razonamiento IA (fallback): {data.get('reasoning', 'N/A')}")
+                        logger.info(f"🧠 Razonamiento IA (fallback flash): {data.get('reasoning', 'N/A')}")
                         return int(data.get('clicks', -1))
                     except Exception as fallback_e:
-                        logger.error(f"❌ Fallback a 2.5-flash también falló: {fallback_e}")
+                        logger.error(f"❌ Fallback a flash también falló: {fallback_e}")
                         return -1
                 else:
                     logger.error(f"❌ Error API: {e}")
