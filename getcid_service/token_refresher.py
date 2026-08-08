@@ -150,6 +150,20 @@ async def refresh_access_token() -> str:
                 headers=headers
             )
 
+            if response.status_code in (400, 401) and ("dpop-nonce" in response.headers or "DPoP-Nonce" in response.headers):
+                nonce = response.headers.get("dpop-nonce", response.headers.get("DPoP-Nonce"))
+                logger.info(f"Nonce detectado en /token (status {response.status_code}), reintentando con DPoP-Nonce...")
+                headers["DPoP"] = generate_dpop_token(
+                    htu="https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                    htm="POST",
+                    nonce=nonce
+                )
+                response = await client.post(
+                    "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                    data=form_data,
+                    headers=headers
+                )
+
             if response.status_code == 200:
                 token_data = response.json()
                 new_access_token = token_data.get("access_token")
@@ -160,12 +174,23 @@ async def refresh_access_token() -> str:
                     token_type_response = token_data.get("token_type", "unknown")
                     logger.info(f"Token type returned by MS: {token_type_response}")
                     
+                    # Preservar last_playwright_run si existe
+                    last_run = 0
+                    if os.path.exists(_token_file):
+                        try:
+                            with open(_token_file, 'r') as f:
+                                existing_data = json.load(f)
+                                last_run = existing_data.get('last_playwright_run', 0)
+                        except Exception:
+                            pass
+                            
                     # Guardar el nuevo access token en el path dinámico (siempre al volumen persistente)
                     with open(_token_file, 'w') as f:
                         json.dump({
                             'token': new_access_token,
                             'expires_at': time.time() + expires_in - 120,  # 2 min antes para seguridad
-                            'token_type': token_type_response
+                            'token_type': token_type_response,
+                            'last_playwright_run': last_run
                         }, f)
                     logger.info(f"Token guardado en: {_token_file}")
                     logger.info(f"Nuevo access token obtenido. Expira en {expires_in // 60} minutos.")
