@@ -30,8 +30,8 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
     for idx, api_key in enumerate(api_keys):
         try:
             client = genai.Client(api_key=api_key)
-            # Primero intentamos con el modelo Pro para mejor razonamiento espacial
-            model_id = 'gemini-1.5-pro'
+            # Usamos gemini-2.5-flash ya que los modelos 1.5 devuelven 404 en estas llaves
+            model_id = 'gemini-2.5-flash'
             
             if idx == 0:
                 logger.info(f"🧠 IA: Analizando con {model_id} (temp={temperature}, key={idx+1}/{len(api_keys)})...")
@@ -86,12 +86,12 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
                 logger.warning(f"⚠️ API Key {idx+1}/{len(api_keys)} falló por cuota. Probando siguiente...")
                 continue
             else:
-                # Tratar de hacer fallback a gemini-1.5-flash si 1.5-pro falla por modelo no encontrado
+                # Tratar de hacer fallback a gemini-2.5-flash si falla por modelo no encontrado
                 if "not found" in error_msg.lower() or "invalid model" in error_msg.lower():
-                    logger.warning("⚠️ gemini-1.5-pro no disponible, intentando con gemini-1.5-flash...")
+                    logger.warning("⚠️ Modelo no disponible, reintentando con gemini-2.5-flash...")
                     try:
                         response = client.models.generate_content(
-                            model="gemini-1.5-flash",
+                            model="gemini-2.5-flash",
                             contents=[prompt, img],
                             config=config
                         )
