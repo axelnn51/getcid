@@ -211,8 +211,10 @@ async def run():
                 headless=False,
                 args=[
                     '--no-sandbox',
-                    '--disable-blink-features=AutomationControlled',
                     '--disable-dev-shm-usage',
+                    '--disable-web-security',
+                    '--disable-features=IsolateOrigins,site-per-process,CrossSiteDocumentBlockingIfIsolating',
+                    '--disable-site-isolation-trials',
                 ],
                 # user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 900}
@@ -921,8 +923,8 @@ async def run():
                     pass
                 
                 # 🔴 DETECTOR GENERAL DE ATASCOS
-                if time.time() - last_action_time > 75:
-                    print(f"\n🔴 DETECTOR ANTI-STUCK: No se ha realizado ninguna acción en 75 segundos. Forzando recarga de página...")
+                if time.time() - last_action_time > 100:
+                    print(f"\n🔴 DETECTOR ANTI-STUCK: No se ha realizado ninguna acción en 100 segundos. Forzando recarga de página...")
                     await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
                     await page.wait_for_timeout(3000)
                     last_action_time = time.time()
