@@ -39,14 +39,22 @@ def resolver_captcha_con_ia(image_path: str, attempt: int = 1) -> int:
             img = Image.open(image_path)
             
             prompt = (
-                "Eres un experto visual. Resuelve este CAPTCHA de Arkose Labs.\n"
-                "La imagen tiene dos partes: una imagen izquierda y una imagen derecha.\n"
-                "1. IDENTIFICA el ICONO OBJETIVO en la imagen de la izquierda (ej. una mano, estrella, hongo, etc.). ¡No te confundas con los iconos de la derecha!\n"
-                "2. UBICA el tren azul en el circuito de vías de la derecha.\n"
-                "3. CUENTA cuántos avances HACIA LA DERECHA (nodo por nodo) se necesitan para mover el tren hasta el ICONO OBJETIVO.\n"
-                "REGLA DE ORO: El tren NUNCA empieza en el nodo objetivo. El número de clics NUNCA ES CERO (0). Si crees que es 0, miraste mal el icono de la izquierda. Vuelve a mirar.\n\n"
-                "Tu salida DEBE ser estrictamente JSON válido con las claves:\n"
-                "- 'reasoning': Explica qué icono ves a la izquierda, en qué icono está el tren, y tu conteo.\n"
+                "Eres un agente experto en resolver CAPTCHAs visuales de Arkose Labs.\n"
+                "Se te presenta una imagen que contiene dos partes: izquierda (OBJETIVO) y derecha (CIRCUITO).\n\n"
+                "PASO 1: IDENTIFICA LA VARIANTE DEL PUZZLE observando la imagen de la IZQUIERDA.\n"
+                "- Variante A (Iconos): La imagen izquierda muestra un icono claro (ej. mano, estrella, etc.). El circuito derecho tiene varios iconos flotantes.\n"
+                "- Variante B (Texturas/Terrenos): La imagen izquierda muestra una textura de terreno (tierra agrietada, agua, pasto, etc.) y dice 'Icon for train position'. El circuito derecho muestra al tren cruzando distintos paisajes/terrenos.\n\n"
+                "PASO 2: ENCUENTRA LA META.\n"
+                "- Si es Variante A: Busca el icono exacto en la derecha.\n"
+                "- Si es Variante B: Busca en qué parada de la derecha el terreno DEBAJO DEL TREN coincide con la textura de la izquierda.\n\n"
+                "PASO 3: CUENTA LOS CLICS.\n"
+                "- Ubica dónde está el tren azul AHORA.\n"
+                "- Cuenta cuántos avances/paradas hacia la DERECHA (nodo por nodo) necesitas para que el tren llegue a la META.\n\n"
+                "REGLAS CRÍTICAS:\n"
+                "- El tren NUNCA empieza en la meta. El conteo NUNCA ES CERO (0).\n"
+                "- Si tu conteo da 0, te equivocaste. Vuelve a analizar.\n\n"
+                "Tu salida DEBE ser estrictamente JSON válido con:\n"
+                "- 'reasoning': Menciona qué variante detectaste, qué hay a la izquierda, dónde está el tren y tu conteo.\n"
                 "- 'clicks': Un número entero entre 1 y 5.\n"
             )
             
