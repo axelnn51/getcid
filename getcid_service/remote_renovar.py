@@ -316,6 +316,9 @@ async def run():
             MIN_CAPTURE_WAIT = 5  # Mínimo 5 segundos antes de aceptar un token (evitar cache viejo)
             reload_challenge_count = 0  # Contador de "Something went wrong" / "Reload Challenge"
             MAX_RELOAD_ATTEMPTS = 3  # Máximo de reloads antes de abortar esta ejecución
+            
+            last_action_time = time.time()
+            loading_stuck_count = 0
 
             while time.time() - start_wait < max_wait:
                 elapsed = int(time.time() - start_wait)
@@ -508,6 +511,29 @@ async def run():
                                 break  # Salir del loop de frames
                         except Exception:
                             continue
+                            continue
+
+                    # 0.4 🔴 DETECTOR DE DEADLOCK: "Loading... Please wait"
+                    loading_detected = False
+                    for _frame in page.frames:
+                        try:
+                            _loading = _frame.get_by_text(re.compile("Loading\.\.\. Please wait|Cargando", re.IGNORECASE))
+                            if await _loading.count() > 0 and await _loading.first.is_visible(timeout=100):
+                                loading_detected = True
+                                break
+                        except: pass
+                    
+                    if loading_detected:
+                        loading_stuck_count += 1
+                        if loading_stuck_count >= 15: # 15 iteraciones consecutivas (~15-20s)
+                            print(f"\n🔴 Pantalla 'Loading...' atascada por mucho tiempo. Forzando recarga de página...")
+                            loading_stuck_count = 0
+                            await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
+                            await page.wait_for_timeout(3000)
+                            last_action_time = time.time()
+                            continue
+                    else:
+                        loading_stuck_count = 0
 
                     # 0.5. Botón "Start" del CAPTCHA (Arkose Labs usa iframes anidados)
                     try:
@@ -695,6 +721,7 @@ async def run():
                                 print("🔘 Botón 'Continuar / Get Started' detectado. Clickeando...")
                                 await start_btn.first.click()
                                 await page.wait_for_timeout(2000)
+                                last_action_time = time.time()
                                 continue
 
                     # 1.5 Pick an account (Seleccionar una cuenta)
@@ -706,6 +733,7 @@ async def run():
                                 print("👤 Seleccionando cuenta guardada...")
                                 await account_tile.first.click()
                                 await page.wait_for_timeout(2000)
+                                last_action_time = time.time()
                                 continue
                     except:
                         pass
@@ -726,6 +754,7 @@ async def run():
                                 await page.keyboard.press("Enter")
                             print("   ✅ Siguiente clickeado.")
                             await page.wait_for_timeout(2000)
+                            last_action_time = time.time()
                             continue
 
                     # 2.5 "Use your password" / "Usar su contraseña" (Si pide código de verificación)
@@ -735,6 +764,7 @@ async def run():
                             print("🔄 Microsoft pidió código. Clickeando en 'Usar contraseña'...")
                             await use_pwd_btn.first.click()
                             await page.wait_for_timeout(2000)
+                            last_action_time = time.time()
                             continue
 
                     # 2.5.5 "Send a code to ax*@gmail.com" / "Enviar un código a" (cuando deshabilitan password)
@@ -743,7 +773,14 @@ async def run():
                         if await send_code_btn.first.is_visible(timeout=100):
                             print("🔄 Microsoft deshabilitó la contraseña. Clickeando en 'Enviar un código a...'")
                             await send_code_btn.first.click()
+                            await page.wait_for_timeout(1000)
+                            # Después de seleccionar, podría haber un botón de Siguiente o Confirmar
+                            next_btn = page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']")
+                            if await next_btn.count() > 0 and await next_btn.first.is_visible(timeout=1000):
+                                await next_btn.first.click()
+                                print("   ✅ Botón Siguiente/Enviar clickeado.")
                             await page.wait_for_timeout(2000)
+                            last_action_time = time.time()
                             continue
 
                     # 2.6 Confirmar correo completo (ProofConfirmation)
@@ -760,6 +797,7 @@ async def run():
                         await page.locator("input[type='submit'], button[id='idBtn_Accept'], button[type='submit']").first.click()
                         print("   ✅ Correo confirmado. Solicitando código...")
                         await page.wait_for_timeout(4000)
+                        last_action_time = time.time()
                         continue
 
                     # 2.7 Pantalla de ingresar código (Enter code)
@@ -811,6 +849,7 @@ async def run():
                                     await page.keyboard.press("Enter")
                                 print("   ✅ Iniciar sesión clickeado.")
                                 await page.wait_for_timeout(2000)
+                                last_action_time = time.time()
                                 continue
 
                     # 4. "¿Mantener la sesión iniciada?" (Botón "Yes" suele tener id="idBtn_Accept" o texto "Yes"/"Sí")
@@ -823,11 +862,20 @@ async def run():
                             print("✅ 'Mantener sesión iniciada' (Sí) clickeado. (Límite de 24 horas para SPA)")
                             await yes_btn.first.click()
                             await page.wait_for_timeout(2000)
+                            last_action_time = time.time()
                             continue
 
                 except Exception as e:
                     # Silenciar errores del bucle para no ensuciar la consola
                     pass
+                
+                # 🔴 DETECTOR GENERAL DE ATASCOS
+                if time.time() - last_action_time > 75:
+                    print(f"\n🔴 DETECTOR ANTI-STUCK: No se ha realizado ninguna acción en 75 segundos. Forzando recarga de página...")
+                    await page.goto("https://visualsupport.microsoft.com/", wait_until="domcontentloaded")
+                    await page.wait_for_timeout(3000)
+                    last_action_time = time.time()
+                    continue
 
                 if elapsed % 10 == 0 and elapsed > 0:
                     print(f"  ⏳ Esperando... ({elapsed}s)")
