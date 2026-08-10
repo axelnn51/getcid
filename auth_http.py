@@ -24,7 +24,8 @@ console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
 TOKEN_URL = "https://login.live.com/oauth20_token.srf"
-CLIENT_ID = "29d9ed98-a469-4536-ade2-f981bc1d605e"
+# El CLIENT_ID se leerá dinámicamente del session_master.json
+DEFAULT_CLIENT_ID = "29d9ed98-a469-4536-ade2-f981bc1d605e"
 ORIGIN = "https://account.microsoft.com"
 SESSION_FILE = "session_master.json"
 
@@ -33,6 +34,7 @@ class AuthManager:
         self.dpop_engine = DPoPEngine()
         self.refresh_token = None
         self.access_token = None
+        self.client_id = DEFAULT_CLIENT_ID
         self.daemon_status = "inactive"
         self.daemon_error = None
         self._load_session()
@@ -53,7 +55,8 @@ class AuthManager:
         if "tokens_network" in data and "refresh_token" in data["tokens_network"]:
             self.refresh_token = data["tokens_network"]["refresh_token"]
             self.access_token = data["tokens_network"].get("access_token")
-            logger.info("Refresh y Access token cargados desde tokens_network.")
+            self.client_id = data["tokens_network"].get("client_id", DEFAULT_CLIENT_ID)
+            logger.info(f"Tokens cargados desde tokens_network para el cliente: {self.client_id}")
         else:
             # Extraer desde storage_state (Cookies o LocalStorage)
             # Esta lógica dependerá de exactamente dónde Microsoft guarda el token.
@@ -73,12 +76,12 @@ class AuthManager:
         
         headers = {
             "DPoP": dpop_proof,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Origin": ORIGIN
+            "Origin": ORIGIN,
+            "Content-Type": "application/x-www-form-urlencoded"
         }
         
         payload = {
-            "client_id": CLIENT_ID,
+            "client_id": self.client_id,
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
             "token_type": "pop" # IMPORTANTE: Obligamos a que el token sea de prueba de posesión

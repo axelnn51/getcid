@@ -1,6 +1,6 @@
 import asyncio
 import json
-import httpx
+import urllib.parse
 from playwright.async_api import async_playwright
 import os
 import sys
@@ -8,7 +8,7 @@ import sys
 SESSION_FILE = "session_master.json"
 
 async def extract_session():
-    print("Iniciando GETCID 2.0 - Extractor Local (Código de Autorización)")
+    print("Iniciando GETCID 2.0 - Extractor Local (Interceptador Dinámico)")
     print("Asegúrate de iniciar sesión con tu cuenta de Microsoft.")
     
     async with async_playwright() as p:
@@ -21,79 +21,90 @@ async def extract_session():
         
         page = browser.pages[0] if browser.pages else await browser.new_page()
         
-        code_captured = None
+        tokens_captured = {}
+        captured_client_id = None
         
+        async def on_route(route):
+            nonlocal captured_client_id
+            request = route.request
+            
+            # Si ya capturamos el token y esta es OTRA petición de token, la bloqueamos para evitar que MSAL consuma el refresh_token
+            if "token" in request.url.lower() and captured_client_id:
+                print("Bloqueando petición de token posterior para proteger el refresh_token...")
+                await route.abort()
+                return
+                
+            await route.continue_()
+
         async def on_response(response):
-            nonlocal code_captured
-            if "oauth20_desktop.srf" in response.url and "code=" in response.url:
+            nonlocal captured_client_id
+            if "token" in response.url.lower() and response.status == 200:
+                if captured_client_id: return # Ya tenemos uno
+                
                 try:
-                    code_captured = response.url.split("code=")[1].split("&")[0]
-                    print("✅ [NET] ¡Código de Autorización interceptado con éxito!")
+                    data = await response.json()
+                    if "refresh_token" in data:
+                        # Extraer el client_id de la petición
+                        post_data = response.request.post_data or ""
+                        parsed = urllib.parse.parse_qs(post_data)
+                        client_id = parsed.get("client_id", [""])[0]
+                        
+                        if client_id:
+                            print(f"✅ [NET] ¡Token capturado con éxito para el cliente: {client_id}!")
+                            captured_client_id = client_id
+                            tokens_captured["refresh_token"] = data["refresh_token"]
+                            tokens_captured["access_token"] = data.get("access_token")
+                            tokens_captured["client_id"] = client_id
                 except:
                     pass
 
+        await page.route("**/*", on_route)
         page.on("response", on_response)
         
         print("Navegando a la página de login de Microsoft...")
-        # Usamos el cliente genérico que permite redirección a desktop.srf
-        auth_url = "https://login.live.com/oauth20_authorize.srf?client_id=29d9ed98-a469-4536-ade2-f981bc1d605e&response_type=code&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=wl.offline_access"
-        await page.goto(auth_url)
+        await page.goto("https://login.live.com/")
         
         print("\n" + "="*50)
         print("ACCIÓN REQUERIDA: Inicia sesión en la ventana del navegador.")
         print("   Solo inicia sesión normalmente. El script se cerrará solo")
-        print("   en cuanto capture el código de autorización.")
+        print("   en cuanto capture tu sesión.")
         print("="*50 + "\n")
         
-        # Esperar hasta capturar el código (máximo 5 minutos)
         for _ in range(300):
-            if code_captured:
+            if captured_client_id:
                 break
             await asyncio.sleep(1)
             
-        if not code_captured:
-            print("❌ No se pudo capturar el código. Tiempo de espera agotado o ventana cerrada.")
+        if not captured_client_id:
+            print("❌ No se detectó ninguna petición de token en la red. Asegúrate de iniciar sesión completamente.")
             await browser.close()
             return
 
-        print("Intercambiando código por Token Maestro...")
+        print("Guardando estado de la sesión...")
         
-        token_url = "https://login.live.com/oauth20_token.srf"
-        payload = {
-            "client_id": "29d9ed98-a469-4536-ade2-f981bc1d605e",
-            "grant_type": "authorization_code",
-            "code": code_captured,
-            "redirect_uri": "https://login.live.com/oauth20_desktop.srf"
+        storage_state = await browser.storage_state()
+        export_data = {
+            "storage_state": storage_state,
+            "tokens_network": tokens_captured
         }
         
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(token_url, data=payload)
-            if resp.status_code == 200:
-                data = resp.json()
-                print("✅ ¡Token Maestro generado exitosamente!")
-                
-                # Guardamos el estado
-                storage_state = await browser.storage_state()
-                export_data = {
-                    "storage_state": storage_state,
-                    "tokens_network": {
-                        "refresh_token": data.get("refresh_token"),
-                        "access_token": data.get("access_token")
-                    }
-                }
-                
-                with open(SESSION_FILE, "w", encoding="utf-8") as f:
-                    json.dump(export_data, f, indent=4)
-                    
-                print(f"¡Éxito total! Archivo generado: {SESSION_FILE}")
-                print("Lleva este archivo a tu servidor Ubuntu.")
-            else:
-                print(f"❌ Falló el intercambio de token: {resp.status_code} - {resp.text}")
+        with open(SESSION_FILE, "w", encoding="utf-8") as f:
+            json.dump(export_data, f, indent=4)
+            
+        print(f"¡Éxito total! Archivo generado: {SESSION_FILE}")
+        print("Lleva este archivo a tu servidor Ubuntu.")
         
-        
+        # Pequeña pausa para asegurar que se bloquean las peticiones en vuelo
+        await asyncio.sleep(2)
         await browser.close()
 
 if __name__ == "__main__":
-    if sys.platform == 'win32':
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    asyncio.run(extract_session())
+    try:
+        asyncio.run(extract_session())
+    except KeyboardInterrupt:
+        print("\nOperación cancelada por el usuario.")
+    except Exception as e:
+        print(f"\nError fatal: {str(e)}")
+    finally:
+        if sys.platform == 'win32':
+            os.system("pause")
