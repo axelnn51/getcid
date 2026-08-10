@@ -24,14 +24,30 @@ async def extract_session():
         tokens_captured = {}
         captured_client_id = None
         
+        from core import DPoPEngine
+        engine = DPoPEngine("dpop_key.pem")
+        
         async def on_route(route):
             nonlocal captured_client_id
             request = route.request
             
-            # Si ya capturamos el token y esta es OTRA petición de token, la bloqueamos para evitar que MSAL consuma el refresh_token
-            if "token" in request.url.lower() and captured_client_id:
-                print("Bloqueando petición de token posterior para proteger el refresh_token...")
-                await route.abort()
+            if "oauth20_token.srf" in request.url.lower():
+                # Si ya capturamos el token, bloqueamos posteriores
+                if captured_client_id:
+                    print("Bloqueando petición de token posterior para proteger el refresh_token...")
+                    await route.abort()
+                    return
+                
+                print("Inyectando DPoP persistente en la petición de token...")
+                headers = request.headers
+                dpop_proof = engine.generate_dpop_proof(request.method, request.url)
+                headers["DPoP"] = dpop_proof
+                # Asegurar que pedimos token_type=pop
+                post_data = request.post_data
+                if post_data and "token_type=pop" not in post_data:
+                    post_data += "&token_type=pop"
+                
+                await route.continue_(headers=headers, post_data=post_data)
                 return
                 
             await route.continue_()
@@ -85,7 +101,8 @@ async def extract_session():
         storage_state = await browser.storage_state()
         export_data = {
             "storage_state": storage_state,
-            "tokens_network": tokens_captured
+            "tokens_network": tokens_captured,
+            "dpop_key": engine.get_pem_string()
         }
         
         with open(SESSION_FILE, "w", encoding="utf-8") as f:

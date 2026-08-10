@@ -56,6 +56,13 @@ class AuthManager:
             self.refresh_token = data["tokens_network"]["refresh_token"]
             self.access_token = data["tokens_network"].get("access_token")
             self.client_id = data["tokens_network"].get("client_id", DEFAULT_CLIENT_ID)
+            
+            pem_string = data.get("dpop_key")
+            if pem_string:
+                self.dpop_engine = DPoPEngine(pem_string)
+            else:
+                self.dpop_engine = DPoPEngine()
+                
             logger.info(f"Tokens cargados desde tokens_network para el cliente: {self.client_id}")
         else:
             # Extraer desde storage_state (Cookies o LocalStorage)
@@ -76,8 +83,8 @@ class AuthManager:
         
         headers = {
             "DPoP": dpop_proof,
-            "Origin": ORIGIN,
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "https://account.microsoft.com"
         }
         
         payload = {
@@ -97,7 +104,8 @@ class AuthManager:
                     # Actualizar el refresh token si nos dieron uno nuevo
                     if "refresh_token" in data:
                         self.refresh_token = data["refresh_token"]
-                    logger.info("Token renovado exitosamente (Silencioso).")
+                    returned_type = data.get("token_type", "unknown")
+                    logger.info(f"Token renovado exitosamente (Silencioso). Tipo: {returned_type}")
                     return True
                 else:
                     logger.error(f"Error al renovar token: {response.status_code} - {response.text}")

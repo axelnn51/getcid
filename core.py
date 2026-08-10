@@ -7,11 +7,24 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 
+import os
+from cryptography.hazmat.primitives import serialization
+
 class DPoPEngine:
-    def __init__(self):
-        # Generar una clave privada ES256 (P-256)
-        self.private_key = ec.generate_private_key(ec.SECP256R1())
+    def __init__(self, pem_string=None):
+        if pem_string:
+            self.private_key = serialization.load_pem_private_key(pem_string.encode('utf-8'), password=None)
+        else:
+            self.private_key = ec.generate_private_key(ec.SECP256R1())
+            
         self.public_key = self.private_key.public_key()
+        
+    def get_pem_string(self):
+        return self.private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ).decode('utf-8')
         
     def _get_jwk(self):
         # Exportar la clave pública en formato JWK
