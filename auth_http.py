@@ -114,13 +114,17 @@ class AuthManager:
                     
                     # Extraer PUID del token (necesario para x-user-id)
                     try:
-                        parts = self.access_token.split('.')
-                        if len(parts) >= 2:
-                            payload_b64 = parts[1]
-                            payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
-                            token_data = json.loads(base64.urlsafe_b64decode(payload_b64))
-                            self.puid = token_data.get('puid', '')
-                            logger.info(f"PUID extraído del token: {self.puid}")
+                        if self.access_token:
+                            logger.info(f"Access token recibido empieza con: {self.access_token[:20]}")
+                            parts = self.access_token.split('.')
+                            if len(parts) >= 2:
+                                payload_b64 = parts[1]
+                                payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
+                                token_data = json.loads(base64.urlsafe_b64decode(payload_b64))
+                                self.puid = token_data.get('puid', '')
+                                logger.info(f"PUID extraído del token: {self.puid}")
+                            else:
+                                logger.warning("El token no parece ser un JWT (no tiene puntos).")
                     except Exception as e:
                         logger.error(f"Error extrayendo PUID: {e}")
                         self.puid = ""

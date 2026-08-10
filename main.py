@@ -99,7 +99,7 @@ async def check_pid(request: PIDRequest):
         "x-session-id": sid,
         "request-id": f"|{req_id}.{trace_id[:16]}",
         "traceparent": f"00-{req_id}-{trace_id[:16]}-01",
-        "x-user-id": getattr(auth_manager, 'puid', '00037FFFB13977BF'),
+        "x-user-id": auth_manager.puid if getattr(auth_manager, 'puid', None) else '00037FFFB13977BF',
         "sec-ch-ua-platform": '"Windows"',
         "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
