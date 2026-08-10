@@ -1,7 +1,6 @@
 node_modules/
 playwright_data/
 logs/
-session_master.json
 .env
 __pycache__/
 *.pyc
