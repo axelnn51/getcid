@@ -110,7 +110,13 @@ class AuthManager:
                 data = response.json()
                 
                 if response.status_code == 200:
-                    self.access_token = data.get("access_token")
+                    # El SPA usa el id_token (JWT) en lugar del access_token (que es opaco para MSA)
+                    if "id_token" in data:
+                        self.access_token = data["id_token"]
+                        logger.info("Usando id_token como access_token.")
+                    else:
+                        self.access_token = data.get("access_token")
+                        logger.info("No hay id_token, usando access_token normal.")
                     
                     # Extraer PUID del token (necesario para x-user-id)
                     try:
