@@ -84,7 +84,7 @@ class AuthManager:
             "client_id": self.client_id,
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
-            "token_type": "pop"
+            "scope": "openid profile offline_access"
         }
         
         dpop_proof = self.dpop_engine.generate_dpop_proof("POST", TOKEN_URL)
