@@ -55,9 +55,10 @@ async function getConfirmationID(iid) {
       return data.cid;
     }
     
-    // Si la API devuelve 401 por falta de token (Extractor no ha corrido)
+    // Si la API devuelve 401 por falta de token (Extractor no ha corrido o expiró)
     if (response.status === 401) {
-       throw new CIDError('UNAUTHORIZED', '❌ *Sistema Desconectado*\nEl servidor está esperando la extracción de sesión local. Contacta al administrador.', { iid: cleanIid });
+       const detail = data.detail || 'El servidor está esperando la extracción de sesión local. Contacta al administrador.';
+       throw new CIDError('UNAUTHORIZED', `❌ *Sistema Desconectado*\n${detail}`, { iid: cleanIid });
     }
 
     // Clasificación de errores basada en el mensaje de error de Python

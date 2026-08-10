@@ -23,8 +23,9 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
-TOKEN_URL = "https://login.live.com/oauth20_token.srf" # Or https://login.microsoftonline.com/common/oauth2/v2.0/token depending on the specific flow
-CLIENT_ID = "29d9ed98-a469-4536-ade2-f981bc1d605e" # Ejemplo de cliente (o usar el de la app si tienes uno específico)
+TOKEN_URL = "https://login.live.com/oauth20_token.srf"
+CLIENT_ID = "81feaced-5ddd-41e7-8bef-3e20a2689bb7"
+ORIGIN = "https://account.microsoft.com"
 SESSION_FILE = "session_master.json"
 
 class AuthManager:
@@ -72,7 +73,8 @@ class AuthManager:
         
         headers = {
             "DPoP": dpop_proof,
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": ORIGIN
         }
         
         payload = {
@@ -92,20 +94,20 @@ class AuthManager:
                     # Actualizar el refresh token si nos dieron uno nuevo
                     if "refresh_token" in data:
                         self.refresh_token = data["refresh_token"]
-                    logger.info("✅ Token renovado exitosamente (Silencioso).")
+                    logger.info("Token renovado exitosamente (Silencioso).")
                     return True
                 else:
-                    logger.error(f"❌ Error al renovar token: {response.status_code} - {response.text}")
+                    logger.error(f"Error al renovar token: {response.status_code} - {response.text}")
                     # Comprobar si el token está muerto permanentemente
                     if data.get("error") == "invalid_grant":
-                        logger.error("🚨 CRÍTICO: El refresh_token ha sido revocado o expiró permanentemente.")
+                        logger.error("CRÍTICO: El refresh_token ha sido revocado o expiró permanentemente.")
                         self.daemon_status = "failed"
                         self.daemon_error = "invalid_grant - Refresh token revocado"
                         self.refresh_token = None
                         self.access_token = None
                     return False
             except Exception as e:
-                logger.error(f"❌ Excepción durante la petición HTTP: {str(e)}")
+                logger.error(f"Excepción durante la petición HTTP: {str(e)}")
                 return False
 
     async def start_daemon(self):
