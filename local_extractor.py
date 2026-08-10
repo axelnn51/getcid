@@ -29,19 +29,21 @@ async def extract_session():
         async def handle_response(response):
             if "oauth2/v2.0/token" in response.url and response.status == 200:
                 try:
-                    data = await response.json()
-                    if "refresh_token" in data:
-                        print("[NET] Refresh Token capturado desde la red.")
-                        tokens_captured["refresh_token"] = data["refresh_token"]
-                        tokens_captured["access_token"] = data.get("access_token")
+                    req_post_data = response.request.post_data or ""
+                    if "81feaced-5ddd-41e7-8bef-3e20a2689bb7" in req_post_data:
+                        data = await response.json()
+                        if "refresh_token" in data:
+                            print("[NET] Refresh Token de Visual Support capturado!")
+                            tokens_captured["refresh_token"] = data["refresh_token"]
+                            tokens_captured["access_token"] = data.get("access_token")
                 except:
                     pass
 
         page.on("response", handle_response)
         
-        print("Navegando a la página de login de Microsoft...")
-        # Página típica de login de Microsoft
-        await page.goto("https://login.live.com/")
+        print("Navegando a la página de Visual Support...")
+        # Página directa para forzar el token correcto
+        await page.goto("https://visualsupport.microsoft.com/")
         
         print("\n" + "="*50)
         print("ACCIÓN REQUERIDA: Inicia sesión en la ventana del navegador.")

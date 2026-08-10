@@ -72,7 +72,7 @@ async def check_pid(request: PIDRequest):
         raise HTTPException(status_code=400, detail="El IID debe tener exactamente 54 o 63 dígitos numéricos.")
 
     MICROSOFT_CID_ENDPOINT = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
-    htu = "/api/productActivation/validateIID"
+    htu = MICROSOFT_CID_ENDPOINT
     htm = "POST"
     sid = f"app_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
     digits = len(pid) // 9
