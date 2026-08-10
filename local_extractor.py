@@ -31,30 +31,26 @@ async def extract_session():
             nonlocal captured_client_id
             request = route.request
             
-            if "oauth20_token.srf" in request.url.lower():
+            if "common/oauth2/v2.0/token" in request.url.lower():
                 # Si ya capturamos el token, bloqueamos posteriores
                 if captured_client_id:
                     print("Bloqueando petición de token posterior para proteger el refresh_token...")
                     await route.abort()
                     return
                 
-                print("Inyectando DPoP persistente en la petición de token...")
+                # No inyectamos DPoP porque acabamos de comprobar que Microsoft NO lo usa aquí
                 headers = request.headers
-                dpop_proof = engine.generate_dpop_proof(request.method, request.url)
-                headers["DPoP"] = dpop_proof
-                # Asegurar que pedimos token_type=pop
                 post_data = request.post_data
-                if post_data and "token_type=pop" not in post_data:
-                    post_data += "&token_type=pop"
-                
                 await route.continue_(headers=headers, post_data=post_data)
                 return
                 
             await route.continue_()
 
+        page.on("route", on_route)
+
         async def on_response(response):
-            nonlocal captured_client_id
-            if "token" in response.url.lower() and response.status == 200:
+            nonlocal tokens_captured, captured_client_id
+            if "common/oauth2/v2.0/token" in response.url.lower() and response.request.method == "POST":
                 if captured_client_id: return # Ya tenemos uno
                 
                 try:

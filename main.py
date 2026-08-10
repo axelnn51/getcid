@@ -102,21 +102,8 @@ async def check_pid(request: PIDRequest):
     
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         try:
-            # 1. Generar DPoP inicial
-            dpop_proof = auth_manager.dpop_engine.generate_dpop_proof(htm, htu)
-            
-            req_headers = headers.copy()
-            req_headers["DPoP"] = dpop_proof
-            
-            logger.info(f"[{pid}] Iniciando desafío DPoP con Microsoft API...")
-            response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
-            
-            # 2. Manejar Nonce si Microsoft lo pide
-            if "dpop-nonce" in response.headers or "DPoP-Nonce" in response.headers:
-                nonce = response.headers.get("dpop-nonce", response.headers.get("DPoP-Nonce"))
-                logger.info(f"[{pid}] Nonce detectado, reintentando con firma completa...")
-                req_headers["DPoP"] = auth_manager.dpop_engine.generate_dpop_proof(htm, htu, nonce=nonce)
-                response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
+            logger.info(f"[{pid}] Enviando petición a Microsoft API...")
+            response = await client.post(MICROSOFT_CID_ENDPOINT, headers=headers, json=payload)
                 
             if response.status_code in (401, 403):
                 logger.error(f"[{pid}] Token expirado o Denegado (401/403). Forzando expiración. MS Response: {response.text}")
