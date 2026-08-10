@@ -33,8 +33,10 @@ class DPoPEngine:
         y_bytes = public_numbers.y.to_bytes(32, byteorder='big')
         
         return {
-            "kty": "EC",
             "crv": "P-256",
+            "ext": True,
+            "key_ops": ["verify"],
+            "kty": "EC",
             "x": self._base64url_encode(x_bytes),
             "y": self._base64url_encode(y_bytes)
         }
