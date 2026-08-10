@@ -97,6 +97,14 @@ class AuthManager:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(TOKEN_URL, headers=headers, data=payload)
+                
+                # Manejar DPoP-Nonce si Microsoft lo pide en el Token Endpoint
+                nonce = response.headers.get("dpop-nonce", response.headers.get("DPoP-Nonce"))
+                if nonce:
+                    logger.info("Nonce detectado en Token Endpoint, reintentando...")
+                    headers["DPoP"] = self.dpop_engine.generate_dpop_proof("POST", TOKEN_URL, nonce=nonce)
+                    response = await client.post(TOKEN_URL, headers=headers, data=payload)
+                
                 data = response.json()
                 
                 if response.status_code == 200:
