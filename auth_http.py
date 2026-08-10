@@ -82,18 +82,29 @@ class AuthManager:
             "client_id": self.client_id,
             "grant_type": "refresh_token",
             "refresh_token": self.refresh_token,
+            "token_type": "pop"
         }
         
+        dpop_proof = self.dpop_engine.generate_dpop_proof("POST", TOKEN_URL)
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
             "Origin": "https://visualsupport.microsoft.com",
             "Referer": "https://visualsupport.microsoft.com/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "DPoP": dpop_proof
         }
         
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(TOKEN_URL, headers=headers, data=payload)
+                
+                # Manejar DPoP-Nonce si Microsoft lo pide en el Token Endpoint
+                nonce = response.headers.get("dpop-nonce", response.headers.get("DPoP-Nonce"))
+                if nonce:
+                    logger.info("Nonce detectado en Token Endpoint, reintentando...")
+                    headers["DPoP"] = self.dpop_engine.generate_dpop_proof("POST", TOKEN_URL, nonce=nonce)
+                    response = await client.post(TOKEN_URL, headers=headers, data=payload)
+                    
                 data = response.json()
                 
                 if response.status_code == 200:
