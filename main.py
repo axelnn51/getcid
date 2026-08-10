@@ -103,7 +103,8 @@ async def check_pid(request: PIDRequest):
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         try:
             # 1. Generar DPoP inicial
-            dpop_proof = auth_manager.dpop_engine.generate_dpop_proof(htm, htu) # Note: core.py used htu, htm, but my DPoP engine expects htm, htu?
+            dpop_proof = auth_manager.dpop_engine.generate_dpop_proof(htm, htu)
+            
             req_headers = headers.copy()
             req_headers["DPoP"] = dpop_proof
             
