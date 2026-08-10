@@ -72,7 +72,7 @@ async def check_pid(request: PIDRequest):
         raise HTTPException(status_code=400, detail="El IID debe tener exactamente 54 o 63 dígitos numéricos.")
 
     MICROSOFT_CID_ENDPOINT = "https://visualsupport.microsoft.com/api/productActivation/validateIID"
-    htu = MICROSOFT_CID_ENDPOINT
+    htu = "/api/productActivation/validateIID"
     htm = "POST"
     sid = f"app_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
     digits = len(pid) // 9
@@ -118,9 +118,9 @@ async def check_pid(request: PIDRequest):
                 response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
                 
             if response.status_code in (401, 403):
-                logger.error(f"[{pid}] Token expirado o Denegado (401/403). Forzando expiración.")
+                logger.error(f"[{pid}] Token expirado o Denegado (401/403). Forzando expiración. MS Response: {response.text}")
                 auth_manager.access_token = None # Forzar que el demonio lo renueve
-                raise HTTPException(status_code=401, detail="Token expirado o Denegado en Microsoft.")
+                raise HTTPException(status_code=401, detail=f"Token expirado o Denegado en Microsoft. MS Response: {response.text}")
             elif response.status_code != 200:
                 logger.error(f"Error de Microsoft: {response.text}")
                 raise HTTPException(status_code=500, detail=f"Error {response.status_code} en Microsoft")

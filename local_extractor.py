@@ -62,7 +62,7 @@ async def extract_session():
         page.on("response", on_response)
         
         print("Navegando a la página de login de Microsoft...")
-        await page.goto("https://login.live.com/")
+        await page.goto("https://visualsupport.microsoft.com/")
         
         print("\n" + "="*50)
         print("ACCIÓN REQUERIDA: Inicia sesión en la ventana del navegador.")
