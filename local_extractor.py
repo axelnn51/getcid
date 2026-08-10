@@ -36,7 +36,7 @@ async def extract_session():
         
         print("Navegando a la página de login de Microsoft...")
         # Usamos el cliente genérico que permite redirección a desktop.srf
-        auth_url = "https://login.live.com/oauth20_authorize.srf?client_id=29d9ed98-a469-4536-ade2-f981bc1d605e&response_type=code&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::http://Passport.NET/tb::PURPOSE offline_access"
+        auth_url = "https://login.live.com/oauth20_authorize.srf?client_id=29d9ed98-a469-4536-ade2-f981bc1d605e&response_type=code&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=wl.offline_access"
         await page.goto(auth_url)
         
         print("\n" + "="*50)
