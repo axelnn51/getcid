@@ -24,7 +24,7 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
-TOKEN_URL = "https://login.live.com/oauth20_token.srf"
+TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 # El CLIENT_ID se leerá dinámicamente del session_master.json
 DEFAULT_CLIENT_ID = "29d9ed98-a469-4536-ade2-f981bc1d605e"
 ORIGIN = "https://account.microsoft.com"
