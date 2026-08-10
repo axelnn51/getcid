@@ -76,6 +76,9 @@ async def check_pid(request: PIDRequest):
     htm = "POST"
     sid = f"app_{int(time.time() * 1000)}_{str(uuid.uuid4())[:8]}"
     digits = len(pid) // 9
+    dfp_session_id = str(uuid.uuid4())
+    req_id = str(uuid.uuid4()).replace("-", "")
+    trace_id = str(uuid.uuid4()).replace("-", "")
     
     payload = {
         "IID": pid,
@@ -83,21 +86,22 @@ async def check_pid(request: PIDRequest):
         "productGroup": "Windows",
         "productName": "Windows 11",
         "numberOfDigits": digits,
-        "Country": "CHN",
-        "Region": "APAC",
-        "InstalledDevices": 1,
-        "OverrideStatusCode": "MUL",
-        "InitialReasonCode": "45164"
+        "Country": "MEX",
+        "Region": "LATAM",
+        "dfpSessionId": dfp_session_id
     }
     
     headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {auth_manager.access_token}",
+        "authorization": f"Bearer {auth_manager.access_token}",
+        "content-type": "application/json",
+        "accept": "application/json, text/plain, */*",
+        "referer": "https://visualsupport.microsoft.com/activate",
         "x-session-id": sid,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Origin": "https://visualsupport.microsoft.com",
-        "Referer": "https://visualsupport.microsoft.com/"
+        "request-id": f"|{req_id}.{trace_id[:16]}",
+        "traceparent": f"00-{req_id}-{trace_id[:16]}-01",
+        "x-user-id": getattr(auth_manager, 'puid', '00037FFFB13977BF'),
+        "sec-ch-ua-platform": '"Windows"',
+        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
     }
     
     async with httpx.AsyncClient(timeout=30.0, verify=False) as client:

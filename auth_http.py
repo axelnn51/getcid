@@ -5,6 +5,7 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 import random
+import base64
 from core import DPoPEngine
 
 # Asegurar que el directorio de logs exista
@@ -37,6 +38,7 @@ class AuthManager:
         self.client_id = DEFAULT_CLIENT_ID
         self.daemon_status = "inactive"
         self.daemon_error = None
+        self.puid = ""
         self._load_session()
 
     def _load_session(self):
@@ -109,6 +111,20 @@ class AuthManager:
                 
                 if response.status_code == 200:
                     self.access_token = data.get("access_token")
+                    
+                    # Extraer PUID del token (necesario para x-user-id)
+                    try:
+                        parts = self.access_token.split('.')
+                        if len(parts) >= 2:
+                            payload_b64 = parts[1]
+                            payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
+                            token_data = json.loads(base64.urlsafe_b64decode(payload_b64))
+                            self.puid = token_data.get('puid', '')
+                            logger.info(f"PUID extraído del token: {self.puid}")
+                    except Exception as e:
+                        logger.error(f"Error extrayendo PUID: {e}")
+                        self.puid = ""
+                        
                     # Actualizar el refresh token si nos dieron uno nuevo
                     if "refresh_token" in data:
                         self.refresh_token = data["refresh_token"]
