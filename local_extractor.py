@@ -25,7 +25,7 @@ async def extract_session():
         captured_client_id = None
         
         from core import DPoPEngine
-        engine = DPoPEngine("dpop_key.pem")
+        engine = DPoPEngine()
         
         async def on_route(route):
             nonlocal captured_client_id
