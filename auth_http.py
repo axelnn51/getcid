@@ -24,7 +24,7 @@ console_handler.setFormatter(log_formatter)
 logger.addHandler(console_handler)
 
 TOKEN_URL = "https://login.live.com/oauth20_token.srf"
-CLIENT_ID = "81feaced-5ddd-41e7-8bef-3e20a2689bb7"
+CLIENT_ID = "29d9ed98-a469-4536-ade2-f981bc1d605e"
 ORIGIN = "https://account.microsoft.com"
 SESSION_FILE = "session_master.json"
 

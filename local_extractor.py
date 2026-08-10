@@ -1,5 +1,6 @@
 import asyncio
 import json
+import httpx
 from playwright.async_api import async_playwright
 import os
 import sys
@@ -7,69 +8,88 @@ import sys
 SESSION_FILE = "session_master.json"
 
 async def extract_session():
-    print("Iniciando GETCID 2.0 - Extractor Local")
+    print("Iniciando GETCID 2.0 - Extractor Local (Código de Autorización)")
     print("Asegúrate de iniciar sesión con tu cuenta de Microsoft.")
     
     async with async_playwright() as p:
-        # Usamos un contexto persistente para guardar la sesión
         user_data_dir = os.path.join(os.getcwd(), "playwright_data")
         browser = await p.chromium.launch_persistent_context(
             user_data_dir=user_data_dir,
             headless=False,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-            ]
+            args=["--disable-blink-features=AutomationControlled"]
         )
         
         page = browser.pages[0] if browser.pages else await browser.new_page()
         
-        # Opcional: Escuchar respuestas de red para atrapar tokens OAuth si están en el payload
-        tokens_captured = {}
+        code_captured = None
         
-        async def handle_response(response):
-            if "oauth2/v2.0/token" in response.url and response.status == 200:
+        async def on_response(response):
+            nonlocal code_captured
+            if "oauth20_desktop.srf" in response.url and "code=" in response.url:
                 try:
-                    req_post_data = response.request.post_data or ""
-                    if "81feaced-5ddd-41e7-8bef-3e20a2689bb7" in req_post_data:
-                        data = await response.json()
-                        if "refresh_token" in data:
-                            print("[NET] Refresh Token de Visual Support capturado!")
-                            tokens_captured["refresh_token"] = data["refresh_token"]
-                            tokens_captured["access_token"] = data.get("access_token")
+                    code_captured = response.url.split("code=")[1].split("&")[0]
+                    print("✅ [NET] ¡Código de Autorización interceptado con éxito!")
                 except:
                     pass
 
-        page.on("response", handle_response)
+        page.on("response", on_response)
         
-        print("Navegando a la página de Visual Support...")
-        # Página directa para forzar el token correcto
-        await page.goto("https://visualsupport.microsoft.com/")
+        print("Navegando a la página de login de Microsoft...")
+        # Usamos el cliente genérico que permite redirección a desktop.srf
+        auth_url = "https://login.live.com/oauth20_authorize.srf?client_id=29d9ed98-a469-4536-ade2-f981bc1d605e&response_type=code&redirect_uri=https://login.live.com/oauth20_desktop.srf&scope=service::http://Passport.NET/tb::PURPOSE offline_access"
+        await page.goto(auth_url)
         
         print("\n" + "="*50)
         print("ACCIÓN REQUERIDA: Inicia sesión en la ventana del navegador.")
-        print("   Una vez que estés dentro y veas tu cuenta de Microsoft,")
-        print("   vuelve a esta ventana de consola y presiona ENTER.")
+        print("   Solo inicia sesión normalmente. El script se cerrará solo")
+        print("   en cuanto capture el código de autorización.")
         print("="*50 + "\n")
         
-        # Esperar confirmación manual del usuario
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, input, "Presiona ENTER aquí cuando hayas terminado...")
-        print("Confirmación recibida.")
+        # Esperar hasta capturar el código (máximo 5 minutos)
+        for _ in range(300):
+            if code_captured:
+                break
+            await asyncio.sleep(1)
+            
+        if not code_captured:
+            print("❌ No se pudo capturar el código. Tiempo de espera agotado o ventana cerrada.")
+            await browser.close()
+            return
+
+        print("Intercambiando código por Token Maestro...")
         
-        print("Guardando estado de la sesión (Cookies y Session/Local Storage)...")
-        storage_state = await browser.storage_state()
-        
-        # Mezclamos la información de red capturada (si la hay) con el state
-        export_data = {
-            "storage_state": storage_state,
-            "tokens_network": tokens_captured
+        token_url = "https://login.live.com/oauth20_token.srf"
+        payload = {
+            "client_id": "29d9ed98-a469-4536-ade2-f981bc1d605e",
+            "grant_type": "authorization_code",
+            "code": code_captured,
+            "redirect_uri": "https://login.live.com/oauth20_desktop.srf"
         }
         
-        with open(SESSION_FILE, "w", encoding="utf-8") as f:
-            json.dump(export_data, f, indent=4)
-            
-        print(f"¡Éxito! Archivo generado: {SESSION_FILE}")
-        print("Lleva este archivo a tu servidor Ubuntu.")
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(token_url, data=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                print("✅ ¡Token Maestro generado exitosamente!")
+                
+                # Guardamos el estado
+                storage_state = await browser.storage_state()
+                export_data = {
+                    "storage_state": storage_state,
+                    "tokens_network": {
+                        "refresh_token": data.get("refresh_token"),
+                        "access_token": data.get("access_token")
+                    }
+                }
+                
+                with open(SESSION_FILE, "w", encoding="utf-8") as f:
+                    json.dump(export_data, f, indent=4)
+                    
+                print(f"¡Éxito total! Archivo generado: {SESSION_FILE}")
+                print("Lleva este archivo a tu servidor Ubuntu.")
+            else:
+                print(f"❌ Falló el intercambio de token: {resp.status_code} - {resp.text}")
+        
         
         await browser.close()
 
