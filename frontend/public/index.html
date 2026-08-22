@@ -382,20 +382,21 @@
             iidEl.classList.add('hidden');
         }
         
-        // Construir mensaje de WhatsApp dinámico con TODA la info
-        let waMsg = 'Hola, necesito ayuda para activar mi producto.';
-        if (emailVal) waMsg += `\n\n📧 Mi pedido/email: ${emailVal}`;
+        // Construir mensaje de WhatsApp: IID PRIMERO solo, luego contexto corto
         if (displayIid && displayIid.length >= 20) {
             const formattedIid = displayIid.match(/.{1,7}/g)?.join(' ') || displayIid;
-            waMsg += `\n\n🔢 Mi IID es:\n${formattedIid}`;
+            // IID va PRIMERO, solo, sin emojis — fácil de copiar con long-press
+            let waMsg = formattedIid;
+            waMsg += '\n\nHola, necesito ayuda con mi CID';
+            if (emailVal) waMsg += '\nPedido: ' + emailVal;
             waBtn.textContent = '💬 Enviar mi IID por WhatsApp';
+            waBtn.href = `https://wa.me/51907463313?text=${encodeURIComponent(waMsg)}`;
         } else {
+            let waMsg = 'Hola, necesito ayuda con mi CID';
+            if (emailVal) waMsg += '\nPedido: ' + emailVal;
             waBtn.textContent = '💬 Solicitar ayuda por WhatsApp';
+            waBtn.href = `https://wa.me/51907463313?text=${encodeURIComponent(waMsg)}`;
         }
-        if (code) waMsg += `\n\n⚠️ Error: ${code}`;
-        waMsg += '\n\n¿Me podrían ayudar a obtener mi CID?';
-        
-        waBtn.href = `https://wa.me/51907463313?text=${encodeURIComponent(waMsg)}`;
         helpBox.classList.remove('hidden');
     }
     </script>
