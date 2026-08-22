@@ -154,9 +154,14 @@ a:hover{text-decoration:underline}
 .btn-whatsapp:hover{background:#1ebe5a;text-decoration:none}
 
 /* WhatsApp Error Button (inside error area) */
-.btn-wa-error{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:14px 32px;background:#25d366;color:#fff;border-radius:10px;font-weight:800;font-size:14px;text-decoration:none;transition:all .3s ease;font-family:var(--font);border:none;cursor:pointer;animation:waPulse 2s ease-in-out infinite;box-shadow:0 4px 16px rgba(37,211,102,.3)}
-.btn-wa-error:hover{background:#1ebe5a;transform:translateY(-2px);box-shadow:0 8px 24px rgba(37,211,102,.4);text-decoration:none;animation:none}
-@keyframes waPulse{0%,100%{box-shadow:0 4px 16px rgba(37,211,102,.3)}50%{box-shadow:0 4px 24px rgba(37,211,102,.55)}}
+.iid-display-box{background:#fff;border:1.5px solid var(--card-border);border-radius:12px;padding:18px;text-align:center;box-shadow:var(--shadow)}
+.iid-display-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.iid-display-digits{font-family:'Courier New',monospace;font-size:15px;font-weight:700;color:var(--text);padding:12px 16px;background:#f8fafc;border:1.5px solid var(--card-border);border-radius:8px;word-break:break-all;line-height:1.6;letter-spacing:.5px;user-select:all;margin-bottom:14px}
+.iid-actions{display:flex;gap:8px}
+.btn-iid-copy{flex:1;padding:12px 16px;background:var(--primary);color:#fff;border:none;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer;transition:.2s;font-family:var(--font)}
+.btn-iid-copy:hover{background:var(--primary-hover);transform:translateY(-1px)}
+.btn-iid-wa{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:12px 16px;background:#25d366;color:#fff;border-radius:10px;font-weight:700;font-size:13px;text-decoration:none;transition:.2s;font-family:var(--font)}
+.btn-iid-wa:hover{background:#1ebe5a;transform:translateY(-1px);text-decoration:none}
 
 .btn-email{display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 28px;background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,.12);border-radius:10px;font-weight:600;font-size:12px;text-decoration:none;transition:.2s}
 .btn-email:hover{border-color:var(--gold);color:var(--gold);text-decoration:none}

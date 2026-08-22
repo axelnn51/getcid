@@ -168,11 +168,16 @@
                     <div id="error-area" class="hidden">
                         <div class="result-box error-box">
                             <p id="error-msg" style="white-space:pre-wrap;word-break:break-word;"></p>
-                            <div id="error-iid" class="hidden" style="margin-top:10px;padding:10px 14px;background:rgba(220,38,38,0.06);border:1px solid rgba(220,38,38,0.12);border-radius:8px;font-family:'Courier New',monospace;font-size:13px;word-break:break-all;color:#991b1b;"></div>
-                            <div id="error-help" class="hidden" style="margin-top:16px;padding:16px;background:linear-gradient(135deg,rgba(37,211,102,0.08),rgba(37,211,102,0.03));border:1px solid rgba(37,211,102,0.2);border-radius:10px;text-align:center;">
-                                <p style="font-size:13px;color:#374151;margin-bottom:10px;font-weight:600;">💡 ¿Necesitas ayuda? Te respondemos al instante</p>
-                                <a id="error-wa-btn" href="#" target="_blank" class="btn-wa-error">💬 Enviar IID por WhatsApp</a>
-                                <p style="font-size:10px;color:#9ca3af;margin-top:8px;">Se abrirá WhatsApp con tus datos listos para enviar</p>
+                        </div>
+                        <!-- IID + Acciones (separado del error) -->
+                        <div id="error-help" class="hidden" style="margin-top:12px;">
+                            <div class="iid-display-box">
+                                <div class="iid-display-label">Tu Installation ID detectado:</div>
+                                <div class="iid-display-digits" id="error-iid-digits"></div>
+                                <div class="iid-actions">
+                                    <button class="btn-iid-copy" id="btn-copy-iid">📋 Copiar dígitos</button>
+                                    <a id="error-wa-btn" href="#" target="_blank" class="btn-iid-wa">💬 Enviar por WhatsApp</a>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -366,38 +371,34 @@
     function showErr(m, iid, code) { 
         $('error-msg').textContent = m; 
         $('error-area').classList.remove('hidden');
-        const iidEl = $('error-iid');
-        const waBtn = $('error-wa-btn');
         const helpBox = $('error-help');
-        const emailVal = $('email').value.trim();
+        const digitsEl = $('error-iid-digits');
+        const waBtn = $('error-wa-btn');
+        const copyBtn = $('btn-copy-iid');
         const manualIid = $('iid').value.trim();
         
-        // Mostrar IID detectado si existe
+        // Obtener IID limpio
         const displayIid = iid || manualIid.replace(/\s/g, '');
-        if (displayIid && displayIid.length >= 20) {
-            const formattedIid = displayIid.match(/.{1,7}/g)?.join(' ') || displayIid;
-            iidEl.textContent = '🔢 IID: ' + formattedIid;
-            iidEl.classList.remove('hidden');
-        } else {
-            iidEl.classList.add('hidden');
-        }
         
-        // Construir mensaje de WhatsApp: IID PRIMERO solo, luego contexto corto
         if (displayIid && displayIid.length >= 20) {
-            const formattedIid = displayIid.match(/.{1,7}/g)?.join(' ') || displayIid;
-            // IID va PRIMERO, solo, sin emojis — fácil de copiar con long-press
-            let waMsg = formattedIid;
-            waMsg += '\n\nHola, necesito ayuda con mi CID';
-            if (emailVal) waMsg += '\nPedido: ' + emailVal;
-            waBtn.textContent = '💬 Enviar mi IID por WhatsApp';
+            const formatted = displayIid.match(/.{1,7}/g)?.join(' ') || displayIid;
+            digitsEl.textContent = formatted;
+            
+            // Botón copiar
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(formatted);
+                copyBtn.textContent = '✅ ¡Copiado!';
+                setTimeout(() => { copyBtn.textContent = '📋 Copiar dígitos'; }, 2000);
+            };
+            
+            // WhatsApp: solo dígitos + salto de línea + msg corto
+            const waMsg = formatted + '\n\nNecesito ayuda con mi CID';
             waBtn.href = `https://wa.me/51907463313?text=${encodeURIComponent(waMsg)}`;
+            
+            helpBox.classList.remove('hidden');
         } else {
-            let waMsg = 'Hola, necesito ayuda con mi CID';
-            if (emailVal) waMsg += '\nPedido: ' + emailVal;
-            waBtn.textContent = '💬 Solicitar ayuda por WhatsApp';
-            waBtn.href = `https://wa.me/51907463313?text=${encodeURIComponent(waMsg)}`;
+            helpBox.classList.add('hidden');
         }
-        helpBox.classList.remove('hidden');
     }
     </script>
 </body>
