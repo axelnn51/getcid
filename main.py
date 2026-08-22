@@ -123,10 +123,33 @@ async def check_pid(request: PIDRequest):
                 req_headers["DPoP"] = auth_manager.dpop_engine.generate_dpop_proof(htm, htu, nonce=nonce)
                 response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
                 
+            # 3. ANTIREINICIO: Si el token expiró, renovar automáticamente y reintentar
             if response.status_code in (401, 403):
-                logger.error(f"[{pid}] Token expirado o Denegado (401/403). Forzando expiración. MS Response: {response.text}")
-                auth_manager.access_token = None # Forzar que el demonio lo renueve
-                raise HTTPException(status_code=401, detail=f"Token expirado o Denegado en Microsoft. MS Response: {response.text}")
+                logger.warning(f"[{pid}] Token expirado (401/403). Intentando renovación automática...")
+                refresh_ok = await auth_manager.refresh_access_token()
+                if refresh_ok:
+                    logger.info(f"[{pid}] Token renovado exitosamente. Reintentando petición CID...")
+                    # Reconstruir headers con el nuevo token
+                    req_headers["authorization"] = f"Bearer {auth_manager.access_token}"
+                    req_headers["x-user-id"] = auth_manager.puid if getattr(auth_manager, 'puid', None) else '00037FFFB13977BF'
+                    dpop_proof = auth_manager.dpop_engine.generate_dpop_proof(htm, htu)
+                    req_headers["DPoP"] = dpop_proof
+                    response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
+                    
+                    # Manejar nonce de nuevo si lo piden
+                    if "dpop-nonce" in response.headers or "DPoP-Nonce" in response.headers:
+                        nonce = response.headers.get("dpop-nonce", response.headers.get("DPoP-Nonce"))
+                        req_headers["DPoP"] = auth_manager.dpop_engine.generate_dpop_proof(htm, htu, nonce=nonce)
+                        response = await client.post(MICROSOFT_CID_ENDPOINT, headers=req_headers, json=payload)
+                    
+                    if response.status_code in (401, 403):
+                        logger.error(f"[{pid}] Token sigue inválido tras renovación. MS Response: {response.text}")
+                        auth_manager.access_token = None
+                        raise HTTPException(status_code=401, detail=f"Token inválido incluso tras renovación. Contacta al administrador.")
+                else:
+                    logger.error(f"[{pid}] No se pudo renovar el token. MS Response: {response.text}")
+                    auth_manager.access_token = None
+                    raise HTTPException(status_code=401, detail=f"Token expirado y no se pudo renovar automáticamente.")
             elif response.status_code != 200:
                 logger.error(f"Error de Microsoft: {response.text}")
                 raise HTTPException(status_code=500, detail=f"Error {response.status_code} en Microsoft")
