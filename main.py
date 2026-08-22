@@ -189,6 +189,25 @@ async def update_session(session_data: dict):
         logger.error(f"Error al actualizar sesión: {e}")
         return {"success": False, "error": str(e)}
 
+@app.post("/api/force_extraction")
+async def force_extraction(api_key: str = Security(get_api_key)):
+    try:
+        logger.warning("Recibida petición de extracción forzada. Vaciando sesión...")
+        auth_manager.refresh_token = None
+        auth_manager.access_token = None
+        auth_manager.daemon_status = "failed"
+        
+        # Vaciar archivo físico
+        with open("session_master.json", "w", encoding="utf-8") as f:
+            f.write("{}")
+            
+        # Llamar al extractor
+        asyncio.create_task(auth_manager.trigger_auto_extractor())
+        return {"success": True, "message": "Extracción forzada iniciada."}
+    except Exception as e:
+        logger.error(f"Error en extracción forzada: {e}")
+        return {"success": False, "error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

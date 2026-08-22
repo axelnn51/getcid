@@ -182,15 +182,15 @@ function startBot() {
     // ============================================================
     bot.hears('🔄 Renovar Token', async (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
-        const msg = await ctx.reply('🚀 Iniciando Chrome en el servidor... Por favor espera.', { parse_mode: 'Markdown' });
+        const msg = await ctx.reply('⚙️ Despertando al Auto-Extractor indetectable (VNC)... Por favor espera.', { parse_mode: 'Markdown' });
         
         try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/force_extraction`, { method: 'POST' });
             const data = await response.json();
             if (!data.success) {
                 ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Error: ${data.error}`);
             } else {
-                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ Proceso iniciado. Si hay CAPTCHA, te enviaré la foto en unos segundos.`);
+                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ Auto-Extractor iniciado en el servidor.\nSi hay algún bloqueo de MS, recibirás el link de Cloudflare en unos segundos.`);
             }
         } catch (err) {
             ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ No se pudo contactar al servidor: ${err.message}`);
