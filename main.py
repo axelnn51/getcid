@@ -170,6 +170,25 @@ async def check_pid(request: PIDRequest):
             logger.error(f"Error en API de Microsoft: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/update_session")
+async def update_session(session_data: dict):
+    try:
+        import json
+        with open("session_master.json", "w", encoding="utf-8") as f:
+            json.dump(session_data, f, indent=4)
+        
+        auth_manager._load_session()
+        
+        if auth_manager.refresh_token:
+            auth_manager.daemon_status = "running"
+            auth_manager.daemon_error = None
+            asyncio.create_task(auth_manager.refresh_access_token())
+            
+        return {"success": True, "message": "Sesión actualizada y tokens recargados en memoria."}
+    except Exception as e:
+        logger.error(f"Error al actualizar sesión: {e}")
+        return {"success": False, "error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

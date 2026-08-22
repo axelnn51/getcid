@@ -371,181 +371,44 @@ function startBot() {
     });
 
     // ============================================================
-    // /settoken — Admin envía token de Microsoft generado localmente
+    // CARGA DE SESSION_MASTER EN CALIENTE
     // ============================================================
-    bot.command('settoken', async (ctx) => {
+    bot.on('document', async (ctx) => {
         const tgId = String(ctx.from.id);
-        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+        if (!isAdmin(tgId)) return;
         
-        const args = ctx.message.text.split(' ').slice(1);
-        if (args.length < 1) {
-            return ctx.reply(
-                '🔑 *Cómo usar /settoken:*\n\n' +
-                '1️⃣ En tu PC local, abre `NUEVOGETCID`\n' +
-                '2️⃣ Ejecuta: `python scraper.py`\n' +
-                '3️⃣ Inicia sesión en Chrome cuando se abra\n' +
-                '4️⃣ Copia el token del archivo `ms_token.json`\n' +
-                '5️⃣ Envía: `/settoken EL_TOKEN_AQUI`\n\n' +
-                '⏱ El token dura ~1 hora.',
-                { parse_mode: 'Markdown' }
-            );
+        const doc = ctx.message.document;
+        if (doc.file_name !== 'session_master.json') {
+            return ctx.reply('❌ Solo acepto archivos llamados `session_master.json`.', { parse_mode: 'Markdown' });
         }
         
-        const token = args.join(' ').trim();
-        
         try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/settoken`, {
+            const msg = await ctx.reply('⏳ Procesando y actualizando sesión en caliente...');
+            
+            const file = await ctx.telegram.getFile(doc.file_id);
+            const resp = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
+            const sessionData = await resp.json();
+            
+            if (!sessionData.tokens_network) {
+                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ Archivo inválido. No contiene `tokens_network`.');
+            }
+            
+            const updateResp = await fetch(`${GETCID_SERVICE_URL}/api/update_session`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ token, duration: 3600 })
+                body: JSON.stringify(sessionData)
             });
             
-            const data = await response.json();
-            
-            if (data.success) {
-                ctx.reply(`✅ *Token actualizado exitosamente*\n⏱ Válido por 60 minutos.\n\n💡 Usa /tokenstatus para verificar.`, { parse_mode: 'Markdown' });
-            } else {
-                ctx.reply(`❌ Error: ${data.error}`);
-            }
-        } catch (err) {
-            ctx.reply(`❌ No se pudo conectar con el servicio Python: ${err.message}`);
-        }
-    });
-
-    // ============================================================
-    // /tokenstatus — Verificar estado del token actual
-    // ============================================================
-    bot.command('tokenstatus', async (ctx) => {
-        const tgId = String(ctx.from.id);
-        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
-        
-        try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/token-status`);
-            const data = await response.json();
-            
-            if (data.status === 'valid') {
-                ctx.reply(`🟢 *Token ACTIVO*\n⏱ Quedan: ${data.remaining_minutes} minutos`, { parse_mode: 'Markdown' });
-            } else if (data.status === 'expired') {
-                ctx.reply(`🔴 *Token EXPIRADO*\n\nUsa /settoken para renovarlo.`, { parse_mode: 'Markdown' });
-            } else {
-                ctx.reply(`⚪ *Sin token*\n\nUsa /settoken para configurar uno.`, { parse_mode: 'Markdown' });
-            }
-        } catch (err) {
-            ctx.reply(`❌ No se pudo verificar: ${err.message}`);
-        }
-    });
-
-    // ============================================================
-    // /setrefreshtoken — Token permanente para auto-renovación
-    // ============================================================
-    bot.command('setrefreshtoken', async (ctx) => {
-        const tgId = String(ctx.from.id);
-        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
-        
-        const text = ctx.message.text.replace('/setrefreshtoken', '').trim();
-        
-        if (!text) {
-            return ctx.reply(
-                '🔑 *Cómo usar /setrefreshtoken:*\n\n' +
-                '1️⃣ En tu PC, ejecuta el scraper:\n' +
-                '`cd NUEVOGETCID && .\\venv\\Scripts\\python.exe scraper.py`\n\n' +
-                '2️⃣ Inicia sesión en Chrome\n\n' +
-                '3️⃣ Abre `ms_refresh_token.json` y copia TODO el contenido\n\n' +
-                '4️⃣ Envía: `/setrefreshtoken {contenido_del_json}`\n\n' +
-                '⚠️ *Nota:* Si el token es de tipo SPA, dura máx 24h (el refresh automático lo mantiene activo).\n' +
-                '💡 Para tokens de 90 días, usa `/deviceauth`.',
-                { parse_mode: 'Markdown' }
-            );
-        }
-        
-        try {
-            // Intentar parsear como JSON
-            const data = JSON.parse(text);
-            
-            if (!data.refresh_token || !data.client_id) {
-                return ctx.reply('❌ JSON inválido. Necesita `refresh_token` y `client_id`.');
-            }
-            
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/setrefreshtoken`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    refresh_token: data.refresh_token,
-                    client_id: data.client_id,
-                    scopes: data.scopes || ''
-                })
-            });
-            
-            const result = await response.json();
+            const result = await updateResp.json();
             
             if (result.success) {
-                // Verificar tipo de token para dar info correcta
-                let tokenInfo = '🔄 Auto-renovación activa';
-                const clientPrefix = data.client_id.substring(0, 8);
-                if (clientPrefix.startsWith('2b217cec')) {
-                    tokenInfo = '⚠️ Token SPA (24h máx) — El refresh automático cada 25 min lo mantiene activo';
-                } else if (clientPrefix.startsWith('04b07795') || clientPrefix.startsWith('d3590ed6')) {
-                    tokenInfo = '✅ Token Native App — Válido por ~90 días con auto-renovación';
-                }
-                
-                ctx.reply(
-                    `✅ *Refresh Token configurado*\n\n` +
-                    `${tokenInfo}\n` +
-                    `🤖 Proactive refresh: cada 25 min\n\n` +
-                    `${result.message}`,
-                    { parse_mode: 'Markdown' }
-                );
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ *Sesión Actualizada Exitosamente*\n\nEl backend ahora usará los nuevos tokens.`, { parse_mode: 'Markdown' });
             } else {
-                ctx.reply(`❌ Error: ${result.error}`);
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Falló la actualización: ${result.error}`);
             }
+            
         } catch (err) {
-            if (err instanceof SyntaxError) {
-                ctx.reply('❌ El texto no es JSON válido. Copia el contenido COMPLETO del archivo `ms_refresh_token.json`.');
-            } else {
-                ctx.reply(`❌ Error: ${err.message}`);
-            }
-        }
-    });
-
-    // ============================================================
-    // /deviceauth — Iniciar Device Code Flow para token de 90 días
-    // ============================================================
-    bot.command('deviceauth', async (ctx) => {
-        const tgId = String(ctx.from.id);
-        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
-        
-        try {
-            const msg = await ctx.reply('🔄 Iniciando Device Code Flow...');
-            
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/device-auth-start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            
-            const data = await response.json();
-            
-            if (data.success) {
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
-                    `🔐 *Device Code Flow Activo*\n\n` +
-                    `📋 Código: \`${data.user_code}\`\n` +
-                    `🌐 URL: ${data.verification_uri}\n` +
-                    `🔧 Client: ${data.client_name}\n\n` +
-                    `*Pasos:*\n` +
-                    `1️⃣ Abre el link de arriba\n` +
-                    `2️⃣ Pega el código \`${data.user_code}\`\n` +
-                    `3️⃣ Inicia sesión con tu cuenta Microsoft\n\n` +
-                    `⏱ Expira en ${Math.floor(data.expires_in / 60)} minutos\n` +
-                    `🤖 El servidor capturará el token automáticamente.`,
-                    { parse_mode: 'Markdown' }
-                );
-            } else {
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
-                    `❌ *Device Code Flow falló*\n\n${data.error}`,
-                    { parse_mode: 'Markdown' }
-                );
-            }
-        } catch (err) {
-            ctx.reply(`❌ Error: ${err.message}`);
+            ctx.reply(`❌ Error al cargar la sesión: ${err.message}`);
         }
     });
 

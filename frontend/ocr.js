@@ -25,7 +25,9 @@ const STRATEGIES = [
     { name: "Screenshot", process: (i, o) => sharp(i).greyscale().sharpen().toFile(o) },
     { name: "Photo", process: (i, o) => sharp(i).resize({ width: 2000 }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
     { name: "Blurry", process: (i, o) => sharp(i).resize({ width: 3000 }).greyscale().normalize().sharpen({ sigma: 2 }).toFile(o) },
-    { name: "Binary", process: (i, o) => sharp(i).resize({ width: 2500 }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) }
+    { name: "Binary", process: (i, o) => sharp(i).resize({ width: 2500 }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) },
+    { name: "LCD_Screen", process: (i, o) => sharp(i).resize({ width: 2500 }).greyscale().blur(1.5).normalize().linear(1.8, -0.2).sharpen().toFile(o) },
+    { name: "LCD_Aggressive", process: (i, o) => sharp(i).resize({ width: 2000 }).greyscale().blur(2.0).threshold(128).toFile(o) }
 ];
 
 // Extraer IID del texto OCR

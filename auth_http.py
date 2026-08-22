@@ -109,6 +109,14 @@ class AuthManager:
             except:
                 pass
 
+    async def trigger_auto_extractor(self):
+        logger.info("Llamando al microservicio Auto-Extractor para renovar sesión desde cero...")
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post("http://getcid_auto_extractor:5000/start", timeout=5.0)
+        except Exception as e:
+            logger.error(f"Error al llamar al Auto-Extractor: {e}")
+
     async def refresh_access_token(self):
         if not self.refresh_token:
             logger.error("No hay refresh_token disponible. No se puede renovar.")
@@ -190,6 +198,7 @@ class AuthManager:
                             self.daemon_error = "invalid_grant - Refresh token revocado"
                             self.refresh_token = None
                             self.access_token = None
+                            asyncio.create_task(self.trigger_auto_extractor())
                             return False  # No reintentar, es permanente
                         
                         # Para otros errores HTTP, reintentar
@@ -223,6 +232,10 @@ class AuthManager:
                 logger.info("✅ Token renovado exitosamente al arrancar. Sistema listo.")
             else:
                 logger.warning("⚠️ Fallo en renovación al arrancar. Se reintentará en el ciclo normal.")
+        else:
+            logger.warning("No hay refresh_token al arrancar. Disparando Auto-Extractor...")
+            self.daemon_status = "failed"
+            asyncio.create_task(self.trigger_auto_extractor())
         
         while True:
             if self.daemon_status == "failed":
