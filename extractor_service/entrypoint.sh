@@ -12,6 +12,10 @@ x11vnc -display :99 -nopw -listen localhost -xkb -ncache 10 -ncache_cr -forever 
 # Iniciar noVNC en el puerto 6080 web
 /usr/share/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
 
+# Iniciar túnel de Cloudflare para acceso remoto seguro
+echo "Iniciando túnel Cloudflare..."
+cloudflared tunnel --url http://localhost:6080 > /tmp/cloudflared.log 2>&1 &
+
 # Iniciar la API FastAPI
 echo "Iniciando Auto Extractor API en puerto 5000..."
 exec uvicorn server:app --host 0.0.0.0 --port 5000

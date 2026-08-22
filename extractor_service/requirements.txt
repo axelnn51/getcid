@@ -1,5 +1,7 @@
 fastapi==0.109.2
 uvicorn==0.27.1
-playwright==1.41.2
+undetected-chromedriver==3.5.5
+selenium==4.17.2
+selenium-wire==5.1.0
 requests==2.31.0
 python-dotenv==1.0.1

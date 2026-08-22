@@ -3,7 +3,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 
-# Instalar dependencias del sistema, Python, Xvfb, x11vnc, fluxbox (window manager ligero) y dependencias de Playwright
+# Instalar dependencias del sistema, Python, Xvfb, x11vnc, fluxbox (window manager ligero)
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -16,16 +16,20 @@ RUN apt-get update && apt-get install -y \
     novnc \
     websockify \
     curl \
-    # Dependencias comunes de Playwright
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libx11-xcb1 \
-    libxcb-dri3-0 \
-    libdrm2 \
-    libgbm1 \
-    libasound2 \
-    libxshmfence1 \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
+
+# Instalar Google Chrome (necesario para undetected-chromedriver)
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# Instalar Cloudflared para el túnel de acceso global
+RUN curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && \
+    dpkg -i cloudflared.deb && \
+    rm cloudflared.deb
 
 # Crear directorio de trabajo
 WORKDIR /app
@@ -37,10 +41,6 @@ COPY requirements.txt .
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Instalar navegadores de Playwright (solo chromium para ahorrar espacio)
-RUN playwright install chromium
-RUN playwright install-deps chromium
 
 # Copiar el resto del código
 COPY . .
