@@ -105,6 +105,7 @@ def extract_session():
     options.add_argument("--no-sandbox")
     options.add_argument("--ignore-certificate-errors")
     options.add_argument("--allow-insecure-localhost")
+    options.add_argument("--load-extension=/app/chrome_ext")
     
     sw_options = {
         'disable_encoding': True
@@ -168,7 +169,7 @@ def extract_session():
         
         # Llenar email
         try:
-            email_input = WebDriverWait(driver, 5).until(
+            email_input = WebDriverWait(driver, 120).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='email']"))
             )
             print("Escribiendo email...")
@@ -180,7 +181,7 @@ def extract_session():
             
         # Llenar password
         try:
-            pass_input = WebDriverWait(driver, 5).until(
+            pass_input = WebDriverWait(driver, 60).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "input[type='password']"))
             )
             print("Escribiendo contraseña...")
@@ -192,7 +193,7 @@ def extract_session():
             
         # Stay signed in
         try:
-            yes_btn = WebDriverWait(driver, 3).until(
+            yes_btn = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "input[id='idSIButton9']"))
             )
             print("Haciendo click en 'Stay signed in'...")
