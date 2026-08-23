@@ -213,27 +213,38 @@ def extract_session():
     if not captured_client_id:
         print("Iniciando flujo de auto-verificación por IMAP...")
         try:
-            # Buscar opción de email y hacer click
+            # 1. Intentar hacer click en el primer Proof (ej. Email)
             try:
-                email_option = WebDriverWait(driver, 3).until(
-                    EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), '@gmail.com')] | //div[@id='idDiv_SAOTCS_Proofs']"))
-                )
-                email_option.click()
-                time.sleep(2)
-            except:
-                pass
+                print("Buscando opciones de Proof...")
+                driver.execute_script("""
+                    var proofs = document.querySelectorAll('div[data-bind*="selectProof"]');
+                    if(proofs.length > 0) proofs[0].click();
+                """)
+                time.sleep(3)
+            except Exception as e:
+                print(f"Error click proof: {e}")
                 
-            # Si pide confirmar el correo (escribirlo entero)
+            # 2. Si pide confirmar el correo electrónico
             try:
-                email_confirm = driver.find_element(By.ID, "idTxtBx_SAOTCS_ProofConfirmation")
-                email_confirm.send_keys(os.getenv("GMAIL_RECOVERY_EMAIL"))
-                email_confirm.send_keys(u'\ue007')
-                time.sleep(2)
-            except:
-                pass
+                print("Buscando confirmación de correo...")
+                recovery_email = os.getenv("GMAIL_RECOVERY_EMAIL", "")
+                driver.execute_script(f"""
+                    var conf = document.getElementById('idTxtBx_SAOTCS_ProofConfirmation');
+                    var btn = document.getElementById('idSubmit_SAOTCS_SendCode');
+                    if(conf && btn) {{
+                        conf.value = '{recovery_email}';
+                        conf.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        conf.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        btn.click();
+                    }}
+                """)
+                time.sleep(3)
+            except Exception as e:
+                print(f"Error confirmación: {e}")
                 
-            # Buscar campo de código
+            # 3. Buscar campo de código
             try:
+                print("Buscando input de código (idTxtBx_SAOTCC_OTC)...")
                 code_input = WebDriverWait(driver, 5).until(
                     EC.presence_of_element_located((By.ID, "idTxtBx_SAOTCC_OTC"))
                 )
@@ -244,8 +255,16 @@ def extract_session():
                 code = fetch_microsoft_code()
                 if code:
                     send_telegram_alert(f"✅ Código interceptado: `{code}`. Inyectando en el navegador...")
-                    code_input.send_keys(code)
-                    code_input.send_keys(u'\ue007') # Submit
+                    driver.execute_script(f"""
+                        var otc = document.getElementById('idTxtBx_SAOTCC_OTC');
+                        var btn = document.getElementById('idSubmit_SAOTCC_Continue');
+                        if(otc && btn) {{
+                            otc.value = '{code}';
+                            otc.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            otc.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            btn.click();
+                        }}
+                    """)
                     time.sleep(5)
                     
                     try:
@@ -256,8 +275,13 @@ def extract_session():
                         time.sleep(3)
                     except:
                         pass
+                else:
+                    print("IMAP no devolvió ningún código válido.")
             except Exception as e:
-                print(f"No se encontró input de código o falló inyección: {e}")
+                print(f"No se encontró input de código o falló inyección.")
+                with open("/tmp/ms_error_page.html", "w") as f:
+                    f.write(driver.page_source)
+                print("Página de error guardada en /tmp/ms_error_page.html")
                 
             # Volver a revisar las peticiones a ver si lo atrapamos
             for request in driver.requests:
