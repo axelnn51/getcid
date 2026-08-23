@@ -25,6 +25,46 @@ def send_telegram_alert(msg):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, json={"chat_id": TELEGRAM_ADMIN, "text": msg, "parse_mode": "Markdown"})
 
+def fetch_microsoft_code():
+    import imaplib
+    import email
+    
+    gmail_user = os.getenv("GMAIL_RECOVERY_EMAIL")
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD")
+    
+    if not gmail_user or not gmail_pass:
+        return None
+        
+    try:
+        mail = imaplib.IMAP4_SSL("imap.gmail.com")
+        mail.login(gmail_user, gmail_pass)
+        mail.select("inbox")
+        
+        status, messages = mail.search(None, 'FROM', '"Microsoft account team"')
+        if status == "OK" and messages[0]:
+            latest_id = messages[0].split()[-1]
+            status, data = mail.fetch(latest_id, '(RFC822)')
+            if status == "OK":
+                msg = email.message_from_bytes(data[0][1])
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/plain":
+                            body = part.get_payload(decode=True).decode()
+                            break
+                else:
+                    body = msg.get_payload(decode=True).decode()
+                
+                match = re.search(r'\b\d{6,7}\b', body)
+                if match:
+                    code = match.group(0)
+                    mail.logout()
+                    return code
+        mail.logout()
+    except Exception as e:
+        print(f"Error IMAP: {e}")
+    return None
+
 def get_chrome_major_version():
     import subprocess
     try:
@@ -170,6 +210,77 @@ def extract_session():
             break
         time.sleep(1)
         
+    if not captured_client_id:
+        print("Iniciando flujo de auto-verificación por IMAP...")
+        try:
+            # Buscar opción de email y hacer click
+            try:
+                email_option = WebDriverWait(driver, 3).until(
+                    EC.element_to_be_clickable((By.XPATH, "//div[contains(text(), '@gmail.com')] | //div[@id='idDiv_SAOTCS_Proofs']"))
+                )
+                email_option.click()
+                time.sleep(2)
+            except:
+                pass
+                
+            # Si pide confirmar el correo (escribirlo entero)
+            try:
+                email_confirm = driver.find_element(By.ID, "idTxtBx_SAOTCS_ProofConfirmation")
+                email_confirm.send_keys(os.getenv("GMAIL_RECOVERY_EMAIL"))
+                email_confirm.send_keys(u'\ue007')
+                time.sleep(2)
+            except:
+                pass
+                
+            # Buscar campo de código
+            try:
+                code_input = WebDriverWait(driver, 5).until(
+                    EC.presence_of_element_located((By.ID, "idTxtBx_SAOTCC_OTC"))
+                )
+                send_telegram_alert("🔄 *Fase 3/3:* Recuperando código de seguridad desde Gmail (IMAP)...")
+                print("Esperando 15s para que llegue el correo...")
+                time.sleep(15)
+                
+                code = fetch_microsoft_code()
+                if code:
+                    send_telegram_alert(f"✅ Código interceptado: `{code}`. Inyectando en el navegador...")
+                    code_input.send_keys(code)
+                    code_input.send_keys(u'\ue007') # Submit
+                    time.sleep(5)
+                    
+                    try:
+                        yes_btn = WebDriverWait(driver, 3).until(
+                            EC.element_to_be_clickable((By.CSS_SELECTOR, "input[id='idSIButton9']"))
+                        )
+                        yes_btn.click()
+                        time.sleep(3)
+                    except:
+                        pass
+            except Exception as e:
+                print(f"No se encontró input de código o falló inyección: {e}")
+                
+            # Volver a revisar las peticiones a ver si lo atrapamos
+            for request in driver.requests:
+                if "common/oauth2/v2.0/token" in request.url.lower() and request.response:
+                    if request.method == "POST":
+                        try:
+                            body_str = request.response.body.decode('utf-8')
+                            data = json.loads(body_str)
+                            if "refresh_token" in data:
+                                post_data = request.body.decode('utf-8')
+                                parsed = urllib.parse.parse_qs(post_data)
+                                client_id = parsed.get("client_id", [""])[0]
+                                if client_id and not captured_client_id:
+                                    print(f"✅ Token capturado tras auto-verificación: {client_id}")
+                                    captured_client_id = client_id
+                                    tokens_captured["refresh_token"] = data["refresh_token"]
+                                    tokens_captured["access_token"] = data.get("access_token")
+                                    tokens_captured["client_id"] = client_id
+                        except:
+                            pass
+        except Exception as e:
+            print(f"Error en flujo de auto-verificación: {e}")
+
     if not captured_client_id:
         cf_url = get_cloudflare_url()
         print("Posible bloqueo SMS detectado. Enviando alerta a Telegram...")
