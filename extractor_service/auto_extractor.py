@@ -25,6 +25,18 @@ def send_telegram_alert(msg):
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         requests.post(url, json={"chat_id": TELEGRAM_ADMIN, "text": msg, "parse_mode": "Markdown"})
 
+def get_chrome_major_version():
+    import subprocess
+    try:
+        process = subprocess.Popen(['google-chrome', '--version'], stdout=subprocess.PIPE)
+        out, _ = process.communicate()
+        match = re.search(r'\d+', out.decode('utf-8'))
+        if match:
+            return int(match.group(0))
+    except Exception:
+        pass
+    return None
+
 def get_cloudflare_url():
     try:
         with open("/tmp/cloudflared.log", "r") as f:
@@ -56,10 +68,13 @@ def extract_session():
         'disable_encoding': True
     }
     
+    chrome_version = get_chrome_major_version()
+    
     driver = uc.Chrome(
         options=options, 
         seleniumwire_options=sw_options,
-        user_data_dir="/app/playwright_data"
+        user_data_dir="/app/playwright_data",
+        version_main=chrome_version
     )
     
     tokens_captured = {}
