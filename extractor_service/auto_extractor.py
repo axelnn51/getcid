@@ -11,6 +11,14 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_ADMIN = os.getenv("TELEGRAM_ADMIN_ID")
 MS_EMAIL = os.getenv("MS_EMAIL")
 MS_PASSWORD = os.getenv("MS_PASSWORD")
+MS_ACCOUNTS = os.getenv("MS_ACCOUNTS")
+
+if (not MS_EMAIL or not MS_PASSWORD) and MS_ACCOUNTS:
+    try:
+        first_account = MS_ACCOUNTS.split(',')[0]
+        MS_EMAIL, MS_PASSWORD = first_account.split(':', 1)
+    except Exception:
+        pass
 
 def send_telegram_alert(msg):
     if TELEGRAM_TOKEN and TELEGRAM_ADMIN:

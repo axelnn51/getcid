@@ -47,6 +47,7 @@ services:
     environment:
       - MS_EMAIL=${MS_EMAIL}
       - MS_PASSWORD=${MS_PASSWORD}
+      - MS_ACCOUNTS=${MS_ACCOUNTS}
       - TELEGRAM_BOT_TOKEN=${BOT_TOKEN}
       - TELEGRAM_ADMIN_ID=${ADMIN_IDS}
     shm_size: '2gb'
