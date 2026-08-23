@@ -353,10 +353,12 @@ def extract_session():
         except Exception as e:
             print(f"Error en flujo de auto-verificación: {e}")
 
-    if not captured_client_id:
-        cf_url = get_cloudflare_url()
-        print("Posible bloqueo SMS detectado. Enviando alerta a Telegram...")
-        send_telegram_alert(f"🚨 *GETCID Bot Esperando Verificación*\n\nEl servidor superó el sistema Anti-Bots, pero Microsoft requiere verificar la cuenta (posible código SMS o validación visual).\n\n👉 Entra a este enlace remoto y seguro desde tu celular (sin importar dónde estés) para resolverlo:\n\n{cf_url}\n\nEl bot te esperará indefinidamente...")
+        if not captured_client_id:
+            cf_url = get_cloudflare_url()
+            if not cf_url.startswith("Error"):
+                cf_url += "/vnc.html"
+            print("Posible bloqueo SMS detectado. Enviando alerta a Telegram...")
+            send_telegram_alert(f"🚨 *GETCID Bot Esperando Verificación*\n\nEl servidor superó el sistema Anti-Bots, pero Microsoft requiere verificar la cuenta (posible código SMS o validación visual).\n\n👉 Entra a este enlace remoto y seguro desde tu celular (sin importar dónde estés) para resolverlo:\n\n{cf_url}\n\nEl bot te esperará indefinidamente...")
         
         while not captured_client_id:
             for request in driver.requests:
