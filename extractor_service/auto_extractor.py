@@ -140,6 +140,25 @@ def extract_session():
                     pass
                     
     driver.request_interceptor = request_interceptor
+
+    def extract_from_storage():
+        try:
+            keys = driver.execute_script("return Object.keys(sessionStorage);")
+            res = {}
+            for key in keys:
+                if "refreshtoken" in key.lower() or "accesstoken" in key.lower():
+                    val = driver.execute_script(f"return sessionStorage.getItem('{key}');")
+                    data = json.loads(val)
+                    if data.get("credentialType") == "RefreshToken":
+                        res["refresh_token"] = data.get("secret")
+                        res["client_id"] = data.get("clientId")
+                    elif data.get("credentialType") == "AccessToken":
+                        res["access_token"] = data.get("secret")
+            if "refresh_token" in res and "client_id" in res:
+                return res
+        except:
+            pass
+        return None
     
     try:
         print("Navegando a la página de login...")
@@ -223,6 +242,16 @@ def extract_session():
                                 tokens_captured["client_id"] = client_id
                     except Exception as e:
                         print(f"Error parseando token: {e}")
+        
+        if not captured_client_id:
+            storage_tokens = extract_from_storage()
+            if storage_tokens:
+                print(f"✅ Token capturado desde sessionStorage: {storage_tokens['client_id']}")
+                captured_client_id = storage_tokens["client_id"]
+                tokens_captured["refresh_token"] = storage_tokens["refresh_token"]
+                tokens_captured["access_token"] = storage_tokens.get("access_token")
+                tokens_captured["client_id"] = captured_client_id
+                
         if captured_client_id:
             break
         time.sleep(1)
@@ -350,6 +379,16 @@ def extract_session():
                                     tokens_captured["client_id"] = client_id
                         except:
                             pass
+                            
+                if not captured_client_id:
+                    storage_tokens = extract_from_storage()
+                    if storage_tokens:
+                        print(f"✅ Token capturado desde sessionStorage tras intervención: {storage_tokens['client_id']}")
+                        captured_client_id = storage_tokens["client_id"]
+                        tokens_captured["refresh_token"] = storage_tokens["refresh_token"]
+                        tokens_captured["access_token"] = storage_tokens.get("access_token")
+                        tokens_captured["client_id"] = captured_client_id
+                        
             time.sleep(2)
             
     print("Token capturado. Enviando sesión al backend principal...")
