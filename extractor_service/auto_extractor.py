@@ -190,11 +190,26 @@ def extract_session():
     # Revisar peticiones (timeout 25 segs)
     start_time = time.time()
     while time.time() - start_time < 25:
+        try:
+            driver.execute_script("""
+                var btns = document.querySelectorAll('button');
+                for(var i=0; i<btns.length; i++){
+                    if((btns[i].innerText && btns[i].innerText.includes("Started")) || 
+                       (btns[i].getAttribute('aria-label') && btns[i].getAttribute('aria-label').includes("Started"))) {
+                        btns[i].click();
+                    }
+                }
+            """)
+        except:
+            pass
+            
         for request in driver.requests:
-            if "common/oauth2/v2.0/token" in request.url.lower() and request.response:
-                if request.method == "POST":
+            if "token" in request.url.lower() and request.response:
+                if "oauth2" in request.url.lower() and request.method == "POST":
+                    from seleniumwire.utils import decode as sw_decode
                     try:
-                        body_str = request.response.body.decode('utf-8')
+                        body_bytes = sw_decode(request.response.body, request.response.headers.get('Content-Encoding', 'identity'))
+                        body_str = body_bytes.decode('utf-8')
                         data = json.loads(body_str)
                         if "refresh_token" in data:
                             post_data = request.body.decode('utf-8')
@@ -206,8 +221,8 @@ def extract_session():
                                 tokens_captured["refresh_token"] = data["refresh_token"]
                                 tokens_captured["access_token"] = data.get("access_token")
                                 tokens_captured["client_id"] = client_id
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Error parseando token: {e}")
         if captured_client_id:
             break
         time.sleep(1)
@@ -287,10 +302,12 @@ def extract_session():
                 
             # Volver a revisar las peticiones a ver si lo atrapamos
             for request in driver.requests:
-                if "common/oauth2/v2.0/token" in request.url.lower() and request.response:
-                    if request.method == "POST":
+                if "token" in request.url.lower() and request.response:
+                    if "oauth2" in request.url.lower() and request.method == "POST":
+                        from seleniumwire.utils import decode as sw_decode
                         try:
-                            body_str = request.response.body.decode('utf-8')
+                            body_bytes = sw_decode(request.response.body, request.response.headers.get('Content-Encoding', 'identity'))
+                            body_str = body_bytes.decode('utf-8')
                             data = json.loads(body_str)
                             if "refresh_token" in data:
                                 post_data = request.body.decode('utf-8')
@@ -314,10 +331,12 @@ def extract_session():
         
         while not captured_client_id:
             for request in driver.requests:
-                if "common/oauth2/v2.0/token" in request.url.lower() and request.response:
-                    if request.method == "POST":
+                if "token" in request.url.lower() and request.response:
+                    if "oauth2" in request.url.lower() and request.method == "POST":
+                        from seleniumwire.utils import decode as sw_decode
                         try:
-                            body_str = request.response.body.decode('utf-8')
+                            body_bytes = sw_decode(request.response.body, request.response.headers.get('Content-Encoding', 'identity'))
+                            body_str = body_bytes.decode('utf-8')
                             data = json.loads(body_str)
                             if "refresh_token" in data:
                                 post_data = request.body.decode('utf-8')
