@@ -10,7 +10,7 @@ fluxbox &
 x11vnc -display :99 -nopw -listen localhost -xkb -ncache 10 -ncache_cr -forever &
 
 # Iniciar noVNC en el puerto 6080 web
-/usr/share/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
+/usr/bin/websockify --web /usr/share/novnc/ 6080 localhost:5900 &
 
 # Iniciar túnel de Cloudflare para acceso remoto seguro
 echo "Iniciando túnel Cloudflare..."
