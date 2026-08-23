@@ -38,6 +38,7 @@ def get_cloudflare_url():
 
 def extract_session():
     print("Iniciando Auto Extractor (undetected-chromedriver)...")
+    send_telegram_alert("🔄 *Fase 1/3:* Iniciando navegador indetectable...")
     
     # Importar dentro para evitar fallos si se ejecuta el chequeo inicial
     from seleniumwire import undetected_chromedriver as uc
@@ -85,6 +86,7 @@ def extract_session():
     
     try:
         print("Navegando a la página de login...")
+        send_telegram_alert("🔄 *Fase 2/3:* Navegando a Microsoft y enviando credenciales...")
         driver.get("https://visualsupport.microsoft.com/")
         time.sleep(3)
         
@@ -126,6 +128,7 @@ def extract_session():
         print(f"Aviso en automatización: {e}")
         
     print("Esperando a capturar el token...")
+    send_telegram_alert("🔄 *Fase 3/3:* Analizando tráfico de red para interceptar tokens...")
     
     # Revisar peticiones (timeout 25 segs)
     start_time = time.time()
