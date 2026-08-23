@@ -190,7 +190,7 @@ async def update_session(session_data: dict):
         return {"success": False, "error": str(e)}
 
 @app.post("/api/force_extraction")
-async def force_extraction(api_key: str = Security(get_api_key)):
+async def force_extraction():
     try:
         logger.warning("Recibida petición de extracción forzada. Vaciando sesión...")
         auth_manager.refresh_token = None

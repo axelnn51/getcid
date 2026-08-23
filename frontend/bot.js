@@ -161,9 +161,8 @@ function startBot() {
                 parse_mode: 'Markdown',
                 ...Markup.keyboard([
                     ['🔄 Renovar Token', '📊 Estado Sistema'],
-                    ['🔑 Estado Token', '🔐 Device Auth'],
-                    ['👥 Usuarios', '⚙️ Ayuda Admin'],
-                    ['🛑 Apagar Sistema', '▶️ Encender Sistema']
+                    ['🔑 Estado Token', '👥 Usuarios'],
+                    ['⚙️ Ayuda Admin']
                 ]).resize()
             };
         }
@@ -201,59 +200,23 @@ function startBot() {
         if (!isAdmin(String(ctx.from.id))) return;
         
         try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/token-status`);
+            const response = await fetch(`${GETCID_SERVICE_URL}/status`);
             const data = await response.json();
             
             let msg = `📊 *ESTADO DEL SISTEMA*\n\n`;
-            if (data.status === 'valid') msg += `🟢 *Token:* ACTIVO (${data.remaining_minutes} min)\n`;
-            else if (data.status === 'expired') msg += `🔴 *Token:* EXPIRADO\n`;
-            else msg += `⚪ *Token:* NINGUNO\n`;
+            msg += `🔌 *API:* ${data.api_status === 'online' ? '🟢 Online' : '🔴 Offline'}\n`;
+            msg += `🤖 *Demonio:* ${data.daemon_status === 'running' ? '🟢 Activo' : (data.daemon_status === 'failed' ? '🔴 Falló' : '⚪ Inactivo')}\n`;
+            msg += `🔑 *Access Token:* ${data.has_access_token ? '🟢 OK' : '🔴 Falta'}\n`;
+            msg += `🔄 *Refresh Token:* ${data.has_refresh_token ? '🟢 OK' : '🔴 Falta'}\n`;
+            if (data.daemon_error) msg += `⚠️ *Error:* ${data.daemon_error}\n`;
             
             const s = db.getStats();
-            msg += `👥 *Usuarios:* ${s.totalUsers}\n`;
+            msg += `\n👥 *Usuarios:* ${s.totalUsers}\n`;
             msg += `📈 *CIDs Hoy:* ${s.todayCids}\n`;
             
             ctx.reply(msg, { parse_mode: 'Markdown' });
         } catch (err) {
             ctx.reply(`❌ Error conectando al servidor: ${err.message}`);
-        }
-    });
-
-    bot.hears('🛑 Apagar Sistema', async (ctx) => {
-        if (!isAdmin(String(ctx.from.id))) return;
-        try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paused: true })
-            });
-            const data = await response.json();
-            if (data.success) {
-                ctx.reply('🛑 *SISTEMA APAGADO*\n\nEl sistema ya no intentará renovar el token automáticamente ni ejecutará el bot de Playwright. Para volver a activarlo usa el botón ▶️ Encender Sistema.', { parse_mode: 'Markdown' });
-            } else {
-                ctx.reply(`❌ Error: ${data.error}`);
-            }
-        } catch (err) {
-            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
-        }
-    });
-
-    bot.hears('▶️ Encender Sistema', async (ctx) => {
-        if (!isAdmin(String(ctx.from.id))) return;
-        try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paused: false })
-            });
-            const data = await response.json();
-            if (data.success) {
-                ctx.reply('▶️ *SISTEMA ENCENDIDO*\n\nLa auto-renovación se ha reanudado.', { parse_mode: 'Markdown' });
-            } else {
-                ctx.reply(`❌ Error: ${data.error}`);
-            }
-        } catch (err) {
-            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
         }
     });
 
@@ -266,20 +229,14 @@ function startBot() {
         if (!isAdmin(String(ctx.from.id))) return;
         ctx.reply(
             '⚙️ *Comandos Admin Disponibles:*\n\n' +
-            '🔄 *Renovar Token* — Abrir Playwright para renovar\n' +
-            '📊 *Estado Sistema* — Resumen rápido\n' +
-            '🔑 *Estado Token* — Estado detallado del token\n' +
-            '🔐 *Device Auth* — Iniciar Device Code Flow (90 días)\n' +
-            '🛑 *Apagar Sistema* — Pausar auto-renovación\n' +
-            '▶️ *Encender Sistema* — Reanudar auto-renovación\n\n' +
+            '🔄 *Renovar Token* — Dispara el Auto-Extractor remoto (VNC/Cloudflare) para renovar el token\n' +
+            '📊 *Estado Sistema* — Resumen rápido del servidor y tokens\n' +
+            '🔑 *Estado Token* — Detalles técnicos extendidos\n' +
+            '👥 *Usuarios* — Ver usuarios actuales\n\n' +
             '*Comandos manuales:*\n' +
-            '/systemstatus — Estado completo\n' +
-            '/tokenstatus — Estado del access token\n' +
-            '/settoken — Setear token manual\n' +
-            '/setrefreshtoken — Setear refresh token\n' +
-            '/deviceauth — Device Code Flow\n' +
-            '/addcredits — Agregar créditos\n' +
-            '/stats — Estadísticas',
+            '/systemstatus — Estado completo del servidor (JSON)\n' +
+            '/addcredits <id> <n> — Agregar créditos a un usuario\n' +
+            '/stats — Estadísticas globales',
             { parse_mode: 'Markdown' }
         );
     });
@@ -420,44 +377,19 @@ function startBot() {
         if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
         
         try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-status`);
+            const response = await fetch(`${GETCID_SERVICE_URL}/status`);
             const data = await response.json();
-            
-            // Access Token
-            let accessInfo = '❓ Desconocido';
-            const at = data.access_token || {};
-            if (at.status === 'valid') accessInfo = `🟢 Válido (${at.remaining_minutes || '?'} min)`;
-            else if (at.status === 'expired') accessInfo = '🔴 Expirado';
-            else if (at.status === 'no_token') accessInfo = '⚪ Sin token';
-            
-            // Refresh Token
-            let refreshInfo = '❓ Desconocido';
-            const rt = data.refresh_token || {};
-            if (rt.status === 'valid') {
-                if (rt.token_type === 'spa') {
-                    refreshInfo = `🟡 SPA (${rt.remaining_hours || '?'}h restantes)`;
-                } else {
-                    refreshInfo = `🟢 ${rt.token_type_label || 'OK'} (${rt.remaining_days || '?'} días)`;
-                }
-            } else if (rt.status === 'expired') refreshInfo = '🔴 EXPIRADO';
-            else if (rt.status === 'no_token') refreshInfo = '⚪ No configurado';
-            
-            // Proactive Refresher
-            let refresherInfo = '❌ Inactivo';
-            const pr = data.proactive_refresher || {};
-            if (pr.running) {
-                refresherInfo = `✅ Activo (${pr.total_refreshes || 0} refreshes, ${pr.consecutive_failures || 0} fallos)`;
-                if (pr.last_refresh_ago_min !== null) refresherInfo += `\n   Último: hace ${pr.last_refresh_ago_min} min`;
-            }
             
             const stats = db.getStats();
             
             ctx.reply(
-                `📊 *Estado del Sistema GetCID*\n` +
+                `📊 *Estado del Sistema (Extendido)*\n` +
                 `📅 ${new Date().toLocaleString('es-PE')}\n\n` +
-                `🔑 Access Token: ${accessInfo}\n` +
-                `🔄 Refresh Token: ${refreshInfo}\n` +
-                `⚙️ Proactive Refresh: ${refresherInfo}\n\n` +
+                `🔌 API Status: ${data.api_status}\n` +
+                `🤖 Daemon: ${data.daemon_status}\n` +
+                `🔑 Access Token: ${data.has_access_token ? 'Presente' : 'Ausente'}\n` +
+                `🔄 Refresh Token: ${data.has_refresh_token ? 'Presente' : 'Ausente'}\n` +
+                (data.daemon_error ? `⚠️ Error: ${data.daemon_error}\n\n` : '\n') +
                 `📈 CIDs hoy: *${stats.todayCids}*\n` +
                 `📈 CIDs total: *${stats.totalCids}*\n` +
                 `👥 Usuarios: *${stats.totalUsers}*\n` +
@@ -606,117 +538,20 @@ function startBot() {
     // ============================================================
     bot.hears('🔑 Estado Token', async (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
-        // Reutilizar lógica de /systemstatus
         try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/system-status`);
+            const response = await fetch(`${GETCID_SERVICE_URL}/status`);
             const data = await response.json();
             
-            let accessInfo = '❓ Desconocido';
-            const at = data.access_token || {};
-            if (at.status === 'valid') accessInfo = `🟢 Válido (${at.remaining_minutes || '?'} min)`;
-            else if (at.status === 'expired') accessInfo = '🔴 Expirado';
-            else if (at.status === 'no_token') accessInfo = '⚪ Sin token';
-            
-            let refreshInfo = '❓ Desconocido';
-            const rt = data.refresh_token || {};
-            if (rt.status === 'valid') {
-                if (rt.token_type === 'spa') {
-                    refreshInfo = `🟡 SPA (${rt.remaining_hours || '?'}h restantes)`;
-                } else {
-                    refreshInfo = `🟢 ${rt.token_type_label || 'OK'} (${rt.remaining_days || '?'} días)`;
-                }
-            } else if (rt.status === 'expired') refreshInfo = '🔴 EXPIRADO';
-            else if (rt.status === 'no_token') refreshInfo = '⚪ No configurado';
-            
-            let refresherInfo = '❌ Inactivo';
-            const pr = data.proactive_refresher || {};
-            if (pr.running) {
-                refresherInfo = `✅ Activo (${pr.total_refreshes || 0} OK, ${pr.consecutive_failures || 0} fallos)`;
-                if (pr.last_refresh_ago_min !== null) refresherInfo += ` | Hace ${pr.last_refresh_ago_min} min`;
-            }
-            
             ctx.reply(
-                `🔑 *Estado de Tokens*\n\n` +
-                `🔑 Access Token: ${accessInfo}\n` +
-                `🔄 Refresh Token: ${refreshInfo}\n` +
-                `⚙️ Proactive Refresh: ${refresherInfo}`,
+                `🔑 *Estado de Tokens (Backend)*\n\n` +
+                `🔑 Access Token: ${data.has_access_token ? '🟢 Cargado en memoria' : '🔴 No existe'}\n` +
+                `🔄 Refresh Token: ${data.has_refresh_token ? '🟢 Cargado en memoria' : '🔴 No existe'}\n` +
+                `🤖 Auto-Renovador: ${data.daemon_status === 'running' ? '✅ Corriendo' : (data.daemon_status === 'failed' ? '❌ Falló' : '⚪ Inactivo')}\n` +
+                (data.daemon_error ? `\n⚠️ Error: ${data.daemon_error}` : ''),
                 { parse_mode: 'Markdown' }
             );
         } catch (err) {
             ctx.reply(`❌ Error: ${err.message}`);
-        }
-    });
-
-    bot.hears('🔐 Device Auth', async (ctx) => {
-        if (!isAdmin(String(ctx.from.id))) return;
-        // Reutilizar lógica de /deviceauth
-        try {
-            const msg = await ctx.reply('🔄 Iniciando Device Code Flow...');
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/device-auth-start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await response.json();
-            if (data.success) {
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
-                    `🔐 *Device Code Flow Activo*\n\n` +
-                    `📋 Código: \`${data.user_code}\`\n` +
-                    `🌐 URL: ${data.verification_uri}\n\n` +
-                    `1️⃣ Abre el link\n2️⃣ Pega el código\n3️⃣ Inicia sesión\n\n` +
-                    `⏱ Expira en ${Math.floor(data.expires_in / 60)} min`,
-                    { parse_mode: 'Markdown' }
-                );
-            } else {
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ ${data.error}`);
-            }
-        } catch (err) {
-            ctx.reply(`❌ Error: ${err.message}`);
-        }
-    });
-
-    // ============================================================
-    // CAPTCHA INTERACTIVO + RENOVACIÓN INLINE
-    // ============================================================
-    
-    // Handler para el botón inline "🔄 Renovar Token Remoto" de las alertas del proactive_refresher
-    bot.action('start_renovation', async (ctx) => {
-        await ctx.answerCbQuery('Iniciando renovación...');
-        try {
-            await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
-            const data = await response.json();
-            if (data.success) {
-                ctx.reply('✅ Proceso de renovación iniciado. Si hay CAPTCHA, te enviaré la foto.');
-            } else {
-                ctx.reply(`❌ Error: ${data.error}`);
-            }
-        } catch (err) {
-            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
-        }
-    });
-
-    // Handler para clics de CAPTCHA [ 0 ]...[ 5 ]
-    bot.action(/solve_captcha_(\d+)/, async (ctx) => {
-        const clicks = parseInt(ctx.match[1]);
-        await ctx.answerCbQuery(`Enviando ${clicks} clics...`);
-        
-        try {
-            await ctx.editMessageReplyMarkup({ inline_keyboard: [] }); // Ocultar botones para no hacer doble clic
-            
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/solve-captcha`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ clicks })
-            });
-            
-            const data = await response.json();
-            if (data.success) {
-                ctx.reply(`⚙️ Recibido. Procesando ${clicks} clics y esperando validación de Microsoft...\n\n⏳ _Esto puede tomar 1 a 2 minutos, no toques nada más._`, { parse_mode: 'Markdown' });
-            } else {
-                ctx.reply(`❌ Error en el backend: ${data.error}`);
-            }
-        } catch (err) {
-            ctx.reply(`❌ No se pudo contactar al servidor: ${err.message}`);
         }
     });
 
@@ -750,31 +585,12 @@ function startBot() {
                 let refreshStatus = '❓ Desconocido';
                 let refresherStatus = '❌ Inactivo';
                 try {
-                    const sysResp = await fetch(`${GETCID_SERVICE_URL}/api/system-status`);
+                    const sysResp = await fetch(`${GETCID_SERVICE_URL}/status`);
                     const sysData = await sysResp.json();
                     
-                    // Access token
-                    const at = sysData.access_token || {};
-                    if (at.status === 'valid') tokenStatus = `🟢 Válido (${at.remaining_minutes} min)`;
-                    else if (at.status === 'expired') tokenStatus = '🔴 Expirado';
-                    else tokenStatus = '⚪ Sin token';
-                    
-                    // Refresh token (con tipo real)
-                    const rt = sysData.refresh_token || {};
-                    if (rt.status === 'valid') {
-                        if (rt.token_type === 'spa') {
-                            refreshStatus = `🟡 SPA (refresh hace ${rt.hours_since_last_refresh || '?'}h)`;
-                        } else {
-                            refreshStatus = `🟢 ${rt.token_type_label || 'OK'} (${rt.remaining_days || '?'} días)`;
-                        }
-                    } else if (rt.status === 'expired') refreshStatus = '🔴 EXPIRADO - Renovar!';
-                    else refreshStatus = '⚪ No configurado';
-                    
-                    // Proactive refresher
-                    const pr = sysData.proactive_refresher || {};
-                    if (pr.running) {
-                        refresherStatus = `✅ (${pr.total_refreshes} OK, ${pr.consecutive_failures} fallos)`;
-                    }
+                    tokenStatus = sysData.has_access_token ? '🟢 OK' : '🔴 Falta';
+                    refreshStatus = sysData.has_refresh_token ? '🟢 OK' : '🔴 Falta';
+                    refresherStatus = sysData.daemon_status === 'running' ? '✅ Activo' : '❌ Falló';
                 } catch(e) { /* ignore */ }
                 
                 const stats = db.getStats();
