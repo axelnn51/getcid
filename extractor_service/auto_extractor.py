@@ -303,16 +303,28 @@ async def extract_session():
     print("✅ Interceptor CDP configurado. Patrón: *oauth2/v2.0/token*")
 
     # ─── Navegar a Microsoft ──────────────────────────────────
-    print("Navegando a Microsoft Login OAuth2...")
+    print("Navegando a visualsupport.microsoft.com...")
     send_telegram_alert("🔄 *Fase 2/3:* Navegando a Microsoft y enviando credenciales...")
 
     try:
-        login_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=2b217cec-607d-4eb6-887e-c928520a14f6&response_type=code&redirect_uri=https%3A%2F%2Flogin.microsoftonline.com%2Fcommon%2Foauth2%2Fnativeclient&response_mode=query&scope=offline_access%20user.read&state=12345"
-        await tab.get(login_url)
+        await tab.get("https://visualsupport.microsoft.com/")
     except Exception as e:
         print(f"Aviso al navegar: {e}")
 
-    await human_delay(2.0, 4.0)
+    await human_delay(3.0, 5.0)
+
+    # Buscar y clickear botón "Comencemos"
+    try:
+        print("Buscando botón 'Comencemos'...")
+        btn = await tab.select("button.ms-Button--primary", timeout=15)
+        if btn:
+            print("Botón encontrado. Haciendo click real...")
+            await btn.scroll_into_view()
+            await human_delay(0.5, 1.0)
+            await btn.mouse_click()
+            await human_delay(2.0, 4.0)
+    except Exception as e:
+        print(f"Aviso al clickear Comencemos (puede que ya esté en login): {e}")
 
     # ─── Automatizar login ────────────────────────────────────
     # Paso 1: Email
@@ -365,19 +377,7 @@ async def extract_session():
     # Buscar botón "Let's Get Started" periódicamente y revisar sessionStorage
     start_time = time.time()
     while time.time() - start_time < 30 and not captured_client_id:
-        # Intentar click en "Let's Get Started"
-        try:
-            await tab.evaluate("""
-                var btns = document.querySelectorAll('button');
-                for(var i=0; i<btns.length; i++){
-                    if((btns[i].innerText && btns[i].innerText.includes("Started")) ||
-                       (btns[i].getAttribute('aria-label') && btns[i].getAttribute('aria-label').includes("Started"))) {
-                        btns[i].click();
-                    }
-                }
-            """)
-        except Exception:
-            pass
+
 
         # Fallback: intentar leer tokens desde sessionStorage
         if not captured_client_id:
