@@ -562,17 +562,30 @@ async def extract_session():
 
     # ─── Último recurso: Cloudflare VNC ───────────────────────
     if not captured_client_id:
-        cf_url = get_cloudflare_url()
-        if not cf_url.startswith("Error"):
-            cf_url += "/vnc.html"
-        print("⚠️ Token no capturado automáticamente. Enviando enlace Cloudflare VNC a Telegram...")
+        vnc_url = get_cloudflare_url()
+        if not vnc_url.startswith("Error"):
+            vnc_url += "/vnc.html"
+            
+        print("❌ Timeout: No se pudo interceptar el token automáticamente.")
+        
+        # Guardar screenshot de depuración
+        try:
+            debug_img = "/tmp/debug_token_timeout.png"
+            await tab.save_screenshot(debug_img)
+            if TELEGRAM_TOKEN and TELEGRAM_ADMIN:
+                url_photo = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+                with open(debug_img, 'rb') as photo:
+                    requests.post(url_photo, data={"chat_id": TELEGRAM_ADMIN, "caption": "📸 Screenshot del navegador al fallar la captura"}, files={"photo": photo}, timeout=10)
+        except Exception as e:
+            print(f"Error enviando screenshot debug: {e}")
+
+        # Iniciar fallback de VNC interactivo
         send_telegram_alert(
-            f"🚨 *GETCID Bot Esperando Verificación*\n\n"
-            f"El navegador no logró capturar el token automáticamente. "
-            f"Puede que Microsoft requiera verificación manual.\n\n"
-            f"👉 Entra a este enlace remoto y seguro desde tu celular:\n\n"
-            f"{cf_url}\n\n"
-            f"El bot te esperará indefinidamente..."
+            "🚨 *GETCID Bot Esperando Verificación*\n\n"
+            "El navegador no logró capturar el token automáticamente. "
+            "Puede que Microsoft requiera verificación manual.\n\n"
+            f"👉 Entra a este enlace remoto y seguro desde tu celular:\n\n{vnc_url}\n\n"
+            "El bot te esperará indefinidamente..."
         )
 
         # Esperar indefinidamente hasta capturar el token (intervención humana)
