@@ -303,11 +303,12 @@ async def extract_session():
     print("✅ Interceptor CDP configurado. Patrón: *oauth2/v2.0/token*")
 
     # ─── Navegar a Microsoft ──────────────────────────────────
-    print("Navegando a visualsupport.microsoft.com...")
+    print("Navegando a Microsoft Login OAuth2...")
     send_telegram_alert("🔄 *Fase 2/3:* Navegando a Microsoft y enviando credenciales...")
 
     try:
-        await tab.get("https://visualsupport.microsoft.com/")
+        login_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=2b217cec-607d-4eb6-887e-c928520a14f6&response_type=code&redirect_uri=https%3A%2F%2Flogin.microsoftonline.com%2Fcommon%2Foauth2%2Fnativeclient&response_mode=query&scope=offline_access%20user.read&state=12345"
+        await tab.get(login_url)
     except Exception as e:
         print(f"Aviso al navegar: {e}")
 
