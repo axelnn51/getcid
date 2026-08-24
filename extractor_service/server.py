@@ -8,13 +8,12 @@ logger = logging.getLogger("extractor_server")
 app = FastAPI()
 
 def run_extraction():
-    logger.info("Iniciando auto_extractor.py...")
-    # Ejecutamos el script de Playwright
-    # Este script usará el Display :99 que Xvfb tiene corriendo.
+    logger.info("Iniciando auto_extractor.py (nodriver + CDP)...")
+    # Ejecutamos el script en el Display :99 que Xvfb tiene corriendo.
     subprocess.run(["python3", "auto_extractor.py"])
 
 @app.post("/start")
 async def start_extraction(background_tasks: BackgroundTasks):
-    logger.info("Recibida petición para arrancar el extractor automático.")
+    logger.info("Recibida petición para arrancar el extractor automático (nodriver).")
     background_tasks.add_task(run_extraction)
-    return {"status": "Extracción iniciada en background"}
+    return {"status": "Extracción iniciada en background (nodriver + CDP)"}
