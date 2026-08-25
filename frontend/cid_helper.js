@@ -53,7 +53,8 @@ async function getConfirmationID(iid) {
     }
 
     // Clasificación de errores basada en el mensaje de error del backend
-    const errorText = (data.error || data.message || '').toLowerCase();
+    const exactError = data.error || data.message || data.detail || 'Respuesta inválida';
+    const errorText = exactError.toLowerCase();
     
     if (errorText.includes('checksum') || errorText.includes('inválido')) {
       throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
@@ -65,7 +66,7 @@ async function getConfirmationID(iid) {
       throw new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nContacta soporte.', { iid: cleanIid });
     }
     
-    throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${data.error || data.message || 'Respuesta inválida'}`, { iid: cleanIid });
+    throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${exactError}`, { iid: cleanIid });
 
   } catch (err) {
     clearTimeout(timeout);
