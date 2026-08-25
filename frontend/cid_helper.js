@@ -1,6 +1,6 @@
 // ============================================================
 // CID Helper — Obtener Confirmation ID
-// ARQUITECTURA: Petición interna a microservicio getcid_python
+// ARQUITECTURA: Petición interna a microservicio getcid_backend
 // ============================================================
 
 class CIDError extends Error {
@@ -14,7 +14,7 @@ class CIDError extends Error {
   }
 }
 
-const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_python:8000';
+const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_backend:8000';
 
 async function getConfirmationID(iid) {
   if (!iid || typeof iid !== 'string') {
@@ -32,12 +32,10 @@ async function getConfirmationID(iid) {
       { iid: cleanIid });
   }
 
-  console.log(`[CID] Solicitando IID al microservicio Python: ${GETCID_SERVICE_URL}`);
+  console.log(`[CID] Solicitando CID al backend: ${GETCID_SERVICE_URL}`);
   
   const controller = new AbortController();
-  // 90s: el sistema Python puede tardar hasta ~45s internamente (refresh + espera de Playwright)
-  // antes de devolver el CID o el error final
-  const timeout = setTimeout(() => controller.abort(), 90000);
+  const timeout = setTimeout(() => controller.abort(), 60000);
 
   try {
     const response = await fetch(`${GETCID_SERVICE_URL}/check_pid`, {
@@ -51,47 +49,32 @@ async function getConfirmationID(iid) {
     const data = await response.json();
 
     if (response.ok && data.success && data.cid) {
-      // Devolver como string de bloques separados por guiones para Telegram
       return data.cid;
     }
-    
-    // Si la API devuelve 401 por falta de token (Extractor no ha corrido o expiró)
-    if (response.status === 401) {
-       const detail = data.detail || 'El servidor está esperando la extracción de sesión local. Contacta al administrador.';
-       throw new CIDError('UNAUTHORIZED', `❌ *Sistema Desconectado*\n${detail}`, { iid: cleanIid });
-    }
 
-    // Clasificación de errores basada en el mensaje de error de Python
-    const errorText = (data.error || '').toLowerCase();
-    const errorCode = (data.code || '').toUpperCase();
+    // Clasificación de errores basada en el mensaje de error del backend
+    const errorText = (data.error || data.message || '').toLowerCase();
     
-    // Token en renovación automática (Python lo detectó y ya lanzó Playwright)
-    if (errorCode === 'MS_TOKEN_RENEWING' || errorText.includes('ciclo infinito') || errorText.includes('token expiró')) {
-      throw new CIDError('MS_TOKEN_RENEWING',
-        '🔄 *Sistema en renovación de token*\nEl servicio está obteniendo credenciales nuevas automáticamente. Por favor, reintenta en 2–3 minutos.',
-        { iid: cleanIid });
-    }
-    
-    if (errorText.includes('checksum')) {
+    if (errorText.includes('checksum') || errorText.includes('inválido')) {
       throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
     }
     if (errorText.includes('bloquead') || errorText.includes('blocked')) {
       throw new CIDError('KEY_BLOCKED', '🔒 *Clave bloqueada por Microsoft*\nContacta soporte para un reemplazo.', { iid: cleanIid });
     }
-    if (errorText.includes('activations') || errorText.includes('límite')) {
+    if (errorText.includes('límite') || errorText.includes('limit') || errorText.includes('excedió')) {
       throw new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nContacta soporte.', { iid: cleanIid });
     }
     
-    throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${data.error || 'Respuesta inválida'}`, { iid: cleanIid });
+    throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${data.error || data.message || 'Respuesta inválida'}`, { iid: cleanIid });
 
   } catch (err) {
     clearTimeout(timeout);
-    console.error('[CID_HELPER ERROR] Falló la petición a getcid_python:', err);
+    console.error('[CID_HELPER ERROR] Falló la petición al backend:', err);
     if (err instanceof CIDError) throw err;
     if (err.name === 'AbortError') {
-      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl servicio tardó más de 90 segundos. Intenta de nuevo.', { iid: cleanIid });
+      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl servicio tardó más de 60 segundos. Intenta de nuevo.', { iid: cleanIid });
     }
-    throw new CIDError('NETWORK_ERROR', `❌ *Error de conexión interna:* No se pudo alcanzar getcid_python. Detalle: ${err.message}`, { iid: cleanIid });
+    throw new CIDError('NETWORK_ERROR', `❌ *Error de conexión interna:* No se pudo alcanzar el backend. Detalle: ${err.message}`, { iid: cleanIid });
   }
 }
 

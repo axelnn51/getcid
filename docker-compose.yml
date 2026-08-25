@@ -6,12 +6,9 @@ services:
     container_name: getcid_backend
     restart: always
     volumes:
-      # Mapeamos el archivo de sesión para que el demonio lo lea y lo modifique
-      - ./session_master.json:/app/session_master.json
-      # Mapeamos la carpeta de logs para persistencia
       - ./logs:/app/logs
     environment:
-      - TZ=America/Lima # Configurar tu zona horaria local
+      - TZ=America/Lima
 
   getcid_frontend:
     build: ./frontend
@@ -22,7 +19,6 @@ services:
     volumes:
       - ./frontend/data:/app/data
       - ./frontend/uploads:/app/uploads
-      # Mapeamos la carpeta de logs compartida
       - ./logs:/app/logs
     command: sh -c "mkdir -p /app/logs && node index.js >> /app/logs/frontend.log 2>&1"
     environment:
@@ -37,19 +33,3 @@ services:
       - GETCID_SERVICE_URL=http://getcid_backend:8000
     depends_on:
       - getcid_backend
-
-  getcid_auto_extractor:
-    build: ./extractor_service
-    container_name: getcid_auto_extractor
-    restart: always
-    ports:
-      - "6080:6080"
-    environment:
-      - MS_EMAIL=${MS_EMAIL}
-      - MS_PASSWORD=${MS_PASSWORD}
-      - MS_ACCOUNTS=${MS_ACCOUNTS}
-      - GMAIL_RECOVERY_EMAIL=${GMAIL_RECOVERY_EMAIL}
-      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
-      - TELEGRAM_BOT_TOKEN=${BOT_TOKEN}
-      - TELEGRAM_ADMIN_ID=${ADMIN_IDS}
-    shm_size: '2gb'
