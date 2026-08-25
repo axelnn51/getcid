@@ -155,7 +155,7 @@ async def _get_cid_batch(iid: str) -> dict:
         "User-Agent": USER_AGENT_BATCH,
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         response = await client.post(BATCH_URL, content=soap_body, headers=headers)
 
     if response.status_code != 200:
@@ -172,7 +172,7 @@ async def _get_cid_batch(iid: str) -> dict:
 async def _get_shared_token() -> str | None:
     """Fetch shared Bearer token from ntriver community server."""
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
             resp = await client.get(TOKEN_SERVER)
             if resp.status_code == 200:
                 data = resp.json()
@@ -256,7 +256,7 @@ async def _get_cid_visual(iid: str) -> dict:
         "x-session-id": f"app_{uuid.uuid4().hex[:32]}",
     }
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
         resp = await client.post(VISUAL_URL, json=payload, headers=headers)
 
         # Handle DPoP nonce challenge
@@ -307,6 +307,7 @@ async def get_cid(iid: str) -> dict:
 
     # --- Try Batch API first (most stable, no tokens needed) ---
     logger.info(f"[{clean_iid[:12]}...] Intentando Batch API...")
+    batch_result = {}
     try:
         batch_result = await _get_cid_batch(clean_iid)
         if batch_result["success"]:
@@ -320,12 +321,14 @@ async def get_cid(iid: str) -> dict:
                 "error_message": None,
                 "method": "batch_api",
             }
-        logger.warning(f"[{clean_iid[:12]}...] Batch API falló: {batch_result['error_message']}")
+        logger.warning(f"[{clean_iid[:12]}...] Batch API falló: {batch_result.get('error_message')}")
     except Exception as e:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Batch API: {e}")
+        batch_result = {"error_code": None, "error_message": f"Excepción interna: {e}"}
 
     # --- Fallback: Visual API with shared token ---
     logger.info(f"[{clean_iid[:12]}...] Intentando Visual API (fallback)...")
+    visual_result = {}
     try:
         visual_result = await _get_cid_visual(clean_iid)
         if visual_result["success"]:
