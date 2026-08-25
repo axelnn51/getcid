@@ -291,8 +291,9 @@ async def get_cid(iid: str) -> dict:
     """
     Main entry point: Get CID for an Installation ID.
     Tries Batch API first, falls back to Visual API.
-    Returns dict with keys: success, cid, formatted_cid, error_code, error_message, method
     """
+    batch_result = {}
+    visual_result = {}
     # Clean IID
     clean_iid = re.sub(r"\D", "", iid)
 
