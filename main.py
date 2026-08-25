@@ -79,7 +79,74 @@ async def check_pid(request: PIDRequest):
         "message": error_msg,
     }
 
+class KeyRequest(BaseModel):
+    key: str
 
+@app.post("/api/v1/check")
+async def check_key(request: KeyRequest):
+    key = request.key.strip().upper()
+    if len(key) != 29 or key.count("-") != 4:
+        raise HTTPException(status_code=400, detail="Formato de clave inválido")
+
+    logger.info(f"Verificando clave: {key[:5]}...")
+    try:
+        import subprocess
+        import json
+        
+        # Las rutas asumen que el contenedor Linux tiene los archivos en /app/bin
+        exe_path = "/app/bin/pidchecker.exe"
+        config_path = "/app/bin/pkeyconfig.xrm-ms"
+        
+        if not os.path.exists(exe_path) or not os.path.exists(config_path):
+            # Fallback para pruebas locales en Windows si aplica, 
+            # pero asumiremos que estamos en Docker
+            exe_path = "bin/pidchecker.exe"
+            config_path = "bin/pkeyconfig.xrm-ms"
+            if not os.path.exists(exe_path):
+                raise HTTPException(status_code=503, detail="Motor PID Checker no encontrado")
+
+        # Ejecutar a través de wine en Linux, o directo si es Windows
+        if os.name == 'nt':
+            cmd = [exe_path, key, config_path]
+        else:
+            cmd = ["wine", exe_path, key, config_path]
+            
+        # Para evitar spam de wine en stdout, redirigimos stderr
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        
+        if not result.stdout:
+            logger.error(f"Error de wine/pidchecker: {result.stderr}")
+            raise HTTPException(status_code=500, detail="Fallo en la ejecución del motor")
+            
+        try:
+            # pidchecker.exe imprime JSON
+            data = json.loads(result.stdout.strip())
+        except json.JSONDecodeError:
+            logger.error(f"Respuesta inválida de pidchecker: {result.stdout}")
+            raise HTTPException(status_code=500, detail="Formato de respuesta del motor inválido")
+            
+        data["key"] = key
+        
+        # Mapeo de errores y formateo final como lo espera el bot
+        if data.get("is_valid"):
+            data["edition"] = data.get("sku", "Unknown Edition")
+            data["key_type"] = data.get("license_type", "Unknown Type")
+        else:
+            code = data.get("error_code", "Unknown")
+            data["error_message"] = "Clave no válida o bloqueada"
+            if "0xC004C017" in code:
+                data["error_message"] = "Clave bloqueada geográficamente"
+            elif "0xC004C008" in code:
+                data["error_message"] = "Límite de activaciones"
+                
+        return data
+
+    except subprocess.TimeoutExpired:
+        logger.error("Timeout esperando al motor PID")
+        raise HTTPException(status_code=504, detail="Tiempo agotado en la verificación")
+    except Exception as e:
+        logger.error(f"Error comprobando clave: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

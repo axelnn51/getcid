@@ -237,8 +237,6 @@ function startBot() {
         ctx.reply(`💰 Balance: *${user.balance} CIDs*`, { parse_mode: 'Markdown' });
     });
 
-    const PID_CHECKER_URL = process.env.PID_CHECKER_URL || 'http://localhost:8080';
-
     bot.command('check', async (ctx) => {
         const args = ctx.message.text.split(' ').slice(1);
         if (args.length === 0) {
@@ -256,10 +254,10 @@ function startBot() {
             return ctx.reply('❌ *Formato inválido*. La clave debe tener 25 caracteres (ej. XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).', { parse_mode: 'Markdown' });
         }
 
-        const msg = await ctx.reply('⏳ Verificando clave contra servidores de Microsoft...');
+        const msg = await ctx.reply('⏳ Verificando clave (puede tardar un poco si es la primera vez)...');
 
         try {
-            const response = await fetch(`${PID_CHECKER_URL}/api/v1/check`, {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/v1/check`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key: key })
