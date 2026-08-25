@@ -16,7 +16,7 @@ let botInstance = null;
 // Rate limiting por usuario (máx 3 requests/minuto)
 // ============================================================
 const userCooldowns = new Map();
-const RATE_LIMIT_WINDOW = 10 * 1000; // 10 segundos
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minuto
 const RATE_LIMIT_MAX = 3;
 
 function checkRateLimit(userId) {
@@ -160,7 +160,8 @@ function startBot() {
             extraOptions = {
                 parse_mode: 'Markdown',
                 ...Markup.keyboard([
-                    ['📊 Estado Sistema', '👥 Usuarios'],
+                    ['🔄 Renovar Token', '📊 Estado Sistema'],
+                    ['🔑 Estado Token', '👥 Usuarios'],
                     ['⚙️ Ayuda Admin']
                 ]).resize()
             };
@@ -170,41 +171,49 @@ function startBot() {
             `👋 ¡Hola ${username}!${tag}\n\n` +
             `📸 *Envíame una foto* del asistente de activación\n` +
             `📝 O *escribe el IID* (63 dígitos)\n\n` +
-            `💰 Balance: *${user.balance} CIDs*\n\n` +
-            `👉 Escribe /help para ver cómo usarme.`,
+            `💰 Balance: *${user.balance} CIDs*`,
             extraOptions
-        );
-    });
-
-    bot.command('help', (ctx) => {
-        ctx.reply(
-            '🤖 *Guía de Uso del Bot GetCID*\n\n' +
-            '1️⃣ *Mediante Foto (Recomendado):*\n' +
-            'Sube una captura de pantalla clara de la ventana de Activación por Teléfono donde se vean los 9 bloques de números (Installation ID). El bot los leerá automáticamente.\n\n' +
-            '2️⃣ *Mediante Texto:*\n' +
-            'Escribe o pega los 63 dígitos del Installation ID directamente en el chat.\n\n' +
-            '3️⃣ *Comprobador de Claves (PID Checker):*\n' +
-            'Envía `/check XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` para ver el estado y los detalles de tu Product Key.\n\n' +
-            '💰 *Créditos:*\n' +
-            'Usa `/balance` para ver cuántos CIDs puedes procesar.',
-            { parse_mode: 'Markdown' }
         );
     });
 
     // ============================================================
     // HANDLERS DEL MENÚ RIBBON (Admin)
     // ============================================================
+    bot.hears('🔄 Renovar Token', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        const msg = await ctx.reply('⚙️ Despertando al Auto-Extractor indetectable (VNC)... Por favor espera.', { parse_mode: 'Markdown' });
+        
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/api/force_extraction`, { method: 'POST' });
+            const data = await response.json();
+            if (!data.success) {
+                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Error: ${data.error}`);
+            } else {
+                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ Auto-Extractor iniciado en el servidor.\nSi hay algún bloqueo de MS, recibirás el link de Cloudflare en unos segundos.`);
+            }
+        } catch (err) {
+            ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ No se pudo contactar al servidor: ${err.message}`);
+        }
+    });
+
     bot.hears('📊 Estado Sistema', async (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
+        
         try {
             const response = await fetch(`${GETCID_SERVICE_URL}/status`);
             const data = await response.json();
-            const s = db.getStats();
+            
             let msg = `📊 *ESTADO DEL SISTEMA*\n\n`;
             msg += `🔌 *API:* ${data.api_status === 'online' ? '🟢 Online' : '🔴 Offline'}\n`;
-            msg += `⚙️ *Engine:* ${data.engine || 'Batch API'}\n`;
+            msg += `🤖 *Demonio:* ${data.daemon_status === 'running' ? '🟢 Activo' : (data.daemon_status === 'failed' ? '🔴 Falló' : '⚪ Inactivo')}\n`;
+            msg += `🔑 *Access Token:* ${data.has_access_token ? '🟢 OK' : '🔴 Falta'}\n`;
+            msg += `🔄 *Refresh Token:* ${data.has_refresh_token ? '🟢 OK' : '🔴 Falta'}\n`;
+            if (data.daemon_error) msg += `⚠️ *Error:* ${data.daemon_error}\n`;
+            
+            const s = db.getStats();
             msg += `\n👥 *Usuarios:* ${s.totalUsers}\n`;
             msg += `📈 *CIDs Hoy:* ${s.todayCids}\n`;
+            
             ctx.reply(msg, { parse_mode: 'Markdown' });
         } catch (err) {
             ctx.reply(`❌ Error conectando al servidor: ${err.message}`);
@@ -213,20 +222,21 @@ function startBot() {
 
     bot.hears('👥 Usuarios', (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
-        ctx.reply('Usa: `/addcredits <id> <n>` para dar créditos manualmente.', { parse_mode: 'Markdown' });
+        ctx.reply('Para gestionar usuarios usa los comandos manuales por ahora:\n`/addcredits <id> <n>`', { parse_mode: 'Markdown' });
     });
 
     bot.hears('⚙️ Ayuda Admin', (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
         ctx.reply(
             '⚙️ *Comandos Admin Disponibles:*\n\n' +
-            '📊 *Estado Sistema* — Resumen rápido del servidor\n' +
-            '👥 *Usuarios* — Ver instrucciones de usuarios\n\n' +
+            '🔄 *Renovar Token* — Dispara el Auto-Extractor remoto (VNC/Cloudflare) para renovar el token\n' +
+            '📊 *Estado Sistema* — Resumen rápido del servidor y tokens\n' +
+            '🔑 *Estado Token* — Detalles técnicos extendidos\n' +
+            '👥 *Usuarios* — Ver usuarios actuales\n\n' +
             '*Comandos manuales:*\n' +
-            '/systemstatus — Estado completo del servidor\n' +
+            '/systemstatus — Estado completo del servidor (JSON)\n' +
             '/addcredits <id> <n> — Agregar créditos a un usuario\n' +
-            '/stats — Estadísticas globales\n' +
-            '/restart — Reiniciar el bot',
+            '/stats — Estadísticas globales',
             { parse_mode: 'Markdown' }
         );
     });
@@ -236,6 +246,8 @@ function startBot() {
         if (!user) return ctx.reply('Usa /start primero.');
         ctx.reply(`💰 Balance: *${user.balance} CIDs*`, { parse_mode: 'Markdown' });
     });
+
+    const PID_CHECKER_URL = process.env.PID_CHECKER_URL || 'http://localhost:8080';
 
     bot.command('check', async (ctx) => {
         const args = ctx.message.text.split(' ').slice(1);
@@ -254,10 +266,10 @@ function startBot() {
             return ctx.reply('❌ *Formato inválido*. La clave debe tener 25 caracteres (ej. XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).', { parse_mode: 'Markdown' });
         }
 
-        const msg = await ctx.reply('⏳ Verificando clave (puede tardar un poco si es la primera vez)...');
+        const msg = await ctx.reply('⏳ Verificando clave contra servidores de Microsoft...');
 
         try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/v1/check`, {
+            const response = await fetch(`${PID_CHECKER_URL}/api/v1/check`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ key: key })
@@ -315,7 +327,47 @@ function startBot() {
         ctx.reply(`📊 Usuarios: ${s.totalUsers}\nCIDs hoy: ${s.todayCids}\nCIDs total: ${s.totalCids}`);
     });
 
-    // Funcionalidad de sesión manual removida (no requerida en Batch API)
+    // ============================================================
+    // CARGA DE SESSION_MASTER EN CALIENTE
+    // ============================================================
+    bot.on('document', async (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return;
+        
+        const doc = ctx.message.document;
+        if (doc.file_name !== 'session_master.json') {
+            return ctx.reply('❌ Solo acepto archivos llamados `session_master.json`.', { parse_mode: 'Markdown' });
+        }
+        
+        try {
+            const msg = await ctx.reply('⏳ Procesando y actualizando sesión en caliente...');
+            
+            const file = await ctx.telegram.getFile(doc.file_id);
+            const resp = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
+            const sessionData = await resp.json();
+            
+            if (!sessionData.tokens_network) {
+                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ Archivo inválido. No contiene `tokens_network`.');
+            }
+            
+            const updateResp = await fetch(`${GETCID_SERVICE_URL}/api/update_session`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sessionData)
+            });
+            
+            const result = await updateResp.json();
+            
+            if (result.success) {
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ *Sesión Actualizada Exitosamente*\n\nEl backend ahora usará los nuevos tokens.`, { parse_mode: 'Markdown' });
+            } else {
+                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Falló la actualización: ${result.error}`);
+            }
+            
+        } catch (err) {
+            ctx.reply(`❌ Error al cargar la sesión: ${err.message}`);
+        }
+    });
 
     // ============================================================
     // /systemstatus — Estado completo del sistema
@@ -334,7 +386,10 @@ function startBot() {
                 `📊 *Estado del Sistema (Extendido)*\n` +
                 `📅 ${new Date().toLocaleString('es-PE')}\n\n` +
                 `🔌 API Status: ${data.api_status}\n` +
-                `⚙️ Engine: ${data.engine || 'Batch API'}\n\n` +
+                `🤖 Daemon: ${data.daemon_status}\n` +
+                `🔑 Access Token: ${data.has_access_token ? 'Presente' : 'Ausente'}\n` +
+                `🔄 Refresh Token: ${data.has_refresh_token ? 'Presente' : 'Ausente'}\n` +
+                (data.daemon_error ? `⚠️ Error: ${data.daemon_error}\n\n` : '\n') +
                 `📈 CIDs hoy: *${stats.todayCids}*\n` +
                 `📈 CIDs total: *${stats.totalCids}*\n` +
                 `👥 Usuarios: *${stats.totalUsers}*\n` +
@@ -478,7 +533,27 @@ function startBot() {
         }
     });
 
-    // Funciones manuales de tokens eliminadas (Batch API)
+    // ============================================================
+    // HANDLERS DE MENÚ: Estado Token y Device Auth
+    // ============================================================
+    bot.hears('🔑 Estado Token', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        try {
+            const response = await fetch(`${GETCID_SERVICE_URL}/status`);
+            const data = await response.json();
+            
+            ctx.reply(
+                `🔑 *Estado de Tokens (Backend)*\n\n` +
+                `🔑 Access Token: ${data.has_access_token ? '🟢 Cargado en memoria' : '🔴 No existe'}\n` +
+                `🔄 Refresh Token: ${data.has_refresh_token ? '🟢 Cargado en memoria' : '🔴 No existe'}\n` +
+                `🤖 Auto-Renovador: ${data.daemon_status === 'running' ? '✅ Corriendo' : (data.daemon_status === 'failed' ? '❌ Falló' : '⚪ Inactivo')}\n` +
+                (data.daemon_error ? `\n⚠️ Error: ${data.daemon_error}` : ''),
+                { parse_mode: 'Markdown' }
+            );
+        } catch (err) {
+            ctx.reply(`❌ Error: ${err.message}`);
+        }
+    });
 
     // CALLBACK: info
     bot.on('callback_query', async (ctx) => {
@@ -505,12 +580,29 @@ function startBot() {
             lastHealthDay = today;
             
             try {
+                // Verificar estado del token
+                let tokenStatus = '❓ Desconocido';
+                let refreshStatus = '❓ Desconocido';
+                let refresherStatus = '❌ Inactivo';
+                try {
+                    const sysResp = await fetch(`${GETCID_SERVICE_URL}/status`);
+                    const sysData = await sysResp.json();
+                    
+                    tokenStatus = sysData.has_access_token ? '🟢 OK' : '🔴 Falta';
+                    refreshStatus = sysData.has_refresh_token ? '🟢 OK' : '🔴 Falta';
+                    refresherStatus = sysData.daemon_status === 'running' ? '✅ Activo' : '❌ Falló';
+                } catch(e) { /* ignore */ }
+                
+                const stats = db.getStats();
+                const uptime = Math.floor(process.uptime() / 3600);
+                
                 for (const adminId of ADMIN_IDS) {
                     bot.telegram.sendMessage(adminId,
                         `📊 *Reporte Diario GetCID*\n` +
                         `📅 ${today} | 3:00 PM\n\n` +
-                        `🔌 API Status: Online\n` +
-                        `⚙️ Sistema: Batch API Activo\n\n` +
+                        `🔑 Access Token: ${tokenStatus}\n` +
+                        `🔄 Refresh Token: ${refreshStatus}\n` +
+                        `⚙️ Proactive Refresh: ${refresherStatus}\n\n` +
                         `📈 CIDs hoy: *${stats.todayCids}*\n` +
                         `📈 CIDs total: *${stats.totalCids}*\n` +
                         `👥 Usuarios: *${stats.totalUsers}*\n` +
@@ -533,10 +625,42 @@ function startBot() {
         { command: 'check', description: 'Revisar Key' },
         { command: 'balance', description: 'Ver tus créditos' },
         { command: 'addcredits', description: 'Admin: Agregar créditos' },
-        { command: 'systemstatus', description: 'Admin: Ver estado de API' },
+        { command: 'tokenstatus', description: 'Admin: Estado del token de Microsoft' },
+        { command: 'systemstatus', description: 'Admin: Ver contenedores y servicios' },
+        { command: 'deviceauth', description: 'Admin: Login interactivo' },
+        { command: 'settoken', description: 'Admin: Forzar Access Token manual' },
+        { command: 'setrefreshtoken', description: 'Admin: Cargar Refresh Token' },
+        { command: 'revert', description: 'Admin: Revertir a token anterior' },
         { command: 'stats', description: 'Admin: Estadísticas de uso' },
+        { command: 'startrenovation', description: 'Admin: Forzar Auto-Renovación' },
         { command: 'restart', description: 'Admin: Reiniciar el bot' }
     ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
+
+    // Comandos para reanudar el sistema manualmente
+    const unpauseHandler = async (ctx) => {
+        if (!ADMIN_IDS.includes(String(ctx.from.id))) return;
+        try {
+            await ctx.reply('🔄 Eliminando estado de pausa y disparando Playwright...');
+            // 1. Quitar la pausa
+            await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paused: false })
+            });
+            // 2. Disparar renovación
+            const resp = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
+            const data = await resp.json();
+            if (data.success) {
+                await ctx.reply('✅ ' + data.message);
+            } else {
+                await ctx.reply('⚠️ Resultado: ' + data.error);
+            }
+        } catch (e) {
+            await ctx.reply('❌ Error comunicándose con la API: ' + e.message);
+        }
+    };
+    bot.command('startrenovation', unpauseHandler);
+    bot.command('unpause', unpauseHandler);
 
     // Comando oculto para reiniciar el bot
     bot.command('restart', async (ctx) => {
@@ -595,7 +719,11 @@ function startBot() {
                         `Comandos admin:\n` +
                         `/addcredits <id> <n>\n` +
                         `/stats\n` +
-                        `/systemstatus`,
+                        `/tokenstatus\n` +
+                        `/systemstatus\n` +
+                        `/deviceauth\n` +
+                        `/settoken <token>\n` +
+                        `/setrefreshtoken <json>`,
                         { parse_mode: 'Markdown' }
                     ).catch(err => console.log(`⚠️ No se pudo notificar al admin ${adminId}: ${err.message}`));
                 }

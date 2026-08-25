@@ -155,7 +155,7 @@ async def _get_cid_batch(iid: str) -> dict:
         "User-Agent": USER_AGENT_BATCH,
     }
 
-    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(BATCH_URL, content=soap_body, headers=headers)
 
     if response.status_code != 200:
@@ -172,7 +172,7 @@ async def _get_cid_batch(iid: str) -> dict:
 async def _get_shared_token() -> str | None:
     """Fetch shared Bearer token from ntriver community server."""
     try:
-        async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(TOKEN_SERVER)
             if resp.status_code == 200:
                 data = resp.json()
@@ -256,7 +256,7 @@ async def _get_cid_visual(iid: str) -> dict:
         "x-session-id": f"app_{uuid.uuid4().hex[:32]}",
     }
 
-    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(VISUAL_URL, json=payload, headers=headers)
 
         # Handle DPoP nonce challenge
@@ -291,9 +291,8 @@ async def get_cid(iid: str) -> dict:
     """
     Main entry point: Get CID for an Installation ID.
     Tries Batch API first, falls back to Visual API.
+    Returns dict with keys: success, cid, formatted_cid, error_code, error_message, method
     """
-    batch_result = {}
-    visual_result = {}
     # Clean IID
     clean_iid = re.sub(r"\D", "", iid)
 
@@ -324,8 +323,6 @@ async def get_cid(iid: str) -> dict:
         logger.warning(f"[{clean_iid[:12]}...] Batch API falló: {batch_result['error_message']}")
     except Exception as e:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Batch API: {e}")
-        batch_result["error_message"] = f"Error conexión Batch API: {str(e) or type(e).__name__}"
-        batch_result["error_code"] = "BATCH_EXC"
 
     # --- Fallback: Visual API with shared token ---
     logger.info(f"[{clean_iid[:12]}...] Intentando Visual API (fallback)...")
