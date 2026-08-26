@@ -87,8 +87,10 @@ async function ocrAndGetCID(filePath, getCID) {
                     continue;
                 }
                 try {
-                    const cid = await getCID(result.iid);
-                    return { success: true, iid: result.iid, cid, strategy: s.name, method: result.method };
+                    const cidResult = await getCID(result.iid);
+                    const cidVal = typeof cidResult === 'string' ? cidResult : cidResult.cid;
+                    const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
+                    return { success: true, iid: result.iid, cid: cidVal, strategy: s.name, method: result.method, backendMethod };
                 } catch (e) {
                     lastError = e;
                     lastPartialIID = result.iid;

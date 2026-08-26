@@ -49,7 +49,7 @@ async function getConfirmationID(iid) {
     const data = await response.json();
 
     if (response.ok && data.success && data.cid) {
-      return data.cid;
+      return { cid: data.cid, method: data.method || 'unknown' };
     }
 
     // Clasificación de errores basada en el mensaje de error del backend

@@ -67,6 +67,8 @@ function buildErrorResponse(error, detectedIID) {
         // Enmascarar errores internos/técnicos para la web (getcid.cdkeysperu.com)
         if (error.code === 'NETWORK_ERROR' || error.code === 'MS_ERROR' || error.code === 'TIMEOUT') {
              msg = "❌ Error temporal de conexión con el servidor de activación. Por favor, inténtalo de nuevo en unos minutos.";
+        } else if (error.code === 'TOO_MANY_ACTIVATIONS' || error.code === 'ACTIVATION_FAILED') {
+             msg = "⚠️ Esta licencia requiere asistencia manual para ser activada. Por favor, contáctanos por WhatsApp para ayudarte rápidamente.";
         }
         
         if (iidDisplay) msg += `\n\n📝 IID detectado:\n${iidDisplay}`;

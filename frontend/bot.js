@@ -443,7 +443,8 @@ function startBot() {
                     `🔑 <b>@CdKeysPeru</b>\n\n` +
                     `<b>IID:</b>\n<code>${formatIID(result.iid)}</code>\n\n` +
                     `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
-                    `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>`,
+                    `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>\n` +
+                    `<i>🤖 Resuelto vía: ${result.backendMethod || 'Desconocido'} (OCR: ${result.strategy})</i>`,
                     { parse_mode: 'HTML' }
                 );
                 
@@ -505,7 +506,10 @@ function startBot() {
         const msg = await ctx.reply('⏳ Obteniendo CID...');
 
         try {
-            const cid = await getConfirmationID(digits);
+            const cidResult = await getConfirmationID(digits);
+            const cid = typeof cidResult === 'string' ? cidResult : cidResult.cid;
+            const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
+            
             const elapsed = Date.now() - startTime;
             const secs = (elapsed / 1000).toFixed(0).padStart(2, '0');
             db.debitCredit(user.id);
@@ -518,7 +522,8 @@ function startBot() {
                 `🔑 <b>@CdKeysPeru</b>\n\n` +
                 `<b>IID:</b>\n<code>${formatIID(digits)}</code>\n\n` +
                 `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
-                `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>`,
+                `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>\n` +
+                `<i>🤖 Resuelto vía: ${backendMethod}</i>`,
                 { parse_mode: 'HTML' }
             );
             
