@@ -183,6 +183,39 @@ async def _get_shared_token() -> str | None:
         logger.warning(f"No se pudo obtener token compartido: {e}")
     return None
 
+async def _get_cid_webact_api(iid: str) -> dict:
+    """
+    Tier 2 Fallback: Try to get CID via public/premium WebAct APIs.
+    This replaces the need for Playwright by using direct HTTP proxies.
+    """
+    result = {"success": False, "cid": None, "error_code": None, "error_message": None}
+    
+    # Lista de APIs comunitarias / premium (puedes añadir tu API VIP aquí)
+    endpoints = [
+        f"http://104.238.163.4/api/getcid?iid={iid}",
+        f"https://api.pidchecker.com/api/v1/getcid?iid={iid}",
+        # f"https://tu-api-premium.com/getcid?iid={iid}&apikey=TU_API_KEY"
+    ]
+    
+    async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
+        for url in endpoints:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    # Intentar extraer CID de varias estructuras JSON comunes
+                    data = resp.json()
+                    cid = data.get("cid") or data.get("CID") or data.get("ConfirmationID")
+                    if cid and len(str(cid).replace("-", "")) >= 40:
+                        result["success"] = True
+                        result["cid"] = str(cid).replace("-", "")
+                        return result
+            except Exception as e:
+                logger.debug(f"Fallo endpoint WebAct API {url}: {e}")
+                continue
+                
+    result["error_message"] = "Todas las APIs de WebAct (Tier 2) fallaron o están caídas."
+    return result
+
 
 async def _get_cid_visual(iid: str) -> dict:
     """Fallback: Try to get CID via Visual API with shared token."""
@@ -306,7 +339,7 @@ async def get_cid(iid: str) -> dict:
         }
 
     # --- Try Batch API first (most stable, no tokens needed) ---
-    logger.info(f"[{clean_iid[:12]}...] Intentando Batch API...")
+    logger.info(f"[{clean_iid[:12]}...] Intentando Batch API (Nivel 1)...")
     batch_result = {}
     try:
         batch_result = await _get_cid_batch(clean_iid)
@@ -326,8 +359,32 @@ async def get_cid(iid: str) -> dict:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Batch API: {e}")
         batch_result = {"error_code": None, "error_message": f"Excepción interna: {e}"}
 
-    # --- Fallback: Visual API with shared token ---
-    logger.info(f"[{clean_iid[:12]}...] Intentando Visual API (fallback)...")
+    # --- Tier 2: WebAct API Fallback ---
+    # Solo intentamos Tier 2 si el error fue por límite de activaciones en Batch (0xD6, 0x71, 0x7F)
+    # o si hubo un error de conexión
+    limit_errors = ["0xD6", "0x71", "0x7F", "0xD5"]
+    if batch_result.get("error_code") in limit_errors or not batch_result.get("error_code"):
+        logger.info(f"[{clean_iid[:12]}...] Intentando WebAct API (Nivel 2)...")
+        api_result = {}
+        try:
+            api_result = await _get_cid_webact_api(clean_iid)
+            if api_result["success"]:
+                cid = api_result["cid"]
+                formatted = "-".join(re.findall(r".{6}", cid)) if "-" not in cid else cid
+                logger.info(f"[{clean_iid[:12]}...] ✅ CID obtenido via WebAct API")
+                return {
+                    "success": True,
+                    "cid": cid,
+                    "formatted_cid": formatted,
+                    "error_message": None,
+                    "method": "webact_api",
+                }
+            logger.warning(f"[{clean_iid[:12]}...] WebAct API falló: {api_result.get('error_message')}")
+        except Exception as e:
+            logger.error(f"[{clean_iid[:12]}...] Excepción en WebAct API: {e}")
+
+    # --- Tier 3: Visual API Fallback (Requiere Token Comunitario) ---
+    logger.info(f"[{clean_iid[:12]}...] Intentando Visual API (Nivel 3)...")
     visual_result = {}
     try:
         visual_result = await _get_cid_visual(clean_iid)
@@ -342,13 +399,13 @@ async def get_cid(iid: str) -> dict:
                 "error_message": None,
                 "method": "visual_api",
             }
-        logger.warning(f"[{clean_iid[:12]}...] Visual API falló: {visual_result['error_message']}")
+        logger.warning(f"[{clean_iid[:12]}...] Visual API falló: {visual_result.get('error_message')}")
     except Exception as e:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Visual API: {e}")
         visual_result = {"error_code": None, "error_message": str(e)}
 
-    # --- Both failed ---
-    # Return the most informative error (prefer batch if it had a specific code)
+    # --- All failed ---
+    # Return the most informative error (prefer batch if it had a specific limit code)
     error_msg = batch_result.get("error_message") or visual_result.get("error_message") or "Error desconocido"
     error_code = batch_result.get("error_code") or visual_result.get("error_code")
 
