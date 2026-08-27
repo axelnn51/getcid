@@ -16,18 +16,25 @@ async function initWorker() {
     console.log('[OCR] 🧠 Cargando motor OCR (solo una vez)...');
     const start = Date.now();
     worker = await Tesseract.createWorker('eng');
+    
+    // 🔥 OPTIMIZACIÓN: Restringir caracteres a números y letras comunes confundidas
+    // Esto acelera el reconocimiento y mejora la precisión
+    await worker.setParameters({
+        tessedit_char_whitelist: '0123456789OQILJZS$GTYB \n\r-:',
+    });
+    
     workerReady = true;
     console.log(`[OCR] 🧠 Motor OCR listo en ${Date.now() - start}ms`);
 }
 
-// Estrategias de preprocesamiento
+// Estrategias de preprocesamiento (Dimensiones reducidas para máxima velocidad)
 const STRATEGIES = [
-    { name: "Screenshot", process: (i, o) => sharp(i).greyscale().sharpen().toFile(o) },
-    { name: "Photo", process: (i, o) => sharp(i).resize({ width: 2000 }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
-    { name: "Blurry", process: (i, o) => sharp(i).resize({ width: 3000 }).greyscale().normalize().sharpen({ sigma: 2 }).toFile(o) },
-    { name: "Binary", process: (i, o) => sharp(i).resize({ width: 2500 }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) },
-    { name: "LCD_Screen", process: (i, o) => sharp(i).resize({ width: 2500 }).greyscale().blur(1.5).normalize().linear(1.8, -0.2).sharpen().toFile(o) },
-    { name: "LCD_Aggressive", process: (i, o) => sharp(i).resize({ width: 2000 }).greyscale().blur(2.0).threshold(128).toFile(o) }
+    { name: "Screenshot", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().sharpen().toFile(o) },
+    { name: "Photo", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
+    { name: "Blurry", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().normalize().sharpen({ sigma: 2 }).toFile(o) },
+    { name: "Binary", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) },
+    { name: "LCD_Screen", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().blur(1.5).normalize().linear(1.8, -0.2).sharpen().toFile(o) },
+    { name: "LCD_Aggressive", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().blur(2.0).threshold(128).toFile(o) }
 ];
 
 // Extraer IID del texto OCR
