@@ -28,10 +28,11 @@ async function initWorker() {
 }
 
 // Estrategias de preprocesamiento (Dimensiones reducidas para máxima velocidad)
+// Ordenadas por tasa de éxito empírica en Telegram (fotos comprimidas/pantallas)
 const STRATEGIES = [
-    { name: "Screenshot", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().sharpen().toFile(o) },
-    { name: "Photo", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
     { name: "Blurry", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().normalize().sharpen({ sigma: 2 }).toFile(o) },
+    { name: "Photo", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
+    { name: "Screenshot", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().sharpen().toFile(o) },
     { name: "Binary", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) },
     { name: "LCD_Screen", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().blur(1.5).normalize().linear(1.8, -0.2).sharpen().toFile(o) },
     { name: "LCD_Aggressive", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().blur(2.0).threshold(128).toFile(o) }
