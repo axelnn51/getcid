@@ -475,10 +475,6 @@ function startBot() {
     // ============================================================
     // HANDLERS DE MENÚ: Estado Token y Device Auth
     // ============================================================
-    bot.hears('🔑 Estado Token', async (ctx) => {
-        if (!isAdmin(String(ctx.from.id))) return;
-
-
     // CALLBACK: info
     bot.on('callback_query', async (ctx) => {
         await ctx.answerCbQuery('ℹ️', { show_alert: false });
