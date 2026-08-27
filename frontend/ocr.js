@@ -17,12 +17,7 @@ async function initWorker() {
     const start = Date.now();
     worker = await Tesseract.createWorker('eng');
     
-    // 🔥 OPTIMIZACIÓN: Restringir caracteres a números y letras comunes confundidas
-    // Esto acelera el reconocimiento y mejora la precisión
-    await worker.setParameters({
-        tessedit_char_whitelist: '0123456789OQILJZS$GTYB \n\r-:',
-    });
-    
+
     workerReady = true;
     console.log(`[OCR] 🧠 Motor OCR listo en ${Date.now() - start}ms`);
 }
