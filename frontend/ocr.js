@@ -17,10 +17,12 @@ async function initWorker() {
     const start = Date.now();
     worker = await Tesseract.createWorker('eng');
     
-    // 🔥 OPTIMIZACIÓN: Restringir caracteres a números y letras comunes confundidas
-    // Esto acelera el reconocimiento y mejora la precisión
+    // 🔥 OPTIMIZACIÓN EXTREMA: 
+    // - Lista blanca: solo números y letras comunes
+    // - PSM 11 (Sparse text): Evita el costoso análisis de párrafos/layout
     await worker.setParameters({
         tessedit_char_whitelist: '0123456789OQILJZS$GTYB \n\r-:',
+        tessedit_pageseg_mode: '11',
     });
     
     workerReady = true;
@@ -29,13 +31,14 @@ async function initWorker() {
 
 // Estrategias de preprocesamiento (Dimensiones reducidas para máxima velocidad)
 // Ordenadas por tasa de éxito empírica en Telegram (fotos comprimidas/pantallas)
+// Anchos reducidos a 1000px para el doble de velocidad de escaneo
 const STRATEGIES = [
-    { name: "Blurry", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().normalize().sharpen({ sigma: 2 }).toFile(o) },
-    { name: "Photo", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
-    { name: "Screenshot", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().sharpen().toFile(o) },
-    { name: "Binary", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) },
-    { name: "LCD_Screen", process: (i, o) => sharp(i).resize({ width: 1500, withoutEnlargement: true }).greyscale().blur(1.5).normalize().linear(1.8, -0.2).sharpen().toFile(o) },
-    { name: "LCD_Aggressive", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().blur(2.0).threshold(128).toFile(o) }
+    { name: "Blurry", process: (i, o) => sharp(i).resize({ width: 1000, withoutEnlargement: true }).greyscale().normalize().sharpen({ sigma: 2 }).toFile(o) },
+    { name: "Photo", process: (i, o) => sharp(i).resize({ width: 1000, withoutEnlargement: true }).greyscale().median(3).linear(1.5, 0).sharpen().toFile(o) },
+    { name: "Screenshot", process: (i, o) => sharp(i).resize({ width: 1000, withoutEnlargement: true }).greyscale().sharpen().toFile(o) },
+    { name: "Binary", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().linear(2.0, -0.3).threshold(140).toFile(o) },
+    { name: "LCD_Screen", process: (i, o) => sharp(i).resize({ width: 1200, withoutEnlargement: true }).greyscale().blur(1.5).normalize().linear(1.8, -0.2).sharpen().toFile(o) },
+    { name: "LCD_Aggressive", process: (i, o) => sharp(i).resize({ width: 1000, withoutEnlargement: true }).greyscale().blur(2.0).threshold(128).toFile(o) }
 ];
 
 // Extraer IID del texto OCR
