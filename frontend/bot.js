@@ -160,8 +160,7 @@ function startBot() {
             extraOptions = {
                 parse_mode: 'Markdown',
                 ...Markup.keyboard([
-                    ['🔄 Renovar Token', '📊 Estado Sistema'],
-                    ['🔑 Estado Token', '👥 Usuarios'],
+                    ['📊 Estado Sistema', '👥 Usuarios'],
                     ['⚙️ Ayuda Admin']
                 ]).resize()
             };
@@ -179,23 +178,6 @@ function startBot() {
     // ============================================================
     // HANDLERS DEL MENÚ RIBBON (Admin)
     // ============================================================
-    bot.hears('🔄 Renovar Token', async (ctx) => {
-        if (!isAdmin(String(ctx.from.id))) return;
-        const msg = await ctx.reply('⚙️ Despertando al Auto-Extractor indetectable (VNC)... Por favor espera.', { parse_mode: 'Markdown' });
-        
-        try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/api/force_extraction`, { method: 'POST' });
-            const data = await response.json();
-            if (!data.success) {
-                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Error: ${data.error}`);
-            } else {
-                ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ Auto-Extractor iniciado en el servidor.\nSi hay algún bloqueo de MS, recibirás el link de Cloudflare en unos segundos.`);
-            }
-        } catch (err) {
-            ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ No se pudo contactar al servidor: ${err.message}`);
-        }
-    });
-
     bot.hears('📊 Estado Sistema', async (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
         
@@ -205,10 +187,8 @@ function startBot() {
             
             let msg = `📊 *ESTADO DEL SISTEMA*\n\n`;
             msg += `🔌 *API:* ${data.api_status === 'online' ? '🟢 Online' : '🔴 Offline'}\n`;
-            msg += `🤖 *Demonio:* ${data.daemon_status === 'running' ? '🟢 Activo' : (data.daemon_status === 'failed' ? '🔴 Falló' : '⚪ Inactivo')}\n`;
-            msg += `🔑 *Access Token:* ${data.has_access_token ? '🟢 OK' : '🔴 Falta'}\n`;
-            msg += `🔄 *Refresh Token:* ${data.has_refresh_token ? '🟢 OK' : '🔴 Falta'}\n`;
-            if (data.daemon_error) msg += `⚠️ *Error:* ${data.daemon_error}\n`;
+            msg += `⚙️ *Versión:* ${data.version || '3.0'}\n`;
+            msg += `🚀 *Motor:* ${data.engine || 'Batch API'}\n`;
             
             const s = db.getStats();
             msg += `\n👥 *Usuarios:* ${s.totalUsers}\n`;
@@ -229,9 +209,7 @@ function startBot() {
         if (!isAdmin(String(ctx.from.id))) return;
         ctx.reply(
             '⚙️ *Comandos Admin Disponibles:*\n\n' +
-            '🔄 *Renovar Token* — Dispara el Auto-Extractor remoto (VNC/Cloudflare) para renovar el token\n' +
-            '📊 *Estado Sistema* — Resumen rápido del servidor y tokens\n' +
-            '🔑 *Estado Token* — Detalles técnicos extendidos\n' +
+            '📊 *Estado Sistema* — Resumen rápido del servidor\n' +
             '👥 *Usuarios* — Ver usuarios actuales\n\n' +
             '*Comandos manuales:*\n' +
             '/systemstatus — Estado completo del servidor (JSON)\n' +
@@ -328,48 +306,6 @@ function startBot() {
     });
 
     // ============================================================
-    // CARGA DE SESSION_MASTER EN CALIENTE
-    // ============================================================
-    bot.on('document', async (ctx) => {
-        const tgId = String(ctx.from.id);
-        if (!isAdmin(tgId)) return;
-        
-        const doc = ctx.message.document;
-        if (doc.file_name !== 'session_master.json') {
-            return ctx.reply('❌ Solo acepto archivos llamados `session_master.json`.', { parse_mode: 'Markdown' });
-        }
-        
-        try {
-            const msg = await ctx.reply('⏳ Procesando y actualizando sesión en caliente...');
-            
-            const file = await ctx.telegram.getFile(doc.file_id);
-            const resp = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
-            const sessionData = await resp.json();
-            
-            if (!sessionData.tokens_network) {
-                return ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, '❌ Archivo inválido. No contiene `tokens_network`.');
-            }
-            
-            const updateResp = await fetch(`${GETCID_SERVICE_URL}/api/update_session`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(sessionData)
-            });
-            
-            const result = await updateResp.json();
-            
-            if (result.success) {
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `✅ *Sesión Actualizada Exitosamente*\n\nEl backend ahora usará los nuevos tokens.`, { parse_mode: 'Markdown' });
-            } else {
-                await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, `❌ Falló la actualización: ${result.error}`);
-            }
-            
-        } catch (err) {
-            ctx.reply(`❌ Error al cargar la sesión: ${err.message}`);
-        }
-    });
-
-    // ============================================================
     // /systemstatus — Estado completo del sistema
     // ============================================================
     bot.command('systemstatus', async (ctx) => {
@@ -386,10 +322,8 @@ function startBot() {
                 `📊 *Estado del Sistema (Extendido)*\n` +
                 `📅 ${new Date().toLocaleString('es-PE')}\n\n` +
                 `🔌 API Status: ${data.api_status}\n` +
-                `🤖 Daemon: ${data.daemon_status}\n` +
-                `🔑 Access Token: ${data.has_access_token ? 'Presente' : 'Ausente'}\n` +
-                `🔄 Refresh Token: ${data.has_refresh_token ? 'Presente' : 'Ausente'}\n` +
-                (data.daemon_error ? `⚠️ Error: ${data.daemon_error}\n\n` : '\n') +
+                `⚙️ Versión: ${data.version || '3.0'}\n` +
+                `🚀 Motor: ${data.engine || 'Batch API'}\n\n` +
                 `📈 CIDs hoy: *${stats.todayCids}*\n` +
                 `📈 CIDs total: *${stats.totalCids}*\n` +
                 `👥 Usuarios: *${stats.totalUsers}*\n` +
@@ -543,22 +477,7 @@ function startBot() {
     // ============================================================
     bot.hears('🔑 Estado Token', async (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
-        try {
-            const response = await fetch(`${GETCID_SERVICE_URL}/status`);
-            const data = await response.json();
-            
-            ctx.reply(
-                `🔑 *Estado de Tokens (Backend)*\n\n` +
-                `🔑 Access Token: ${data.has_access_token ? '🟢 Cargado en memoria' : '🔴 No existe'}\n` +
-                `🔄 Refresh Token: ${data.has_refresh_token ? '🟢 Cargado en memoria' : '🔴 No existe'}\n` +
-                `🤖 Auto-Renovador: ${data.daemon_status === 'running' ? '✅ Corriendo' : (data.daemon_status === 'failed' ? '❌ Falló' : '⚪ Inactivo')}\n` +
-                (data.daemon_error ? `\n⚠️ Error: ${data.daemon_error}` : ''),
-                { parse_mode: 'Markdown' }
-            );
-        } catch (err) {
-            ctx.reply(`❌ Error: ${err.message}`);
-        }
-    });
+
 
     // CALLBACK: info
     bot.on('callback_query', async (ctx) => {
@@ -585,19 +504,6 @@ function startBot() {
             lastHealthDay = today;
             
             try {
-                // Verificar estado del token
-                let tokenStatus = '❓ Desconocido';
-                let refreshStatus = '❓ Desconocido';
-                let refresherStatus = '❌ Inactivo';
-                try {
-                    const sysResp = await fetch(`${GETCID_SERVICE_URL}/status`);
-                    const sysData = await sysResp.json();
-                    
-                    tokenStatus = sysData.has_access_token ? '🟢 OK' : '🔴 Falta';
-                    refreshStatus = sysData.has_refresh_token ? '🟢 OK' : '🔴 Falta';
-                    refresherStatus = sysData.daemon_status === 'running' ? '✅ Activo' : '❌ Falló';
-                } catch(e) { /* ignore */ }
-                
                 const stats = db.getStats();
                 const uptime = Math.floor(process.uptime() / 3600);
                 
@@ -605,9 +511,7 @@ function startBot() {
                     bot.telegram.sendMessage(adminId,
                         `📊 *Reporte Diario GetCID*\n` +
                         `📅 ${today} | 3:00 PM\n\n` +
-                        `🔑 Access Token: ${tokenStatus}\n` +
-                        `🔄 Refresh Token: ${refreshStatus}\n` +
-                        `⚙️ Proactive Refresh: ${refresherStatus}\n\n` +
+                        `🟢 Sistema 100% Estable (Batch API)\n\n` +
                         `📈 CIDs hoy: *${stats.todayCids}*\n` +
                         `📈 CIDs total: *${stats.totalCids}*\n` +
                         `👥 Usuarios: *${stats.totalUsers}*\n` +
@@ -630,42 +534,12 @@ function startBot() {
         { command: 'check', description: 'Revisar Key' },
         { command: 'balance', description: 'Ver tus créditos' },
         { command: 'addcredits', description: 'Admin: Agregar créditos' },
-        { command: 'tokenstatus', description: 'Admin: Estado del token de Microsoft' },
-        { command: 'systemstatus', description: 'Admin: Ver contenedores y servicios' },
-        { command: 'deviceauth', description: 'Admin: Login interactivo' },
-        { command: 'settoken', description: 'Admin: Forzar Access Token manual' },
-        { command: 'setrefreshtoken', description: 'Admin: Cargar Refresh Token' },
-        { command: 'revert', description: 'Admin: Revertir a token anterior' },
+        { command: 'systemstatus', description: 'Admin: Ver estado' },
         { command: 'stats', description: 'Admin: Estadísticas de uso' },
-        { command: 'startrenovation', description: 'Admin: Forzar Auto-Renovación' },
         { command: 'restart', description: 'Admin: Reiniciar el bot' }
     ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
 
-    // Comandos para reanudar el sistema manualmente
-    const unpauseHandler = async (ctx) => {
-        if (!ADMIN_IDS.includes(String(ctx.from.id))) return;
-        try {
-            await ctx.reply('🔄 Eliminando estado de pausa y disparando Playwright...');
-            // 1. Quitar la pausa
-            await fetch(`${GETCID_SERVICE_URL}/api/system-pause`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ paused: false })
-            });
-            // 2. Disparar renovación
-            const resp = await fetch(`${GETCID_SERVICE_URL}/api/start-renovation`, { method: 'POST' });
-            const data = await resp.json();
-            if (data.success) {
-                await ctx.reply('✅ ' + data.message);
-            } else {
-                await ctx.reply('⚠️ Resultado: ' + data.error);
-            }
-        } catch (e) {
-            await ctx.reply('❌ Error comunicándose con la API: ' + e.message);
-        }
-    };
-    bot.command('startrenovation', unpauseHandler);
-    bot.command('unpause', unpauseHandler);
+
 
     // Comando oculto para reiniciar el bot
     bot.command('restart', async (ctx) => {
@@ -724,11 +598,7 @@ function startBot() {
                         `Comandos admin:\n` +
                         `/addcredits <id> <n>\n` +
                         `/stats\n` +
-                        `/tokenstatus\n` +
-                        `/systemstatus\n` +
-                        `/deviceauth\n` +
-                        `/settoken <token>\n` +
-                        `/setrefreshtoken <json>`,
+                        `/systemstatus`,
                         { parse_mode: 'Markdown' }
                     ).catch(err => console.log(`⚠️ No se pudo notificar al admin ${adminId}: ${err.message}`));
                 }

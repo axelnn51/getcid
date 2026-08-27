@@ -359,32 +359,8 @@ async def get_cid(iid: str) -> dict:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Batch API: {e}")
         batch_result = {"error_code": None, "error_message": f"Excepción interna: {e}"}
 
-    # --- Tier 2: WebAct API Fallback ---
-    # Solo intentamos Tier 2 si el error fue por límite de activaciones en Batch (0xD6, 0x71, 0x7F)
-    # o si hubo un error de conexión
-    limit_errors = ["0xD6", "0x71", "0x7F", "0xD5"]
-    if batch_result.get("error_code") in limit_errors or not batch_result.get("error_code"):
-        logger.info(f"[{clean_iid[:12]}...] Intentando WebAct API (Nivel 2)...")
-        api_result = {}
-        try:
-            api_result = await _get_cid_webact_api(clean_iid)
-            if api_result["success"]:
-                cid = api_result["cid"]
-                formatted = "-".join(re.findall(r".{6}", cid)) if "-" not in cid else cid
-                logger.info(f"[{clean_iid[:12]}...] ✅ CID obtenido via WebAct API")
-                return {
-                    "success": True,
-                    "cid": cid,
-                    "formatted_cid": formatted,
-                    "error_message": None,
-                    "method": "webact_api",
-                }
-            logger.warning(f"[{clean_iid[:12]}...] WebAct API falló: {api_result.get('error_message')}")
-        except Exception as e:
-            logger.error(f"[{clean_iid[:12]}...] Excepción en WebAct API: {e}")
-
-    # --- Tier 3: Visual API Fallback (Requiere Token Comunitario) ---
-    logger.info(f"[{clean_iid[:12]}...] Intentando Visual API (Nivel 3)...")
+    # --- Tier 2: Visual API Fallback (Requiere Token Comunitario) ---
+    logger.info(f"[{clean_iid[:12]}...] Intentando Visual API (Nivel 2)...")
     visual_result = {}
     try:
         visual_result = await _get_cid_visual(clean_iid)
@@ -403,6 +379,30 @@ async def get_cid(iid: str) -> dict:
     except Exception as e:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Visual API: {e}")
         visual_result = {"error_code": None, "error_message": str(e)}
+
+    # --- Tier 3: WebAct API Fallback ---
+    # Solo intentamos Tier 3 si el error fue por límite de activaciones en Batch (0xD6, 0x71, 0x7F)
+    # o si hubo un error de conexión
+    limit_errors = ["0xD6", "0x71", "0x7F", "0xD5"]
+    if batch_result.get("error_code") in limit_errors or not batch_result.get("error_code"):
+        logger.info(f"[{clean_iid[:12]}...] Intentando WebAct API (Nivel 3)...")
+        api_result = {}
+        try:
+            api_result = await _get_cid_webact_api(clean_iid)
+            if api_result["success"]:
+                cid = api_result["cid"]
+                formatted = "-".join(re.findall(r".{6}", cid)) if "-" not in cid else cid
+                logger.info(f"[{clean_iid[:12]}...] ✅ CID obtenido via WebAct API")
+                return {
+                    "success": True,
+                    "cid": cid,
+                    "formatted_cid": formatted,
+                    "error_message": None,
+                    "method": "webact_api",
+                }
+            logger.warning(f"[{clean_iid[:12]}...] WebAct API falló: {api_result.get('error_message')}")
+        except Exception as e:
+            logger.error(f"[{clean_iid[:12]}...] Excepción en WebAct API: {e}")
 
     # --- All failed ---
     # Return the most informative error (prefer batch if it had a specific limit code)
