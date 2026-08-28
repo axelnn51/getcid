@@ -141,7 +141,12 @@ def process_image(image_bytes: bytes, rescue: bool = False):
         
         strategies = rescue_strategies if rescue else fast_strategies
 
-        custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789OQILJZS$GTYB \n\r\t-'
+        if not rescue:
+            # Fast Path: Solo permitimos números reales, no letras
+            custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789 \n\r\t-'
+        else:
+            # Rescue Path: Permitimos letras confundibles para intentar salvar la foto
+            custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789OQILJZS$GTYB \n\r\t-'
         
         all_candidates = []
         
@@ -177,10 +182,8 @@ def process_image(image_bytes: bytes, rescue: bool = False):
                     all_candidates.append({"iid": norm[:63], "method": "dense-cluster-63", "strategy": name, "score": 50})
                     
             logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s → {'Fuerte candidato encontrado' if found_strong_candidate else 'Buscando'}")
-
-            # FAST PATH: Si no estamos en rescate y encontramos un candidato 100% perfecto, paramos.
-            if not rescue and found_strong_candidate:
-                break
+            
+            # ELIMINADO: break temprano. Ahora queremos que Fast Path ejecute TODAS sus estrategias (2) para buscar consenso.
 
         if not all_candidates:
             if not rescue:
@@ -189,11 +192,22 @@ def process_image(image_bytes: bytes, rescue: bool = False):
                 return process_image(image_bytes, rescue=True)
             return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
             
+        # Deduplicar preservando el mejor score y otorgando bonus por CONSENSO
         unique_candidates = {}
         for c in all_candidates:
             iid = c["iid"]
-            if iid not in unique_candidates or unique_candidates[iid]["score"] < c["score"]:
+            if iid not in unique_candidates:
                 unique_candidates[iid] = c
+                unique_candidates[iid]["votes"] = 1
+            else:
+                # Si otra estrategia encontró el MISMO IID, nos quedamos con el mejor score y le sumamos votos
+                unique_candidates[iid]["score"] = max(unique_candidates[iid]["score"], c["score"])
+                unique_candidates[iid]["votes"] += 1
+                
+        # Bonus por consenso: +20 puntos por cada estrategia adicional que lo encontró
+        for iid in unique_candidates:
+            if unique_candidates[iid]["votes"] > 1:
+                unique_candidates[iid]["score"] += (unique_candidates[iid]["votes"] - 1) * 20
                 
         sorted_candidates = sorted(unique_candidates.values(), key=lambda x: x["score"], reverse=True)
         
