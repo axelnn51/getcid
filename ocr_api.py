@@ -142,9 +142,6 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
             # Rescue Path: Puede haber ruido o texto múltiple. Permitimos PSM 11 y letras.
             custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789OQILJZS$GTYB \n\r\t-'
         
-        # Estructura para votación por bloques: lista de 9 diccionarios (conteo de votos)
-        block_votes = [{} for _ in range(9)]
-        
         # Candidatos completos encontrados
         all_candidates = []
         
@@ -153,70 +150,50 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
             text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
             logger.debug(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
             
-            # Separar por espacios, tabulaciones o saltos de línea (Tesseract suele usar espacios entre bloques)
+            # Separar por espacios, tabulaciones o saltos de línea
             raw_tokens = re.split(r'[\s\-]+', text.upper())
             
             # Normalizar cada token
             tokens = [normalize_block(t) for t in raw_tokens if t]
             
-            # Buscar una secuencia de 9 tokens de 7 dígitos consecutivos
+            # Buscar TODAS las secuencias de 9 tokens de 7 dígitos consecutivos
             found_sequence = False
             for i in range(len(tokens) - 8):
                 sequence = tokens[i:i+9]
                 if all(len(tk) == 7 for tk in sequence):
                     found_sequence = True
                     iid = "".join(sequence)
-                    all_candidates.append({"iid": iid, "method": "perfect-9x7", "strategy": name, "score": 100})
-                    # Registrar votos individuales por bloque
-                    for b_idx, tk in enumerate(sequence):
-                        block_votes[b_idx][tk] = block_votes[b_idx].get(tk, 0) + 1
-                    break
+                    all_candidates.append({
+                        "iid": iid, 
+                        "method": "perfect-9x7", 
+                        "strategy": name, 
+                        "score": 100,
+                        "blocks": sequence # Guardamos los bloques para comparar consenso
+                    })
                     
             if not found_sequence:
-                # Fallback estricto: Unir todo y buscar 63 dígitos seguidos (por si no separó bien con espacios)
+                # Fallback estricto: Unir todo y buscar secuencias de 63 dígitos usando una ventana deslizante
                 merged = "".join(tokens)
-                if len(merged) >= 63:
-                    # Extraemos los primeros 63 y los dividimos en bloques de 7 para votar
-                    iid = merged[:63]
-                    all_candidates.append({"iid": iid, "method": "exact-63-merged", "strategy": name, "score": 80})
-                    for b_idx in range(9):
-                        tk = iid[b_idx*7:(b_idx+1)*7]
-                        block_votes[b_idx][tk] = block_votes[b_idx].get(tk, 0) + 1
+                for start in range(len(merged) - 62):
+                    iid = merged[start:start+63]
+                    blocks = [iid[b*7:(b+1)*7] for b in range(9)]
+                    all_candidates.append({
+                        "iid": iid, 
+                        "method": "exact-63-merged", 
+                        "strategy": name, 
+                        "score": 80,
+                        "blocks": blocks
+                    })
                         
             logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s")
 
         if not all_candidates:
             if not rescue:
-                # Fallback automático: si Fast Path no encuentra absolutamente nada, probamos Rescue directamente
                 logger.info("[OCR] Fast Path no encontró nada. Activando Auto-Rescue.")
-                # Aquí NO le pasamos skip_crop=True intencionalmente si falló rotundamente, porque 
-                # a lo mejor el crop anterior falló. Enviamos rescue=True y dejamos que reintente a su manera.
                 return process_image(image_bytes, rescue=True)
             return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
             
-        # Deduplicar preservando el mejor score y otorgando bonus por CONSENSO
-        # Construir el candidato Frankenstein basado en el consenso de bloques
-        frankenstein_blocks = []
-        frankenstein_confidence = 0
-        for b_votes in block_votes:
-            if b_votes:
-                # Elegir el bloque con más votos
-                best_tk = max(b_votes, key=b_votes.get)
-                frankenstein_blocks.append(best_tk)
-                frankenstein_confidence += b_votes[best_tk]
-            else:
-                frankenstein_blocks.append("0000000") # Relleno si no hay nada
-                
-        if len(frankenstein_blocks) == 9:
-            frank_iid = "".join(frankenstein_blocks)
-            # Agregar el Frankenstein como candidato si no existe
-            if not any(c["iid"] == frank_iid for c in all_candidates):
-                all_candidates.append({"iid": frank_iid, "method": "frankenstein-consensus", "strategy": "Consensus", "score": 100 + frankenstein_confidence})
-            else:
-                for c in all_candidates:
-                    if c["iid"] == frank_iid:
-                        c["score"] += frankenstein_confidence * 5 # Súper boost
-
+        # Deduplicar y aplicar consenso por coincidencia de bloques
         unique_candidates = {}
         for c in all_candidates:
             iid = c["iid"]
@@ -227,9 +204,20 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                 unique_candidates[iid]["score"] = max(unique_candidates[iid]["score"], c["score"])
                 unique_candidates[iid]["votes"] += 1
                 
-        for iid in unique_candidates:
-            if unique_candidates[iid]["votes"] > 1:
-                unique_candidates[iid]["score"] += (unique_candidates[iid]["votes"] - 1) * 20
+        # Consenso inteligente: sumar puntos por coincidencias de bloques individuales con OTROS candidatos
+        # Si el Candidato A comparte 7 de 9 bloques con el Candidato B (generado por otra estrategia), A gana puntos.
+        for iid_a, cand_a in unique_candidates.items():
+            bonus = 0
+            for iid_b, cand_b in unique_candidates.items():
+                if iid_a != iid_b:
+                    # Comparar bloques
+                    shared_blocks = sum(1 for b in cand_a["blocks"] if b in cand_b["blocks"])
+                    bonus += shared_blocks * 5 # 5 puntos por cada bloque compartido con otro candidato
+            cand_a["score"] += bonus
+            
+            # Bonus adicional si múltiples estrategias extrajeron EXACTAMENTE este mismo candidato
+            if cand_a["votes"] > 1:
+                cand_a["score"] += (cand_a["votes"] - 1) * 50 # Bonus gigante por unanimidad exacta
                 
         sorted_candidates = sorted(unique_candidates.values(), key=lambda x: x["score"], reverse=True)
         
