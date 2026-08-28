@@ -71,16 +71,18 @@ def crop_to_iid_region(gray):
         target_y = -1
         for i, text in enumerate(data['text']):
             t = text.lower()
-            if 'instal' in t or 'install' in t or 'proporcione' in t or 'id.' in t:
+            # ELIMINADO 'id.' porque causa un bug al detectar el 'Id. de confirmación' en el Paso 3
+            # y termina recortando el IID fuera de la imagen.
+            if 'instal' in t or 'install' in t or 'proporcione' in t:
                 y_bottom = data['top'][i] + data['height'][i]
                 if y_bottom > target_y:
                     target_y = y_bottom
                     
         if target_y != -1:
             h, w = gray.shape
-            # Recortar desde la línea de instrucciones hasta un poco más abajo,
-            # pero no toda la imagen para evitar 'Paso 3:'
-            crop_end = min(h, target_y + int(h * 0.5))
+            # Recortar desde la línea de instrucciones hasta un poco más abajo
+            # Específicamente, damos un pequeño margen hacia abajo (~35% de la altura total)
+            crop_end = min(h, target_y + int(h * 0.35))
             return gray[target_y:crop_end, :]
     except Exception as e:
         logger.error(f"Error en crop geométrico: {e}")
