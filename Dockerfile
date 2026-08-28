@@ -7,7 +7,13 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     libgl1 \
     libglib2.0-0 \
+    wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Descargar el modelo "best" de Tesseract (fundamental para leer fotos borrosas)
+RUN mkdir -p /usr/local/share/tessdata && \
+    wget -q -O /usr/local/share/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
+ENV TESSDATA_PREFIX=/usr/local/share/tessdata
 
 # Copiar e instalar dependencias
 COPY requirements.txt .
