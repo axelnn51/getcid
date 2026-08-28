@@ -147,43 +147,74 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
         
         for name, processed_img in strategies:
             t0 = time.perf_counter()
-            text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
-            logger.debug(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
             
-            # Separar por espacios, tabulaciones o saltos de línea
-            raw_tokens = re.split(r'[\s\-]+', text.upper())
+            # Recolectaremos todas las secuencias de tokens posibles de la imagen
+            token_sequences = []
             
-            # Normalizar cada token
-            tokens = [normalize_block(t) for t in raw_tokens if t]
-            
-            # Buscar TODAS las secuencias de 9 tokens de 7 dígitos consecutivos
-            found_sequence = False
-            for i in range(len(tokens) - 8):
-                sequence = tokens[i:i+9]
-                if all(len(tk) == 7 for tk in sequence):
-                    found_sequence = True
-                    iid = "".join(sequence)
-                    all_candidates.append({
-                        "iid": iid, 
-                        "method": "perfect-9x7", 
-                        "strategy": name, 
-                        "score": 100,
-                        "blocks": sequence # Guardamos los bloques para comparar consenso
-                    })
+            if not rescue:
+                # Fast Path: Ya fue recortada a una sola banda horizontal y usa PSM 7
+                text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
+                logger.debug(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
+                raw_tokens = re.split(r'[\s\-]+', text.upper())
+                token_sequences.append(raw_tokens)
+            else:
+                # Rescue Path: Usa PSM 11 (texto disperso). Evitamos mezclar números de distintas líneas.
+                data = pytesseract.image_to_data(processed_img, config=custom_config_whitelist, output_type=pytesseract.Output.DICT)
+                words = []
+                for i, txt in enumerate(data['text']):
+                    txt = txt.strip()
+                    if txt:
+                        words.append({'text': txt, 'top': data['top'][i]})
+                
+                # Agrupar palabras por coordenada Y (top) con tolerancia
+                lines = []
+                for w in words:
+                    added = False
+                    for line in lines:
+                        # 25px de tolerancia para considerarlo la misma línea
+                        if abs(w['top'] - line[0]['top']) < 25:
+                            line.append(w)
+                            added = True
+                            break
+                    if not added:
+                        lines.append([w])
+                        
+                for line in lines:
+                    token_sequences.append([w['text'] for w in line])
                     
-            if not found_sequence:
-                # Fallback estricto: Unir todo y buscar secuencias de 63 dígitos usando una ventana alineada a múltiplos de 7
-                merged = "".join(tokens)
-                for start in range(0, len(merged) - 62, 7):
-                    iid = merged[start:start+63]
-                    blocks = [iid[b*7:(b+1)*7] for b in range(9)]
-                    all_candidates.append({
-                        "iid": iid, 
-                        "method": "exact-63-merged", 
-                        "strategy": name, 
-                        "score": 60, # Menor base para priorizar los que sí vinieron separados por espacios
-                        "blocks": blocks
-                    })
+            # Procesar cada secuencia (línea) de forma independiente
+            for raw_tokens in token_sequences:
+                # Normalizar cada token
+                tokens = [normalize_block(t) for t in raw_tokens if t]
+                
+                # Buscar TODAS las secuencias de 9 tokens de 7 dígitos consecutivos
+                found_sequence = False
+                for i in range(len(tokens) - 8):
+                    sequence = tokens[i:i+9]
+                    if all(len(tk) == 7 for tk in sequence):
+                        found_sequence = True
+                        iid = "".join(sequence)
+                        all_candidates.append({
+                            "iid": iid, 
+                            "method": "perfect-9x7", 
+                            "strategy": name, 
+                            "score": 100,
+                            "blocks": sequence
+                        })
+                        
+                if not found_sequence:
+                    # Fallback estricto: Unir SOLO LA LÍNEA ACTUAL y buscar secuencias alineadas a múltiplos de 7
+                    merged = "".join(tokens)
+                    for start in range(0, len(merged) - 62, 7):
+                        iid = merged[start:start+63]
+                        blocks = [iid[b*7:(b+1)*7] for b in range(9)]
+                        all_candidates.append({
+                            "iid": iid, 
+                            "method": "exact-63-merged", 
+                            "strategy": name, 
+                            "score": 60,
+                            "blocks": blocks
+                        })
                         
             logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s")
 
