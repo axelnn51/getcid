@@ -172,16 +172,16 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                     })
                     
             if not found_sequence:
-                # Fallback estricto: Unir todo y buscar secuencias de 63 dígitos usando una ventana deslizante
+                # Fallback estricto: Unir todo y buscar secuencias de 63 dígitos usando una ventana alineada a múltiplos de 7
                 merged = "".join(tokens)
-                for start in range(len(merged) - 62):
+                for start in range(0, len(merged) - 62, 7):
                     iid = merged[start:start+63]
                     blocks = [iid[b*7:(b+1)*7] for b in range(9)]
                     all_candidates.append({
                         "iid": iid, 
                         "method": "exact-63-merged", 
                         "strategy": name, 
-                        "score": 80,
+                        "score": 60, # Menor base para priorizar los que sí vinieron separados por espacios
                         "blocks": blocks
                     })
                         
@@ -204,20 +204,23 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                 unique_candidates[iid]["score"] = max(unique_candidates[iid]["score"], c["score"])
                 unique_candidates[iid]["votes"] += 1
                 
-        # Consenso inteligente: sumar puntos por coincidencias de bloques individuales con OTROS candidatos
-        # Si el Candidato A comparte 7 de 9 bloques con el Candidato B (generado por otra estrategia), A gana puntos.
+        # Consenso inteligente: sumar puntos por coincidencias POSICIONALES de bloques con OTROS candidatos
         for iid_a, cand_a in unique_candidates.items():
             bonus = 0
             for iid_b, cand_b in unique_candidates.items():
                 if iid_a != iid_b:
-                    # Comparar bloques
-                    shared_blocks = sum(1 for b in cand_a["blocks"] if b in cand_b["blocks"])
-                    bonus += shared_blocks * 5 # 5 puntos por cada bloque compartido con otro candidato
+                    # Comparar bloques respetando la posición
+                    shared_blocks = sum(a == b for a, b in zip(cand_a["blocks"], cand_b["blocks"]))
+                    bonus += shared_blocks * 5 # 5 puntos por cada bloque idéntico en la misma posición
             cand_a["score"] += bonus
             
             # Bonus adicional si múltiples estrategias extrajeron EXACTAMENTE este mismo candidato
             if cand_a["votes"] > 1:
                 cand_a["score"] += (cand_a["votes"] - 1) * 50 # Bonus gigante por unanimidad exacta
+                
+            # Bonus absoluto si el candidato provino de una separación nativa perfecta
+            if cand_a["method"] == "perfect-9x7":
+                cand_a["score"] += 100
                 
         sorted_candidates = sorted(unique_candidates.values(), key=lambda x: x["score"], reverse=True)
         
