@@ -17,7 +17,12 @@ async function initWorker() {
     const start = Date.now();
     worker = await Tesseract.createWorker('eng');
     
-
+    // 🔥 OPTIMIZACIÓN: Restringir caracteres a números y letras comunes confundidas
+    // Esto acelera el reconocimiento y mejora la precisión
+    await worker.setParameters({
+        tessedit_char_whitelist: '0123456789OQILJZS$GTYB \n\r-:',
+    });
+    
     workerReady = true;
     console.log(`[OCR] 🧠 Motor OCR listo en ${Date.now() - start}ms`);
 }
@@ -35,36 +40,28 @@ const STRATEGIES = [
 
 // Extraer IID del texto OCR
 function extractIID(rawText) {
-    // 1. Buscar el IID como un bloque contiguo de 9x7 dígitos (con o sin espacios/guiones)
-    // Esto evita atrapar números de otros mensajes de chat en la captura
-    const contiguousRegex = /(?:\b[0-9OQILJZS\$GTYB]{7}[\s\-\n\r]*){9}/i;
-    
-    // Normalizar texto antes de buscar el bloque continuo
+    // Directo: 9 bloques de 7 dígitos
+    const d7 = rawText.match(/\b\d{7}\b/g);
+    if (d7 && d7.length >= 9) { const iid = d7.slice(-9).join(''); if (iid.length === 63) return { iid, method: 'direct' }; }
+
+    // Normalizado: corregir letras confundidas
     const norm = rawText.toUpperCase()
         .replace(/[OQ]/g, '0').replace(/[ILJ|]/g, '1').replace(/Z/g, '2')
         .replace(/[S$]/g, '5').replace(/G/g, '6').replace(/[TY]/g, '7').replace(/B/g, '8');
+    const n7 = norm.match(/\b\d{7}\b/g);
+    if (n7 && n7.length >= 9) { const iid = n7.slice(-9).join(''); if (iid.length === 63) return { iid, method: 'normalized' }; }
 
-    const match = norm.match(/(?:\b\d{7}[\s\-\n\r]*){9}/);
-    if (match) {
-        const iid = match[0].replace(/\D/g, '');
-        if (iid.length === 63) return { iid, method: 'contiguous' };
-    }
-
-    // 2. Si no es continuo, recolectar bloques de 7 (Word scan fallback)
-    const words = norm.split(/[\s\n\r,;:-]+/);
+    // Word scan
+    const words = norm.split(/[\s\n\r,;:]+/);
     let sevens = [];
     for (const w of words) { const d = w.replace(/\D/g, ''); if (d.length === 7) sevens.push(d); }
-    // IMPORTANTE: Tomar los PRIMEROS 9, no los últimos (para evitar el chat)
-    if (sevens.length >= 9) return { iid: sevens.slice(0, 9).join(''), method: 'word-scan' };
+    if (sevens.length >= 9) return { iid: sevens.slice(-9).join(''), method: 'word-scan' };
 
-    // 3. Fallback absoluto
+    // Fallback
     const all = norm.replace(/\D/g, '');
-    if (all.length >= 63) {
-        // Buscar el bloque más grande continuo que empiece en la primera posición
-        return { iid: all.slice(0, 63), method: 'fallback' };
-    }
+    if (all.length >= 63) return { iid: all.slice(-63), method: 'fallback' };
 
-    // Retornar dígitos parciales para diagnóstico
+    // Retornar dígitos parciales para diagnóstico (si hay al menos algo)
     if (all.length > 0) return { iid: all, method: 'partial', partial: true };
 
     return null;
