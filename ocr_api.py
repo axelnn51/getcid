@@ -100,6 +100,7 @@ def process_image(image_bytes: bytes):
         
         # 1. CROP GEOMÉTRICO: Aislar la región de los números
         gray = crop_to_iid_region(gray)
+        logger.info(f"[OCR] Crop geométrico aplicado. Dimensiones: {gray.shape}")
         
         # Estrategias OpenCV
         strategies = []
@@ -120,10 +121,14 @@ def process_image(image_bytes: bytes):
         
         for name, processed_img in strategies:
             text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
-            result = extract_iid(text)
+            logger.info(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
             
+            result = extract_iid(text)
             if result:
+                logger.info(f"[OCR] [{name}] ✅ Éxito: {result}")
                 return {"success": True, "iid": result["iid"], "method": result["method"], "strategy": f"{name}_Whitelist"}
+            else:
+                logger.info(f"[OCR] [{name}] ❌ IID no encontrado en esta estrategia.")
         
         return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
     except Exception as e:
