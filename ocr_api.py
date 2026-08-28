@@ -23,36 +23,30 @@ def normalize_block(text: str) -> str:
 
 def crop_to_iid_region(gray):
     """
-    Intenta encontrar la línea con mayor concentración de números (el IID)
-    usando OCR rápido para recortar SOLO la banda horizontal que los contiene.
-    Esto permite usar --psm 7 (una sola línea de texto) en las fases posteriores.
+    Localiza la línea del IID usando OCR rápido (PSM 11) para extraer únicamente 
+    la banda horizontal numérica. Funciona para imágenes pre-recortadas y pantallas completas.
     """
     h, w = gray.shape
     
-    # 1. Protección para imágenes ya recortadas
-    if h <= 150 and (w / h) >= 3.0:
-        logger.info(f"[OCR] Imagen detectada como pre-recortada ({w}x{h}). Omitiendo crop geométrico.")
-        return gray
-
     try:
         custom_config = r'--oem 3 --psm 11'
         data = pytesseract.image_to_data(gray, config=custom_config, output_type=pytesseract.Output.DICT)
         
-        # 2. Buscar palabras que parezcan números (longitud >= 5, mayormente dígitos)
+        # 1. Buscar palabras que parezcan números (longitud >= 5, mayormente dígitos)
         number_words = []
         for i, text in enumerate(data['text']):
             clean = re.sub(r'\D', '', text)
             if len(clean) >= 5:
                 number_words.append(i)
                 
-        # 3. Agrupar palabras por línea horizontal (top cercano)
-        if len(number_words) >= 3: # Si hay suficientes números para deducir una línea
+        # 2. Agrupar palabras por línea horizontal (coordenada Y)
+        if len(number_words) >= 3:
             tops = [data['top'][i] for i in number_words]
             clusters = {}
             for t in tops:
                 found = False
                 for k in clusters.keys():
-                    if abs(t - k) < 20: # 20px de tolerancia vertical
+                    if abs(t - k) < 25: # Tolerancia para alinear palabras de la misma línea
                         clusters[k].append(t)
                         found = True
                         break
@@ -62,40 +56,29 @@ def crop_to_iid_region(gray):
             # La línea del IID será la que tenga MÁS palabras numéricas
             best_cluster_top = max(clusters, key=lambda k: len(clusters[k]))
             
-            # 4. Encontrar min_top y max_bottom de esa línea
-            min_top = min([data['top'][i] for i in number_words if abs(data['top'][i] - best_cluster_top) < 20])
-            max_bottom = max([data['top'][i] + data['height'][i] for i in number_words if abs(data['top'][i] - best_cluster_top) < 20])
+            # 3. Extraer todas las palabras numéricas de esa línea ganadora
+            best_words = [i for i in number_words if abs(data['top'][i] - best_cluster_top) < 25]
             
-            # Margen de seguridad ajustado (no muy grande para no incluir otras líneas)
-            min_top = max(0, min_top - 5)
-            max_bottom = min(h, max_bottom + 10)
+            min_top = min([data['top'][i] for i in best_words])
+            max_bottom = max([data['top'][i] + data['height'][i] for i in best_words])
+            
+            # 4. Margen ajustado (8-15px) para no amputar pero aislar la línea
+            min_top = max(0, min_top - 10)
+            max_bottom = min(h, max_bottom + 15)
             
             cropped = gray[min_top:max_bottom, :]
             
-            if cropped.shape[0] < 30:
-                logger.warning(f"[OCR] Crop de banda demasiado estrecho ({cropped.shape[0]}px). Usando fallback clásico.")
-            else:
-                return cropped
-                
-        # 5. Fallback clásico (si no encuentra suficientes números claros)
-        target_y = -1
-        for i, text in enumerate(data['text']):
-            t = text.lower()
-            if 'instal' in t or 'install' in t or 'proporcione' in t:
-                y_bottom = data['top'][i] + data['height'][i]
-                if y_bottom > target_y:
-                    target_y = y_bottom
-                    
-        if target_y != -1:
-            margin = max(int(h * 0.35), 70)
-            crop_end = min(h, target_y + margin)
-            cropped = gray[target_y:crop_end, :]
+            # 5. Validación final del tamaño del crop
             if cropped.shape[0] >= 30:
+                logger.info(f"[OCR] ROI detectada: {cropped.shape[0]}x{cropped.shape[1]} (desde imagen {h}x{w})")
                 return cropped
+            else:
+                logger.warning(f"[OCR] Crop detectado muy estrecho ({cropped.shape[0]}px). Usando fallback.")
                 
     except Exception as e:
-        logger.error(f"Error en crop de banda horizontal: {e}")
+        logger.error(f"Error en localización espacial del IID: {e}")
         
+    logger.info(f"[OCR] Imposible localizar línea numérica. Usando imagen original ({h}x{w}).")
     return gray
 
 def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = False):
@@ -187,7 +170,7 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                 # Normalizar cada token
                 tokens = [normalize_block(t) for t in raw_tokens if t]
                 
-                # Buscar TODAS las secuencias de 9 tokens de 7 dígitos consecutivos
+                # Buscar TODAS las secuencias de 9 tokens de 7 dígitos consecutivos (PRIORIDAD A)
                 found_sequence = False
                 for i in range(len(tokens) - 8):
                     sequence = tokens[i:i+9]
@@ -203,18 +186,34 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                         })
                         
                 if not found_sequence:
-                    # Fallback estricto: Unir SOLO LA LÍNEA ACTUAL y buscar secuencias alineadas a múltiplos de 7
+                    # PRIORIDAD B: Token individual de 63 dígitos continuos
+                    for tk in tokens:
+                        if len(tk) == 63:
+                            iid = tk
+                            blocks = [iid[b*7:(b+1)*7] for b in range(9)]
+                            all_candidates.append({
+                                "iid": iid, 
+                                "method": "exact-63-token", 
+                                "strategy": name, 
+                                "score": 80,
+                                "blocks": blocks
+                            })
+                            found_sequence = True
+                            
+                if not found_sequence:
+                    # PRIORIDAD C: Reconstrucción imperfecta usando la misma línea visual (Último recurso)
                     merged = "".join(tokens)
-                    for start in range(0, len(merged) - 62, 7):
-                        iid = merged[start:start+63]
-                        blocks = [iid[b*7:(b+1)*7] for b in range(9)]
-                        all_candidates.append({
-                            "iid": iid, 
-                            "method": "exact-63-merged", 
-                            "strategy": name, 
-                            "score": 60,
-                            "blocks": blocks
-                        })
+                    if len(merged) >= 63:
+                        for start in range(0, len(merged) - 62, 7):
+                            iid = merged[start:start+63]
+                            blocks = [iid[b*7:(b+1)*7] for b in range(9)]
+                            all_candidates.append({
+                                "iid": iid, 
+                                "method": "reconstructed-line", 
+                                "strategy": name, 
+                                "score": 40, # Puntaje muy bajo para no competir directamente con lecturas perfectas
+                                "blocks": blocks
+                            })
                         
             logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s")
 
