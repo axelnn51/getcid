@@ -5,6 +5,8 @@ from logging.handlers import RotatingFileHandler
 import os
 
 from batch_cid import get_cid
+from ocr_api import process_image
+from fastapi import File, UploadFile
 
 # Asegurar directorio de logs
 os.makedirs("logs", exist_ok=True)
@@ -78,6 +80,13 @@ async def check_pid(request: PIDRequest):
         "code": error_code,
         "message": error_msg,
     }
+
+
+@app.post("/extract-iid")
+async def extract_iid_endpoint(file: UploadFile = File(...)):
+    contents = await file.read()
+    result = process_image(contents)
+    return result
 
 
 if __name__ == "__main__":
