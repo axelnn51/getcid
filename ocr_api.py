@@ -108,7 +108,7 @@ def crop_to_iid_region(gray):
         
     return gray
 
-def process_image(image_bytes: bytes, rescue: bool = False):
+def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = False):
     try:
         t_start_total = time.perf_counter()
         
@@ -120,9 +120,13 @@ def process_image(image_bytes: bytes, rescue: bool = False):
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
         t0 = time.perf_counter()
-        # 1. CROP GEOMÉTRICO: Aislar la región de los números
-        gray = crop_to_iid_region(gray)
-        logger.info(f"[OCR] Crop geométrico aplicado: {time.perf_counter() - t0:.3f}s. Dimensiones: {gray.shape}")
+        
+        # 1. CROP GEOMÉTRICO
+        if not skip_crop:
+            gray = crop_to_iid_region(gray)
+            logger.info(f"[OCR] Crop geométrico aplicado: {time.perf_counter() - t0:.3f}s. Dimensiones: {gray.shape}")
+        else:
+            logger.info(f"[OCR] Omitiendo recálculo de crop en modo rescate. Dimensiones: {gray.shape}")
         
         # Estrategias OpenCV
         resized1 = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
@@ -189,6 +193,8 @@ def process_image(image_bytes: bytes, rescue: bool = False):
             if not rescue:
                 # Fallback automático: si Fast Path no encuentra absolutamente nada, probamos Rescue directamente
                 logger.info("[OCR] Fast Path no encontró nada. Activando Auto-Rescue.")
+                # Aquí NO le pasamos skip_crop=True intencionalmente si falló rotundamente, porque 
+                # a lo mejor el crop anterior falló. Enviamos rescue=True y dejamos que reintente a su manera.
                 return process_image(image_bytes, rescue=True)
             return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
             
