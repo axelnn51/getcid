@@ -9,7 +9,7 @@ logger = logging.getLogger("OCR_API")
 logger.setLevel(logging.INFO)
 
 def normalize_block(text: str) -> str:
-    """Normaliza solo un bloque candidato a IID, convirtiendo letras confusas en números."""
+    """Normaliza un bloque candidato a IID, convirtiendo letras confusas en números."""
     norm = text.upper()
     norm = re.sub(r'[OQ]', '0', norm)
     norm = re.sub(r'[ILJ|]', '1', norm)
@@ -20,55 +20,16 @@ def normalize_block(text: str) -> str:
     norm = re.sub(r'B', '8', norm)
     return re.sub(r'\D', '', norm)
 
-def extract_iid(raw_text: str):
-    # 1. Separar el texto por caracteres que definitivamente NO pertenecen al IID.
-    # El IID solo puede contener números, letras confusas, espacios o guiones.
-    # Cualquier otra letra (ej. 'M' de Microsoft) rompe el bloque.
-    blocks = re.split(r'[^0-9OQILJZS$GTYB \n\r\t-]', raw_text.upper())
-    
-    candidates = []
-    
-    for b in blocks:
-        # Limpiar espacios y guiones del bloque para ver su longitud real
-        clean_len = len(re.sub(r'[ \n\r\t-]', '', b))
-        if clean_len >= 54:
-            # Si el bloque aislado tiene suficientes caracteres válidos, es un candidato fuerte.
-            # Solo AHORA aplicamos la normalización destructiva (O->0, S->5)
-            normalized = normalize_block(b)
-            candidates.append(normalized)
-            
-    for cand in candidates:
-        # 2. Bugfix: Comprobar EXACT-63 primero
-        if len(cand) == 63:
-            return {"iid": cand, "method": "exact-63"}
-        elif len(cand) == 54:
-            return {"iid": cand, "method": "exact-54"}
-        
-        # 3. Método bloques de 7
-        if len(cand) % 7 == 0:
-            if len(cand) >= 63: # 9 bloques
-                return {"iid": cand[:63], "method": "chunk-7-x9"}
-                
-    # 4. Búsqueda densa mejorada (Fallback estricto)
-    # Ya no busca en todo el texto, solo en bloques que superaron el filtro
-    for b in blocks:
-        # Convertimos todo a espacio simple y normalizamos
-        norm = normalize_block(b)
-        if len(norm) >= 63:
-            return {"iid": norm[:63], "method": "dense-cluster-63"}
-
-    # Ya no retornamos 'partial' con basura de 74 dígitos.
-    return []
 
 def crop_to_iid_region(gray):
     """
-    Intenta encontrar la línea 'Id. de instalación' o 'instalacion'
-    usando OCR rápido para recortar la imagen y evitar procesar 'Microsoft Office'.
+    Intenta encontrar la línea con mayor concentración de números (el IID)
+    usando OCR rápido para recortar SOLO la banda horizontal que los contiene.
+    Esto permite usar --psm 7 (una sola línea de texto) en las fases posteriores.
     """
     h, w = gray.shape
     
     # 1. Protección para imágenes ya recortadas
-    # Si la imagen es muy panorámica y de poca altura, asumimos que el usuario ya recortó el IID
     if h <= 150 and (w / h) >= 3.0:
         logger.info(f"[OCR] Imagen detectada como pre-recortada ({w}x{h}). Omitiendo crop geométrico.")
         return gray
@@ -77,34 +38,63 @@ def crop_to_iid_region(gray):
         custom_config = r'--oem 3 --psm 11'
         data = pytesseract.image_to_data(gray, config=custom_config, output_type=pytesseract.Output.DICT)
         
+        # 2. Buscar palabras que parezcan números (longitud >= 5, mayormente dígitos)
+        number_words = []
+        for i, text in enumerate(data['text']):
+            clean = re.sub(r'\D', '', text)
+            if len(clean) >= 5:
+                number_words.append(i)
+                
+        # 3. Agrupar palabras por línea horizontal (top cercano)
+        if len(number_words) >= 3: # Si hay suficientes números para deducir una línea
+            tops = [data['top'][i] for i in number_words]
+            clusters = {}
+            for t in tops:
+                found = False
+                for k in clusters.keys():
+                    if abs(t - k) < 20: # 20px de tolerancia vertical
+                        clusters[k].append(t)
+                        found = True
+                        break
+                if not found:
+                    clusters[t] = [t]
+            
+            # La línea del IID será la que tenga MÁS palabras numéricas
+            best_cluster_top = max(clusters, key=lambda k: len(clusters[k]))
+            
+            # 4. Encontrar min_top y max_bottom de esa línea
+            min_top = min([data['top'][i] for i in number_words if abs(data['top'][i] - best_cluster_top) < 20])
+            max_bottom = max([data['top'][i] + data['height'][i] for i in number_words if abs(data['top'][i] - best_cluster_top) < 20])
+            
+            # Margen de seguridad ajustado (no muy grande para no incluir otras líneas)
+            min_top = max(0, min_top - 5)
+            max_bottom = min(h, max_bottom + 10)
+            
+            cropped = gray[min_top:max_bottom, :]
+            
+            if cropped.shape[0] < 30:
+                logger.warning(f"[OCR] Crop de banda demasiado estrecho ({cropped.shape[0]}px). Usando fallback clásico.")
+            else:
+                return cropped
+                
+        # 5. Fallback clásico (si no encuentra suficientes números claros)
         target_y = -1
         for i, text in enumerate(data['text']):
             t = text.lower()
-            # ELIMINADO 'id.' porque causa un bug al detectar el 'Id. de confirmación' en el Paso 3
-            # y termina recortando el IID fuera de la imagen.
             if 'instal' in t or 'install' in t or 'proporcione' in t:
                 y_bottom = data['top'][i] + data['height'][i]
                 if y_bottom > target_y:
                     target_y = y_bottom
                     
         if target_y != -1:
-            # Recortar desde la línea de instrucciones hasta un poco más abajo
-            # Damos un margen hacia abajo (~35% de la altura total) pero ASEGURAMOS un mínimo de píxeles
-            # para no amputar los números en fotos que ya vienen algo recortadas.
-            margin = max(int(h * 0.35), 70) # Al menos 70 píxeles hacia abajo
+            margin = max(int(h * 0.35), 70)
             crop_end = min(h, target_y + margin)
-            
             cropped = gray[target_y:crop_end, :]
-            
-            # 2. Validación del crop
-            # Si el resultado es absurdamente pequeño, ignoramos el crop
-            if cropped.shape[0] < 30:
-                logger.warning(f"[OCR] Crop resultante demasiado pequeño ({cropped.shape[0]}px). Usando imagen original.")
-                return gray
+            if cropped.shape[0] >= 30:
+                return cropped
                 
-            return cropped
     except Exception as e:
-        logger.error(f"Error en crop geométrico: {e}")
+        logger.error(f"Error en crop de banda horizontal: {e}")
         
     return gray
 
@@ -146,12 +136,16 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
         strategies = rescue_strategies if rescue else fast_strategies
 
         if not rescue:
-            # Fast Path: Solo permitimos números reales, no letras
-            custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789 \n\r\t-'
+            # Fast Path: Banda horizontal única, por tanto PSM 7 es ideal. Solo números.
+            custom_config_whitelist = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789 \n\r\t-'
         else:
-            # Rescue Path: Permitimos letras confundibles para intentar salvar la foto
+            # Rescue Path: Puede haber ruido o texto múltiple. Permitimos PSM 11 y letras.
             custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789OQILJZS$GTYB \n\r\t-'
         
+        # Estructura para votación por bloques: lista de 9 diccionarios (conteo de votos)
+        block_votes = [{} for _ in range(9)]
+        
+        # Candidatos completos encontrados
         all_candidates = []
         
         for name, processed_img in strategies:
@@ -159,35 +153,37 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
             text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
             logger.debug(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
             
-            blocks = re.split(r'[^0-9OQILJZS$GTYB \n\r\t-]', text.upper())
-            candidates_for_strategy = []
+            # Separar por espacios, tabulaciones o saltos de línea (Tesseract suele usar espacios entre bloques)
+            raw_tokens = re.split(r'[\s\-]+', text.upper())
             
-            for b in blocks:
-                clean_len = len(re.sub(r'[ \n\r\t-]', '', b))
-                if clean_len >= 54:
-                    normalized = normalize_block(b)
-                    candidates_for_strategy.append(normalized)
+            # Normalizar cada token
+            tokens = [normalize_block(t) for t in raw_tokens if t]
+            
+            # Buscar una secuencia de 9 tokens de 7 dígitos consecutivos
+            found_sequence = False
+            for i in range(len(tokens) - 8):
+                sequence = tokens[i:i+9]
+                if all(len(tk) == 7 for tk in sequence):
+                    found_sequence = True
+                    iid = "".join(sequence)
+                    all_candidates.append({"iid": iid, "method": "perfect-9x7", "strategy": name, "score": 100})
+                    # Registrar votos individuales por bloque
+                    for b_idx, tk in enumerate(sequence):
+                        block_votes[b_idx][tk] = block_votes[b_idx].get(tk, 0) + 1
+                    break
                     
-            found_strong_candidate = False
-            for cand in candidates_for_strategy:
-                if len(cand) == 63:
-                    all_candidates.append({"iid": cand, "method": "exact-63", "strategy": name, "score": 100})
-                    found_strong_candidate = True
-                elif len(cand) == 54:
-                    all_candidates.append({"iid": cand, "method": "exact-54", "strategy": name, "score": 95})
-                    found_strong_candidate = True
-                elif len(cand) % 7 == 0 and len(cand) >= 63:
-                    all_candidates.append({"iid": cand[:63], "method": "chunk-7-x9", "strategy": name, "score": 90})
-                    found_strong_candidate = True
-            
-            for b in blocks:
-                norm = normalize_block(b)
-                if len(norm) >= 63 and not any(c["iid"] == norm[:63] for c in all_candidates):
-                    all_candidates.append({"iid": norm[:63], "method": "dense-cluster-63", "strategy": name, "score": 50})
-                    
-            logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s → {'Fuerte candidato encontrado' if found_strong_candidate else 'Buscando'}")
-            
-            # ELIMINADO: break temprano. Ahora queremos que Fast Path ejecute TODAS sus estrategias (2) para buscar consenso.
+            if not found_sequence:
+                # Fallback estricto: Unir todo y buscar 63 dígitos seguidos (por si no separó bien con espacios)
+                merged = "".join(tokens)
+                if len(merged) >= 63:
+                    # Extraemos los primeros 63 y los dividimos en bloques de 7 para votar
+                    iid = merged[:63]
+                    all_candidates.append({"iid": iid, "method": "exact-63-merged", "strategy": name, "score": 80})
+                    for b_idx in range(9):
+                        tk = iid[b_idx*7:(b_idx+1)*7]
+                        block_votes[b_idx][tk] = block_votes[b_idx].get(tk, 0) + 1
+                        
+            logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s")
 
         if not all_candidates:
             if not rescue:
@@ -199,6 +195,28 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
             return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
             
         # Deduplicar preservando el mejor score y otorgando bonus por CONSENSO
+        # Construir el candidato Frankenstein basado en el consenso de bloques
+        frankenstein_blocks = []
+        frankenstein_confidence = 0
+        for b_votes in block_votes:
+            if b_votes:
+                # Elegir el bloque con más votos
+                best_tk = max(b_votes, key=b_votes.get)
+                frankenstein_blocks.append(best_tk)
+                frankenstein_confidence += b_votes[best_tk]
+            else:
+                frankenstein_blocks.append("0000000") # Relleno si no hay nada
+                
+        if len(frankenstein_blocks) == 9:
+            frank_iid = "".join(frankenstein_blocks)
+            # Agregar el Frankenstein como candidato si no existe
+            if not any(c["iid"] == frank_iid for c in all_candidates):
+                all_candidates.append({"iid": frank_iid, "method": "frankenstein-consensus", "strategy": "Consensus", "score": 100 + frankenstein_confidence})
+            else:
+                for c in all_candidates:
+                    if c["iid"] == frank_iid:
+                        c["score"] += frankenstein_confidence * 5 # Súper boost
+
         unique_candidates = {}
         for c in all_candidates:
             iid = c["iid"]
@@ -206,11 +224,9 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                 unique_candidates[iid] = c
                 unique_candidates[iid]["votes"] = 1
             else:
-                # Si otra estrategia encontró el MISMO IID, nos quedamos con el mejor score y le sumamos votos
                 unique_candidates[iid]["score"] = max(unique_candidates[iid]["score"], c["score"])
                 unique_candidates[iid]["votes"] += 1
                 
-        # Bonus por consenso: +20 puntos por cada estrategia adicional que lo encontró
         for iid in unique_candidates:
             if unique_candidates[iid]["votes"] > 1:
                 unique_candidates[iid]["score"] += (unique_candidates[iid]["votes"] - 1) * 20
