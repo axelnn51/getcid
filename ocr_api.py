@@ -65,6 +65,14 @@ def crop_to_iid_region(gray):
     Intenta encontrar la línea 'Id. de instalación' o 'instalacion'
     usando OCR rápido para recortar la imagen y evitar procesar 'Microsoft Office'.
     """
+    h, w = gray.shape
+    
+    # 1. Protección para imágenes ya recortadas
+    # Si la imagen es muy panorámica y de poca altura, asumimos que el usuario ya recortó el IID
+    if h <= 150 and (w / h) >= 3.0:
+        logger.info(f"[OCR] Imagen detectada como pre-recortada ({w}x{h}). Omitiendo crop geométrico.")
+        return gray
+
     try:
         custom_config = r'--oem 3 --psm 11'
         data = pytesseract.image_to_data(gray, config=custom_config, output_type=pytesseract.Output.DICT)
@@ -80,11 +88,21 @@ def crop_to_iid_region(gray):
                     target_y = y_bottom
                     
         if target_y != -1:
-            h, w = gray.shape
             # Recortar desde la línea de instrucciones hasta un poco más abajo
-            # Específicamente, damos un pequeño margen hacia abajo (~35% de la altura total)
-            crop_end = min(h, target_y + int(h * 0.35))
-            return gray[target_y:crop_end, :]
+            # Damos un margen hacia abajo (~35% de la altura total) pero ASEGURAMOS un mínimo de píxeles
+            # para no amputar los números en fotos que ya vienen algo recortadas.
+            margin = max(int(h * 0.35), 70) # Al menos 70 píxeles hacia abajo
+            crop_end = min(h, target_y + margin)
+            
+            cropped = gray[target_y:crop_end, :]
+            
+            # 2. Validación del crop
+            # Si el resultado es absurdamente pequeño, ignoramos el crop
+            if cropped.shape[0] < 30:
+                logger.warning(f"[OCR] Crop resultante demasiado pequeño ({cropped.shape[0]}px). Usando imagen original.")
+                return gray
+                
+            return cropped
     except Exception as e:
         logger.error(f"Error en crop geométrico: {e}")
         
