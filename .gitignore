@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 *.png
 scratch/
+frontend/data/*.db
+frontend/uploads/
