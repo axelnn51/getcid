@@ -231,6 +231,11 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
     
     _, inv_otsu = cv2.threshold(resized_for_rescue, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
     strategies.append(("Rescue_Inverted", inv_otsu))
+
+    # Nueva estrategia para fotos muy pixeladas (sin romper la regla de no-frankenstein)
+    resized_lanczos = cv2.resize(roi_img, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_LANCZOS4)
+    _, otsu_lanczos = cv2.threshold(resized_lanczos, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    strategies.append(("Rescue_Lanczos_Otsu", otsu_lanczos))
     
     rescue_candidates = []
     

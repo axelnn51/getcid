@@ -5,6 +5,17 @@ logs/
 __pycache__/
 *.pyc
 *.png
+*.jpg
 scratch/
 frontend/data/*.db
 frontend/uploads/
+CID_PRUEBAS/
+AVANCES/
+bin/
+test_runner.bat
+tesseract_setup.exe
+7zr.exe
+innoextract.zip
+innoextract_dir/
+eng.traineddata
+local_tests_and_tools/
