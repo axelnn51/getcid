@@ -36,34 +36,45 @@ const STRATEGIES = [
 
 // Extraer IID del texto OCR
 function extractIID(rawText) {
-    // 1. Buscar el IID como un bloque contiguo de 9x7 dígitos (con o sin espacios/guiones)
-    // Esto evita atrapar números de otros mensajes de chat en la captura y evita alucinaciones
-    
-    // Normalizar texto antes de buscar el bloque continuo
+    // 1. Normalizar letras que suelen confundirse con números
     const norm = rawText.toUpperCase()
         .replace(/[OQ]/g, '0').replace(/[ILJ|]/g, '1').replace(/Z/g, '2')
         .replace(/[S$]/g, '5').replace(/G/g, '6').replace(/[TY]/g, '7').replace(/B/g, '8');
 
-    const match = norm.match(/(?:\b\d{7}[\s\-\n\r]*){9}/);
-    if (match) {
-        const iid = match[0].replace(/\D/g, '');
-        if (iid.length === 63) return { iid, method: 'contiguous' };
-    }
+    // 2. Limpiar texto: Convertir TODO lo que NO sea dígito en un ESPACIO.
+    // Esto destruye palabras alfabéticas separando sus pocos números con grandes espacios.
+    const cleanText = norm.replace(/\D/g, ' ');
 
-    // 2. Si no es continuo, recolectar bloques de 7 (Word scan fallback)
-    const words = norm.split(/[\s\n\r,;:-]+/);
+    // 3. Método Exacto: Buscar bloques de 7 dígitos (incluso si se pegaron en bloques de 14 o 21)
+    const chunks = cleanText.split(/\s+/).filter(c => c.length > 0);
     let sevens = [];
-    for (const w of words) { const d = w.replace(/\D/g, ''); if (d.length === 7) sevens.push(d); }
-    // IMPORTANTE: Tomar los PRIMEROS 9, no los últimos (para evitar agarrar mensajes del chat u otro texto)
-    if (sevens.length >= 9) return { iid: sevens.slice(0, 9).join(''), method: 'word-scan' };
-
-    // 3. Fallback absoluto
-    const all = norm.replace(/\D/g, '');
-    if (all.length >= 63) {
-        return { iid: all.slice(0, 63), method: 'fallback' };
+    for (const c of chunks) {
+        if (c.length % 7 === 0) {
+            for (let i = 0; i < c.length; i += 7) {
+                sevens.push(c.slice(i, i + 7));
+            }
+        } else if (c.length === 63) {
+            return { iid: c, method: 'exact-63' };
+        }
+    }
+    
+    // Si logramos juntar al menos 9 bloques de 7, extraemos el IID
+    // Tomamos los primeros 9 que encontremos para evitar agarrar firmas o basura final
+    if (sevens.length >= 9) {
+        return { iid: sevens.slice(0, 9).join(''), method: 'chunk-7' };
     }
 
-    // Retornar dígitos parciales para diagnóstico (si hay al menos algo)
+    // 4. Método Denso (Fallback): Buscar 63 dígitos agrupados con MUY poca separación.
+    // Máximo 2 espacios de separación entre dígitos. 
+    // Las letras del texto de instrucciones generan más de 3 espacios de separación, así que son ignoradas.
+    const denseRegex = /(?:\d\s{0,2}){62}\d/;
+    const denseMatch = cleanText.match(denseRegex);
+    if (denseMatch) {
+        return { iid: denseMatch[0].replace(/\s/g, ''), method: 'dense-cluster' };
+    }
+
+    // 5. Retornar parcial solo para diagnóstico
+    const all = cleanText.replace(/\s/g, '');
     if (all.length > 0) return { iid: all, method: 'partial', partial: true };
 
     return null;
