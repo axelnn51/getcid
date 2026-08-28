@@ -57,7 +57,7 @@ def extract_iid(raw_text: str):
             return {"iid": norm[:63], "method": "dense-cluster-63"}
 
     # Ya no retornamos 'partial' con basura de 74 dígitos.
-    return None
+    return []
 
 def crop_to_iid_region(gray):
     """
@@ -119,18 +119,57 @@ def process_image(image_bytes: bytes):
         # Al usar crop geométrico, es MÁS SEGURO usar whitelist porque ya no hay tanto texto
         custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789OQILJZS$GTYB \n\r\t-'
         
+        all_candidates = []
+        
         for name, processed_img in strategies:
             text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
             logger.info(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
             
-            result = extract_iid(text)
-            if result:
-                logger.info(f"[OCR] [{name}] ✅ Éxito: {result}")
-                return {"success": True, "iid": result["iid"], "method": result["method"], "strategy": f"{name}_Whitelist"}
-            else:
-                logger.info(f"[OCR] [{name}] ❌ IID no encontrado en esta estrategia.")
+            # Buscamos todos los candidatos en lugar de parar en el primero
+            blocks = re.split(r'[^0-9OQILJZS$GTYB \n\r\t-]', text.upper())
+            candidates_for_strategy = []
+            
+            for b in blocks:
+                clean_len = len(re.sub(r'[ \n\r\t-]', '', b))
+                if clean_len >= 54:
+                    normalized = normalize_block(b)
+                    candidates_for_strategy.append(normalized)
+                    
+            for cand in candidates_for_strategy:
+                if len(cand) == 63:
+                    all_candidates.append({"iid": cand, "method": "exact-63", "strategy": name, "score": 100})
+                elif len(cand) == 54:
+                    all_candidates.append({"iid": cand, "method": "exact-54", "strategy": name, "score": 95})
+                elif len(cand) % 7 == 0 and len(cand) >= 63:
+                    all_candidates.append({"iid": cand[:63], "method": "chunk-7-x9", "strategy": name, "score": 90})
+            
+            for b in blocks:
+                norm = normalize_block(b)
+                if len(norm) >= 63 and not any(c["iid"] == norm[:63] for c in all_candidates):
+                    all_candidates.append({"iid": norm[:63], "method": "dense-cluster-63", "strategy": name, "score": 50})
+
+        if not all_candidates:
+            return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
+            
+        # Deduplicar preservando el mejor score
+        unique_candidates = {}
+        for c in all_candidates:
+            iid = c["iid"]
+            if iid not in unique_candidates or unique_candidates[iid]["score"] < c["score"]:
+                unique_candidates[iid] = c
+                
+        # Ordenar por score descendente
+        sorted_candidates = sorted(unique_candidates.values(), key=lambda x: x["score"], reverse=True)
         
-        return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
+        logger.info(f"[OCR] Se encontraron {len(sorted_candidates)} candidatos únicos: {[c['iid'] for c in sorted_candidates]}")
+        
+        return {
+            "success": True,
+            "iid": sorted_candidates[0]["iid"], # Top 1 por compatibilidad
+            "method": sorted_candidates[0]["method"],
+            "strategy": sorted_candidates[0]["strategy"],
+            "candidates": sorted_candidates
+        }
     except Exception as e:
         logger.error(f"Error procesando imagen: {str(e)}")
         return {"success": False, "error": str(e)}

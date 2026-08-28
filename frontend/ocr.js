@@ -56,42 +56,71 @@ async function ocrAndGetCID(filePath, getCID) {
         };
     }
 
-    const iid = ocrResult.iid;
-    const strategy = ocrResult.strategy;
-    const method = ocrResult.method;
+    const candidates = ocrResult.candidates || [{ iid: ocrResult.iid, strategy: ocrResult.strategy, method: ocrResult.method }];
+    
+    let lastErrorObj = null;
+    let lastPartialIID = null;
 
-    try {
-        const cidResult = await getCID(iid);
-        const cidVal = typeof cidResult === 'string' ? cidResult : cidResult.cid;
-        const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
+    for (const cand of candidates) {
+        const iid = cand.iid;
+        const strategy = cand.strategy;
+        const method = cand.method;
         
-        return { 
-            success: true, 
-            iid: iid, 
-            cid: cidVal, 
-            strategy: strategy, 
-            method: method, 
-            backendMethod 
-        };
-    } catch (e) {
-        // Error de Microsoft o de CID
-        if (e.code && e.code.startsWith('MS_') || e.code === 'KEY_BLOCKED' || 
-            e.code === 'TOO_MANY_ACTIVATIONS' || e.code === 'ACTIVATION_FAILED' ||
-            e.code === 'KEY_EXPIRED' || e.code === 'KEY_NOT_GENUINE' ||
-            e.code === 'INVALID_PRODUCT' || e.code === 'TIMEOUT' ||
-            e.code === 'NO_CID_IN_RESPONSE' || e.code === 'NETWORK_ERROR' ||
-            e.code === 'INVALID_CHECKSUM' || e.message === 'INVALID_CHECKSUM') {
+        console.log(`[OCR] Probando candidato IID: ${iid} (Score: ${cand.score || '?'})`);
+
+        try {
+            const cidResult = await getCID(iid);
+            const cidVal = typeof cidResult === 'string' ? cidResult : cidResult.cid;
+            const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
             
-            e.iid = iid;
-            throw e;
+            return { 
+                success: true, 
+                iid: iid, 
+                cid: cidVal, 
+                strategy: strategy, 
+                method: method, 
+                backendMethod 
+            };
+        } catch (e) {
+            // Error de Microsoft o de CID
+            const code = e.code || '';
+            const msg = e.message || '';
+            
+            if (code.startsWith('MS_') || code === 'KEY_BLOCKED' || 
+                code === 'TOO_MANY_ACTIVATIONS' || code === 'ACTIVATION_FAILED' ||
+                code === 'KEY_EXPIRED' || code === 'KEY_NOT_GENUINE' ||
+                code === 'INVALID_PRODUCT' || code === 'TIMEOUT' ||
+                code === 'NO_CID_IN_RESPONSE' || code === 'NETWORK_ERROR') {
+                
+                // Error fatal de MS, no tiene sentido seguir intentando otros IID
+                e.iid = iid;
+                throw e;
+            }
+            
+            if (code === 'INVALID_CHECKSUM' || msg === 'INVALID_CHECKSUM' || msg.includes('checksum') || msg.includes('inválido')) {
+                console.log(`[OCR] Candidato falló por checksum. Intentando siguiente...`);
+                lastErrorObj = e;
+                lastPartialIID = iid;
+                continue; // Probar siguiente candidato
+            }
+            
+            // Otro error
+            lastErrorObj = e;
+            lastPartialIID = iid;
         }
-        
-        return { 
-            success: false, 
-            detectedDigits: iid,
-            lastError: e.code || e.message
-        };
     }
+    
+    // Si todos fallaron
+    if (lastErrorObj && (lastErrorObj.code === 'INVALID_CHECKSUM' || lastErrorObj.message === 'INVALID_CHECKSUM' || lastErrorObj.message.includes('checksum'))) {
+        lastErrorObj.iid = lastPartialIID;
+        throw lastErrorObj;
+    }
+    
+    return { 
+        success: false, 
+        detectedDigits: lastPartialIID,
+        lastError: lastErrorObj ? (lastErrorObj.code || lastErrorObj.message) : 'Error desconocido'
+    };
 }
 
 // Solo extraer IID de imagen (sin pedir CID)
