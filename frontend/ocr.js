@@ -18,10 +18,11 @@ function safeUnlink(filePath) {
     try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch(e) { /* ignore */ }
 }
 
-async function extractFromBackend(filePath) {
+async function extractFromBackend(filePath, rescue = false) {
     try {
         const form = new FormData();
         form.append('file', fs.createReadStream(filePath));
+        form.append('rescue', rescue ? 'true' : 'false');
 
         // fetch nativo en Node 18+ (FormData no es totalmente nativo en node fetch antiguo, 
         // pero usaremos node-fetch o el fetch global con el form de form-data)
@@ -56,7 +57,8 @@ async function ocrAndGetCID(filePath, getCID) {
         };
     }
 
-    const candidates = ocrResult.candidates || [{ iid: ocrResult.iid, strategy: ocrResult.strategy, method: ocrResult.method }];
+    let candidates = ocrResult.candidates || [{ iid: ocrResult.iid, strategy: ocrResult.strategy, method: ocrResult.method }];
+    let rescueAttempted = ocrResult.rescue_mode === true;
     
     let lastErrorObj = null;
     let lastPartialIID = null;
@@ -110,8 +112,46 @@ async function ocrAndGetCID(filePath, getCID) {
         }
     }
     
-    // Si todos fallaron
+    // Si todos los candidatos fallaron por checksum y aún no hemos intentado el modo rescate explícito
     if (lastErrorObj && (lastErrorObj.code === 'INVALID_CHECKSUM' || lastErrorObj.message === 'INVALID_CHECKSUM' || lastErrorObj.message.includes('checksum'))) {
+        if (!rescueAttempted) {
+            console.log(`[OCR] FAST PATH falló. Activando RESCUE MODE (solicitando más candidatos)...`);
+            const rescueResult = await extractFromBackend(filePath, true);
+            
+            if (rescueResult && rescueResult.success && rescueResult.candidates) {
+                // Filtrar los que ya probamos
+                const probados = candidates.map(c => c.iid);
+                const nuevosCandidatos = rescueResult.candidates.filter(c => !probados.includes(c.iid));
+                
+                if (nuevosCandidatos.length > 0) {
+                    for (const cand of nuevosCandidatos) {
+                        const iid = cand.iid;
+                        console.log(`[OCR] [RESCUE] Probando candidato IID: ${iid} (Score: ${cand.score || '?'})`);
+                        
+                        try {
+                            const cidResult = await getCID(iid);
+                            const cidVal = typeof cidResult === 'string' ? cidResult : cidResult.cid;
+                            const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
+                            
+                            return { 
+                                success: true, 
+                                iid: iid, 
+                                cid: cidVal, 
+                                strategy: cand.strategy, 
+                                method: cand.method, 
+                                backendMethod 
+                            };
+                        } catch (e) {
+                            lastErrorObj = e;
+                            lastPartialIID = iid;
+                        }
+                    }
+                } else {
+                    console.log(`[OCR] [RESCUE] No se encontraron nuevos candidatos útiles.`);
+                }
+            }
+        }
+        
         lastErrorObj.iid = lastPartialIID;
         throw lastErrorObj;
     }

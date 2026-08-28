@@ -3,6 +3,7 @@ import numpy as np
 import pytesseract
 import re
 import logging
+import time
 
 logger = logging.getLogger("OCR_API")
 logger.setLevel(logging.INFO)
@@ -89,8 +90,10 @@ def crop_to_iid_region(gray):
         
     return gray
 
-def process_image(image_bytes: bytes):
+def process_image(image_bytes: bytes, rescue: bool = False):
     try:
+        t_start_total = time.perf_counter()
+        
         nparr = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img is None:
@@ -98,34 +101,37 @@ def process_image(image_bytes: bytes):
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
+        t0 = time.perf_counter()
         # 1. CROP GEOMÉTRICO: Aislar la región de los números
         gray = crop_to_iid_region(gray)
-        logger.info(f"[OCR] Crop geométrico aplicado. Dimensiones: {gray.shape}")
+        logger.info(f"[OCR] Crop geométrico aplicado: {time.perf_counter() - t0:.3f}s. Dimensiones: {gray.shape}")
         
         # Estrategias OpenCV
-        strategies = []
-        
         resized1 = cv2.resize(gray, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
-        thresh1 = cv2.adaptiveThreshold(resized1, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2)
-        strategies.append(("Adaptive_Gaussian", thresh1))
-
         blurred2 = cv2.GaussianBlur(resized1, (3, 3), 0)
         _, thresh2 = cv2.threshold(blurred2, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        strategies.append(("Otsu_Blur", thresh2))
+        
+        fast_strategies = [
+            ("Raw_Grayscale", resized1),
+            ("Otsu_Blur", thresh2)
+        ]
+        
+        rescue_strategies = [
+            ("Adaptive_Gaussian", cv2.adaptiveThreshold(resized1, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 2)),
+            ("Inverted_Otsu", cv2.bitwise_not(thresh2))
+        ]
+        
+        strategies = rescue_strategies if rescue else fast_strategies
 
-        strategies.append(("Inverted_Otsu", cv2.bitwise_not(thresh2)))
-        strategies.append(("Raw_Grayscale", resized1))
-
-        # Al usar crop geométrico, es MÁS SEGURO usar whitelist porque ya no hay tanto texto
         custom_config_whitelist = r'--oem 3 --psm 11 -c tessedit_char_whitelist=0123456789OQILJZS$GTYB \n\r\t-'
         
         all_candidates = []
         
         for name, processed_img in strategies:
+            t0 = time.perf_counter()
             text = pytesseract.image_to_string(processed_img, config=custom_config_whitelist)
-            logger.info(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
+            logger.debug(f"[OCR] [{name}] Texto bruto extraído:\n{text}")
             
-            # Buscamos todos los candidatos en lugar de parar en el primero
             blocks = re.split(r'[^0-9OQILJZS$GTYB \n\r\t-]', text.upper())
             candidates_for_strategy = []
             
@@ -135,40 +141,54 @@ def process_image(image_bytes: bytes):
                     normalized = normalize_block(b)
                     candidates_for_strategy.append(normalized)
                     
+            found_strong_candidate = False
             for cand in candidates_for_strategy:
                 if len(cand) == 63:
                     all_candidates.append({"iid": cand, "method": "exact-63", "strategy": name, "score": 100})
+                    found_strong_candidate = True
                 elif len(cand) == 54:
                     all_candidates.append({"iid": cand, "method": "exact-54", "strategy": name, "score": 95})
+                    found_strong_candidate = True
                 elif len(cand) % 7 == 0 and len(cand) >= 63:
                     all_candidates.append({"iid": cand[:63], "method": "chunk-7-x9", "strategy": name, "score": 90})
+                    found_strong_candidate = True
             
             for b in blocks:
                 norm = normalize_block(b)
                 if len(norm) >= 63 and not any(c["iid"] == norm[:63] for c in all_candidates):
                     all_candidates.append({"iid": norm[:63], "method": "dense-cluster-63", "strategy": name, "score": 50})
+                    
+            logger.info(f"[OCR] {name}: {time.perf_counter() - t0:.3f}s → {'Fuerte candidato encontrado' if found_strong_candidate else 'Buscando'}")
+
+            # FAST PATH: Si no estamos en rescate y encontramos un candidato 100% perfecto, paramos.
+            if not rescue and found_strong_candidate:
+                break
 
         if not all_candidates:
+            if not rescue:
+                # Fallback automático: si Fast Path no encuentra absolutamente nada, probamos Rescue directamente
+                logger.info("[OCR] Fast Path no encontró nada. Activando Auto-Rescue.")
+                return process_image(image_bytes, rescue=True)
             return {"success": False, "error": "No se pudo encontrar un IID válido en la imagen"}
             
-        # Deduplicar preservando el mejor score
         unique_candidates = {}
         for c in all_candidates:
             iid = c["iid"]
             if iid not in unique_candidates or unique_candidates[iid]["score"] < c["score"]:
                 unique_candidates[iid] = c
                 
-        # Ordenar por score descendente
         sorted_candidates = sorted(unique_candidates.values(), key=lambda x: x["score"], reverse=True)
         
-        logger.info(f"[OCR] Se encontraron {len(sorted_candidates)} candidatos únicos: {[c['iid'] for c in sorted_candidates]}")
+        t_total = time.perf_counter() - t_start_total
+        logger.info(f"[OCR] TOTAL: {t_total:.3f}s. Candidatos únicos: {[c['iid'] for c in sorted_candidates]}")
         
         return {
             "success": True,
-            "iid": sorted_candidates[0]["iid"], # Top 1 por compatibilidad
+            "iid": sorted_candidates[0]["iid"],
             "method": sorted_candidates[0]["method"],
             "strategy": sorted_candidates[0]["strategy"],
-            "candidates": sorted_candidates
+            "candidates": sorted_candidates,
+            "rescue_mode": rescue
         }
     except Exception as e:
         logger.error(f"Error procesando imagen: {str(e)}")

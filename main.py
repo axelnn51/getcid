@@ -6,7 +6,7 @@ import os
 
 from batch_cid import get_cid
 from ocr_api import process_image
-from fastapi import File, UploadFile
+from fastapi import File, UploadFile, Form
 
 # Asegurar directorio de logs
 os.makedirs("logs", exist_ok=True)
@@ -83,9 +83,9 @@ async def check_pid(request: PIDRequest):
 
 
 @app.post("/extract-iid")
-async def extract_iid_endpoint(file: UploadFile = File(...)):
+async def extract_iid_endpoint(file: UploadFile = File(...), rescue: bool = Form(False)):
     contents = await file.read()
-    result = process_image(contents)
+    result = process_image(contents, rescue=rescue)
     return result
 
 
