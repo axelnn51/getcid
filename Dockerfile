@@ -10,10 +10,11 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Descargar el modelo "best" de Tesseract (fundamental para leer fotos borrosas)
+# Descargar el modelo "fast" cuantizado de Tesseract (8x más rápido en CPU para servidores)
 RUN mkdir -p /usr/local/share/tessdata && \
-    wget -q -O /usr/local/share/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
+    wget -q -O /usr/local/share/tessdata/eng.traineddata https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata
 ENV TESSDATA_PREFIX=/usr/local/share/tessdata
+ENV OMP_THREAD_LIMIT=1
 
 # Copiar e instalar dependencias
 COPY requirements.txt .

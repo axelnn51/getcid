@@ -1,4 +1,5 @@
 import os
+os.environ["OMP_THREAD_LIMIT"] = "1"
 import cv2
 import pytesseract
 import re
@@ -272,7 +273,18 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     h, w = gray.shape
-    logger.info(f"[OCR] Imagen: {w}x{h} px (Workers: {max_workers})")
+
+    # Pre-escalado inteligente de entrada:
+    # Si la imagen supera 1600px (4K o fotos grandes de celular), la reducimos manteniendo proporción
+    # para que sea 60-75% más liviana en RAM y CPU sin perder detalle en los números.
+    MAX_INPUT_DIM = 1600
+    if max(h, w) > MAX_INPUT_DIM:
+        scale_in = MAX_INPUT_DIM / float(max(h, w))
+        img = cv2.resize(img, None, fx=scale_in, fy=scale_in, interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        h, w = gray.shape
+
+    logger.info(f"[OCR] Imagen procesada: {w}x{h} px (Workers: {max_workers})")
 
     cfg_psm11 = r'--oem 3 --psm 11'
     cfg_psm6 = r'--oem 3 --psm 6'
@@ -291,44 +303,65 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(roi_img)
 
-    # Escalados Lanczos de alta definición
+    # Escalados Lanczos de alta fidelidad
     scaled_raw_15 = cv2.resize(roi_img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LANCZOS4)
     scaled_raw_20 = cv2.resize(roi_img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LANCZOS4)
     scaled_clahe_15 = cv2.resize(enhanced, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LANCZOS4)
     scaled_clahe_20 = cv2.resize(enhanced, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LANCZOS4)
 
-    # TIER 1: Lote rápido inicial
-    tier1_tasks = []
-    if not roi_found:
-        # Solo ejecutar pasadas globales si NO se localizó el ROI (evita quemar CPU en fondo de escritorio)
-        tier1_tasks.append((gray, "Global_psm11", cfg_psm11))
-        tier1_tasks.append((gray, "Global_psm6", cfg_psm6))
+    all_results = []
 
-    tier1_tasks.extend([
+    # TIER 1A: Pareja diversa ultra rápida (Raw 1.5x + CLAHE 1.5x)
+    # Si ambas familias coinciden de inmediato en 63 o 54 dígitos, terminamos aquí ahorrando 50% de CPU
+    pair_tasks = [
         (scaled_raw_15, "raw_1.5x_psm6", cfg_psm6),
-        (scaled_raw_20, "raw_2.0x_psm6", cfg_psm6),
         (scaled_clahe_15, "clahe_1.5x_psm6", cfg_psm6),
+    ]
+    with ThreadPoolExecutor(max_workers=min(max_workers, 2)) as executor:
+        t1_pair = list(executor.map(_run_tesseract_task, pair_tasks))
+    all_results.extend(t1_pair)
+
+    r1, r2 = t1_pair[0][1], t1_pair[1][1]
+    if r1 and r2 and r1 == r2 and len(r1) in (54, 63):
+        elapsed = time.perf_counter() - t_start
+        method = "fast-diverse-pair-2of2"
+        logger.info(f"[OCR] Consenso Instantáneo de Pareja en {elapsed:.2f}s ({method})")
+        return {
+            "success": True,
+            "iid": r1,
+            "method": method,
+            "strategy": method,
+            "elapsed": elapsed,
+            "tier": 1
+        }
+
+    # TIER 1B: Si no hubo coincidencia perfecta de pareja, completar lote rápido
+    tier1_extra_tasks = []
+    if not roi_found:
+        tier1_extra_tasks.append((gray, "Global_psm11", cfg_psm11))
+        tier1_extra_tasks.append((gray, "Global_psm6", cfg_psm6))
+
+    tier1_extra_tasks.extend([
+        (scaled_raw_20, "raw_2.0x_psm6", cfg_psm6),
         (scaled_clahe_20, "clahe_2.0x_psm6", cfg_psm6),
     ])
 
-    all_results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        t1_res = list(executor.map(_run_tesseract_task, tier1_tasks))
-    all_results.extend(t1_res)
+        t1_extra = list(executor.map(_run_tesseract_task, tier1_extra_tasks))
+    all_results.extend(t1_extra)
 
     # Consenso Diverso Seguro:
-    # 4 o más lecturas idénticas con al menos 2 familias distintas (Raw + CLAHE)
-    valid_t1 = [iid for name, iid in t1_res if iid]
+    valid_t1 = [iid for name, iid in all_results if iid]
     counts_t1 = Counter(valid_t1)
     if counts_t1:
         top_iid, top_count = counts_t1.most_common(1)[0]
-        sources_with_top = [name for name, iid in t1_res if iid == top_iid]
+        sources_with_top = [name for name, iid in all_results if iid == top_iid]
         has_raw = any("raw" in s for s in sources_with_top)
         has_clahe = any("clahe" in s for s in sources_with_top)
         has_global = any("Global" in s for s in sources_with_top)
         diverse_agreement = (has_raw and has_clahe) or (has_global and (has_raw or has_clahe))
 
-        if top_count >= 4 and diverse_agreement:
+        if top_count >= 3 and diverse_agreement:
             elapsed = time.perf_counter() - t_start
             method = f"fast-diverse-consensus-{top_count}of{len(valid_t1)}"
             logger.info(f"[OCR] Consenso Rápido Diverso en {elapsed:.2f}s ({method})")
@@ -341,7 +374,7 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
                 "tier": 1
             }
 
-    # TIER 2: Si no hubo consenso inmediato, disparar Fuerza Bruta completa
+    # TIER 2: Si no hubo consenso inmediato, disparar Fuerza Bruta completa con Lanczos4
     adaptive = cv2.adaptiveThreshold(roi_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 5)
     scaled_raw_25 = cv2.resize(roi_img, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_LANCZOS4)
     scaled_clahe_25 = cv2.resize(enhanced, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_LANCZOS4)
