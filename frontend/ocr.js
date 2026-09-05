@@ -46,7 +46,11 @@ async function extractFromBackend(filePath, rescue = false) {
 }
 
 // Procesar imagen con OCR y obtener CID
-async function ocrAndGetCID(filePath, getCID) {
+async function ocrAndGetCID(filePath, getCID, onProgress = null) {
+    if (typeof onProgress === 'function') {
+        onProgress('ocr_start', {});
+    }
+
     const ocrResult = await extractFromBackend(filePath);
     
     if (!ocrResult || !ocrResult.success) {
@@ -57,6 +61,8 @@ async function ocrAndGetCID(filePath, getCID) {
         };
     }
 
+    const ocrElapsed = typeof ocrResult.elapsed === 'number' ? ocrResult.elapsed : null;
+
     let candidates = ocrResult.candidates || [{ 
         iid: ocrResult.iid, 
         strategy: ocrResult.strategy || ocrResult.method || 'v3.3-turbo', 
@@ -64,20 +70,40 @@ async function ocrAndGetCID(filePath, getCID) {
     }];
     let rescueAttempted = ocrResult.rescue_mode === true;
     
+    if (typeof onProgress === 'function') {
+        onProgress('ocr_done', {
+            iid: ocrResult.iid,
+            candidatesCount: candidates.length,
+            ocrElapsed: ocrElapsed,
+            strategy: ocrResult.strategy || ocrResult.method
+        });
+    }
+
     let lastErrorObj = null;
     let lastPartialIID = null;
 
-    for (const cand of candidates) {
+    for (let i = 0; i < candidates.length; i++) {
+        const cand = candidates[i];
         const iid = cand.iid;
         const strategy = cand.strategy || cand.method || 'v3.3-turbo';
         const method = cand.method || 'v3.3-turbo';
         
-        console.log(`[OCR] Probando candidato IID: ${iid} (Score: ${cand.score || '?'})`);
+        console.log(`[OCR] Probando candidato IID (${i+1}/${candidates.length}): ${iid} (Score: ${cand.score || '?'})`);
 
+        if (typeof onProgress === 'function') {
+            onProgress('calling_cid', {
+                iid: iid,
+                candidateIndex: i + 1,
+                totalCandidates: candidates.length
+            });
+        }
+
+        const cidStartTime = Date.now();
         try {
             const cidResult = await getCID(iid);
             const cidVal = typeof cidResult === 'string' ? cidResult : cidResult.cid;
             const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
+            const cidElapsed = (Date.now() - cidStartTime) / 1000;
             
             return { 
                 success: true, 
@@ -85,7 +111,9 @@ async function ocrAndGetCID(filePath, getCID) {
                 cid: cidVal, 
                 strategy: strategy, 
                 method: method, 
-                backendMethod 
+                backendMethod,
+                ocrElapsed: ocrElapsed,
+                cidElapsed: cidElapsed
             };
         } catch (e) {
             // Error de Microsoft o de CID
@@ -120,6 +148,9 @@ async function ocrAndGetCID(filePath, getCID) {
     if (lastErrorObj && (lastErrorObj.code === 'INVALID_CHECKSUM' || lastErrorObj.message === 'INVALID_CHECKSUM' || lastErrorObj.message.includes('checksum'))) {
         if (!rescueAttempted) {
             console.log(`[OCR] FAST PATH falló. Activando RESCUE MODE (solicitando más candidatos)...`);
+            if (typeof onProgress === 'function') {
+                onProgress('rescue_mode', { lastIID: lastPartialIID });
+            }
             const rescueResult = await extractFromBackend(filePath, true);
             
             if (rescueResult && rescueResult.success && rescueResult.candidates) {
@@ -128,14 +159,25 @@ async function ocrAndGetCID(filePath, getCID) {
                 const nuevosCandidatos = rescueResult.candidates.filter(c => !probados.includes(c.iid));
                 
                 if (nuevosCandidatos.length > 0) {
-                    for (const cand of nuevosCandidatos) {
+                    for (let j = 0; j < nuevosCandidatos.length; j++) {
+                        const cand = nuevosCandidatos[j];
                         const iid = cand.iid;
-                        console.log(`[OCR] [RESCUE] Probando candidato IID: ${iid} (Score: ${cand.score || '?'})`);
+                        console.log(`[OCR] [RESCUE] Probando candidato IID (${j+1}/${nuevosCandidatos.length}): ${iid} (Score: ${cand.score || '?'})`);
                         
+                        if (typeof onProgress === 'function') {
+                            onProgress('calling_cid_rescue', {
+                                iid: iid,
+                                candidateIndex: j + 1,
+                                totalCandidates: nuevosCandidatos.length
+                            });
+                        }
+
+                        const rescueCidStartTime = Date.now();
                         try {
                             const cidResult = await getCID(iid);
                             const cidVal = typeof cidResult === 'string' ? cidResult : cidResult.cid;
                             const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
+                            const cidElapsed = (Date.now() - rescueCidStartTime) / 1000;
                             
                             return { 
                                 success: true, 
@@ -143,7 +185,9 @@ async function ocrAndGetCID(filePath, getCID) {
                                 cid: cidVal, 
                                 strategy: cand.strategy || cand.method || 'v3.3-turbo', 
                                 method: cand.method || 'v3.3-turbo', 
-                                backendMethod 
+                                backendMethod,
+                                ocrElapsed: ocrElapsed,
+                                cidElapsed: cidElapsed
                             };
                         } catch (e) {
                             lastErrorObj = e;
@@ -163,7 +207,8 @@ async function ocrAndGetCID(filePath, getCID) {
     return { 
         success: false, 
         detectedDigits: lastPartialIID,
-        lastError: lastErrorObj ? (lastErrorObj.code || lastErrorObj.message) : 'Error desconocido'
+        lastError: lastErrorObj ? (lastErrorObj.code || lastErrorObj.message) : 'Error desconocido',
+        ocrElapsed: ocrElapsed
     };
 }
 

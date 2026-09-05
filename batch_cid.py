@@ -13,8 +13,30 @@ import logging
 import xml.etree.ElementTree as ET
 
 import httpx
+import time
 
 logger = logging.getLogger("BatchCID")
+
+# ============================================================
+# Persistent HTTP Client Pool & Token Cache
+# ============================================================
+_http_client: httpx.AsyncClient | None = None
+_cached_token: str | None = None
+_token_expiry: float = 0.0
+
+
+def get_http_client() -> httpx.AsyncClient:
+    """Retorna un cliente HTTP persistente con pool de conexiones y Keep-Alive."""
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=30.0,
+            verify=False,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50, keepalive_expiry=60.0),
+            follow_redirects=True,
+        )
+    return _http_client
+
 
 # ============================================================
 # Constants from PKeyMaster source (GetCidBatchApi.ps1)
@@ -155,8 +177,8 @@ async def _get_cid_batch(iid: str) -> dict:
         "User-Agent": USER_AGENT_BATCH,
     }
 
-    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
-        response = await client.post(BATCH_URL, content=soap_body, headers=headers)
+    client = get_http_client()
+    response = await client.post(BATCH_URL, content=soap_body, headers=headers)
 
     if response.status_code != 200:
         return {
@@ -169,19 +191,26 @@ async def _get_cid_batch(iid: str) -> dict:
     return _parse_batch_response(response.text)
 
 
-async def _get_shared_token() -> str | None:
-    """Fetch shared Bearer token from ntriver community server."""
+async def _get_shared_token(force_refresh: bool = False) -> str | None:
+    """Fetch shared Bearer token from ntriver community server with in-memory caching."""
+    global _cached_token, _token_expiry
+    now = time.time()
+    if not force_refresh and _cached_token and now < _token_expiry:
+        return _cached_token
+
     try:
-        async with httpx.AsyncClient(timeout=15.0, verify=False) as client:
-            resp = await client.get(TOKEN_SERVER)
-            if resp.status_code == 200:
-                data = resp.json()
-                token = data.get("token") or data.get("access_token")
-                if token and isinstance(token, str) and len(token) > 50:
-                    return token
+        client = get_http_client()
+        resp = await client.get(TOKEN_SERVER, timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            token = data.get("token") or data.get("access_token")
+            if token and isinstance(token, str) and len(token) > 50:
+                _cached_token = token
+                _token_expiry = now + 600.0  # Cache for 10 minutes
+                return token
     except Exception as e:
         logger.warning(f"No se pudo obtener token compartido: {e}")
-    return None
+    return _cached_token
 
 async def _get_cid_webact_api(iid: str) -> dict:
     """
@@ -194,25 +223,23 @@ async def _get_cid_webact_api(iid: str) -> dict:
     endpoints = [
         f"http://104.238.163.4/api/getcid?iid={iid}",
         f"https://api.pidchecker.com/api/v1/getcid?iid={iid}",
-        # f"https://tu-api-premium.com/getcid?iid={iid}&apikey=TU_API_KEY"
     ]
     
-    async with httpx.AsyncClient(timeout=10.0, verify=False, follow_redirects=True) as client:
-        for url in endpoints:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    # Intentar extraer CID de varias estructuras JSON comunes
-                    data = resp.json()
-                    cid = data.get("cid") or data.get("CID") or data.get("ConfirmationID")
-                    if cid and len(str(cid).replace("-", "")) >= 40:
-                        result["success"] = True
-                        result["cid"] = str(cid).replace("-", "")
-                        return result
-            except Exception as e:
-                logger.debug(f"Fallo endpoint WebAct API {url}: {e}")
-                continue
-                
+    client = get_http_client()
+    for url in endpoints:
+        try:
+            resp = await client.get(url, timeout=10.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                cid = data.get("cid") or data.get("CID") or data.get("ConfirmationID")
+                if cid and len(str(cid).replace("-", "")) >= 40:
+                    result["success"] = True
+                    result["cid"] = str(cid).replace("-", "")
+                    return result
+        except Exception as e:
+            logger.debug(f"Fallo endpoint WebAct API {url}: {e}")
+            continue
+            
     result["error_message"] = "Todas las APIs de WebAct (Tier 2) fallaron o están caídas."
     return result
 
@@ -289,17 +316,24 @@ async def _get_cid_visual(iid: str) -> dict:
         "x-session-id": f"app_{uuid.uuid4().hex[:32]}",
     }
 
-    async with httpx.AsyncClient(timeout=30.0, verify=False) as client:
+    client = get_http_client()
+    resp = await client.post(VISUAL_URL, json=payload, headers=headers)
+
+    # Handle DPoP nonce challenge
+    nonce = resp.headers.get("dpop-nonce") or resp.headers.get("DPoP-Nonce")
+    if nonce:
+        dpop_payload["nonce"] = nonce
+        dpop_payload["jti"] = str(uuid.uuid4())
+        dpop_payload["iat"] = int(time.time())
+        headers["DPoP"] = pyjwt.encode(dpop_payload, private_pem, algorithm="ES256", headers=dpop_header)
         resp = await client.post(VISUAL_URL, json=payload, headers=headers)
 
-        # Handle DPoP nonce challenge
-        nonce = resp.headers.get("dpop-nonce") or resp.headers.get("DPoP-Nonce")
-        if nonce:
-            dpop_payload["nonce"] = nonce
-            dpop_payload["jti"] = str(uuid.uuid4())
-            dpop_payload["iat"] = int(time.time())
-            headers["DPoP"] = pyjwt.encode(dpop_payload, private_pem, algorithm="ES256", headers=dpop_header)
-            resp = await client.post(VISUAL_URL, json=payload, headers=headers)
+    if resp.status_code == 401:
+        # Invalidate cached token if expired/rejected
+        global _cached_token
+        _cached_token = None
+        result["error_message"] = "Visual API token rechazado (401)"
+        return result
 
     if resp.status_code != 200:
         result["error_message"] = f"Visual API HTTP {resp.status_code}"

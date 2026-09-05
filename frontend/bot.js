@@ -336,7 +336,84 @@ function startBot() {
     });
 
     // ============================================================
-    // FOTOS — Con mensajes de error descriptivos
+    // LiveTracker — Actualizador de progreso en tiempo real para Telegram
+    // ============================================================
+    class LiveTracker {
+        constructor(ctx, initialMsg, options = {}) {
+            this.ctx = ctx;
+            this.msg = initialMsg;
+            this.startTime = Date.now();
+            this.lastEditTime = 0;
+            this.stage = options.initialStage || 'init';
+            this.data = options.initialData || {};
+            this.timer = null;
+            this.stopped = false;
+            this.isEditing = false;
+            this.renderFn = options.renderFn || null;
+            this.lastRenderedText = '';
+        }
+
+        getElapsedSecs() {
+            return Math.floor((Date.now() - this.startTime) / 1000);
+        }
+
+        formatSecs(s) {
+            return String(s).padStart(2, '0');
+        }
+
+        start(renderFn, intervalMs = 2000) {
+            if (renderFn) this.renderFn = renderFn;
+            this.timer = setInterval(async () => {
+                if (this.stopped) return;
+                await this.tick();
+            }, intervalMs);
+        }
+
+        update(stage, data = {}) {
+            this.stage = stage;
+            this.data = { ...this.data, ...data };
+            if (Date.now() - this.lastEditTime >= 1500) {
+                this.tick();
+            }
+        }
+
+        async tick() {
+            if (this.stopped || this.isEditing) return;
+            const now = Date.now();
+            if (now - this.lastEditTime < 1500) return; // Respetar rate-limit de Telegram
+
+            const text = this.renderFn ? this.renderFn(this) : null;
+            if (!text || text === this.lastRenderedText) return;
+
+            this.isEditing = true;
+            try {
+                await this.ctx.telegram.editMessageText(
+                    this.ctx.chat.id,
+                    this.msg.message_id,
+                    null,
+                    text,
+                    { parse_mode: 'HTML' }
+                );
+                this.lastEditTime = Date.now();
+                this.lastRenderedText = text;
+            } catch (e) {
+                // Silenciar errores de rate-limit o "message is not modified"
+            } finally {
+                this.isEditing = false;
+            }
+        }
+
+        stop() {
+            this.stopped = true;
+            if (this.timer) {
+                clearInterval(this.timer);
+                this.timer = null;
+            }
+        }
+    }
+
+    // ============================================================
+    // FOTOS — Con mensaje en tiempo real, contador y desglose
     // ============================================================
     bot.on('photo', async (ctx) => {
         const tgId = String(ctx.from.id);
@@ -349,7 +426,42 @@ function startBot() {
         if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
 
         const startTime = Date.now();
-        const msg = await ctx.reply('⏳ Procesando...');
+        const msg = await ctx.reply('⏳ [00s] Descargando imagen de Telegram...', { parse_mode: 'HTML' });
+
+        const tracker = new LiveTracker(ctx, msg, {
+            initialStage: 'downloading',
+            renderFn: (t) => {
+                const s = t.formatSecs(t.getElapsedSecs());
+                const iid = t.data.iid;
+                const formattedIID = iid ? formatIID(iid) : null;
+
+                if (t.stage === 'downloading') {
+                    return `⏳ [${s}s] Descargando imagen de Telegram...`;
+                }
+                if (t.stage === 'ocr') {
+                    return `⚡ [${s}s] Analizando imagen con IA (OCR v3.3 Turbo)...`;
+                }
+                if (t.stage === 'calling_cid' || t.stage === 'waiting_ms') {
+                    let text = `🔍 <b>IID detectado:</b>\n<code>${formattedIID}</code>\n\n`;
+                    const elapsed = t.getElapsedSecs();
+                    if (elapsed < 6) {
+                        text += `🌐 [${s}s] Conectando con Microsoft (Batch API)...`;
+                    } else if (elapsed < 12) {
+                        text += `🌐 [${s}s] Validando activación con Microsoft...`;
+                    } else if (elapsed < 18) {
+                        text += `🌐 [${s}s] Esperando confirmación de Microsoft...`;
+                    } else {
+                        text += `🔄 [${s}s] Reintentando vía Visual API Microsoft...`;
+                    }
+                    return text;
+                }
+                if (t.stage === 'rescue') {
+                    return `⚠️ [${s}s] Checksum dudoso. Ejecutando escaneo profundo de rescate...`;
+                }
+                return `⏳ [${s}s] Procesando...`;
+            }
+        });
+        tracker.start(null, 2000);
 
         try {
             const photo = ctx.message.photo[ctx.message.photo.length - 1];
@@ -360,8 +472,20 @@ function startBot() {
             const resp = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`);
             fs.writeFileSync(filePath, Buffer.from(await resp.arrayBuffer()));
 
-            const result = await ocrAndGetCID(filePath, getConfirmationID);
+            tracker.update('ocr');
+
+            const result = await ocrAndGetCID(filePath, getConfirmationID, (stage, data) => {
+                if (stage === 'ocr_done') {
+                    tracker.update('calling_cid', { iid: data.iid });
+                } else if (stage === 'calling_cid' || stage === 'calling_cid_rescue') {
+                    tracker.update('calling_cid', { iid: data.iid });
+                } else if (stage === 'rescue_mode') {
+                    tracker.update('rescue');
+                }
+            });
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+            tracker.stop();
 
             const elapsed = Date.now() - startTime;
             const secs = (elapsed / 1000).toFixed(0).padStart(2, '0');
@@ -372,12 +496,22 @@ function startBot() {
                 const cidStr = formatCID(result.cid);
                 db.logTransaction(user.id, 'telegram', result.iid, cidStr, 'success', elapsed, result.strategy);
                 
+                // Formatear tiempos desglosados
+                const ocrSecs = typeof result.ocrElapsed === 'number' ? result.ocrElapsed.toFixed(2) : null;
+                const msSecs = typeof result.cidElapsed === 'number' ? result.cidElapsed.toFixed(1) : null;
+                let timingStr = `⏱ 00:${secs}`;
+                if (ocrSecs && msSecs) {
+                    timingStr += ` (⚡ OCR: ${ocrSecs}s | 🌐 MS: ${msSecs}s)`;
+                } else if (ocrSecs) {
+                    timingStr += ` (⚡ OCR: ${ocrSecs}s)`;
+                }
+
                 // Mensaje principal
                 await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
                     `🔑 <b>@CdKeysPeru</b>\n\n` +
                     `<b>IID:</b>\n<code>${formatIID(result.iid)}</code>\n\n` +
                     `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
-                    `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>\n` +
+                    `<i>💰 -1 CID | Balance: ${bal} | ${timingStr}</i>\n` +
                     `<i>🤖 Resuelto vía: ${result.backendMethod || 'Desconocido'} (OCR: ${result.strategy || result.method || 'v3.3 Turbo'})</i>`,
                     { parse_mode: 'HTML' }
                 );
@@ -400,6 +534,7 @@ function startBot() {
                 await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, errorMsg, { parse_mode: 'HTML' });
             }
         } catch (err) {
+            tracker.stop();
             console.error('[BOT PHOTO ERROR]', err.code || err.message);
             const elapsed = Date.now() - startTime;
             db.logTransaction(user.id, 'telegram', err?.iid || null, null, err?.code || 'error', elapsed, null);
@@ -410,7 +545,7 @@ function startBot() {
     });
 
     // ============================================================
-    // TEXTO (IID directo) — Con mensajes de error descriptivos
+    // TEXTO (IID directo) — Con contador en tiempo real y progreso
     // ============================================================
     bot.on('text', async (ctx) => {
         if (ctx.message.text.startsWith('/')) return;
@@ -437,10 +572,38 @@ function startBot() {
         if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
 
         const startTime = Date.now();
-        const msg = await ctx.reply('⏳ Obteniendo CID...');
+        const msg = await ctx.reply(
+            `🔍 <b>IID:</b>\n<code>${formatIID(digits)}</code>\n\n` +
+            `🌐 [00s] Conectando con Microsoft (Batch API)...`,
+            { parse_mode: 'HTML' }
+        );
+
+        const tracker = new LiveTracker(ctx, msg, {
+            initialStage: 'waiting_ms',
+            initialData: { iid: digits },
+            renderFn: (t) => {
+                const s = t.formatSecs(t.getElapsedSecs());
+                const formattedIID = formatIID(t.data.iid || digits);
+                let text = `🔍 <b>IID:</b>\n<code>${formattedIID}</code>\n\n`;
+                const elapsed = t.getElapsedSecs();
+                if (elapsed < 6) {
+                    text += `🌐 [${s}s] Conectando con Microsoft (Batch API)...`;
+                } else if (elapsed < 12) {
+                    text += `🌐 [${s}s] Validando activación con Microsoft...`;
+                } else if (elapsed < 18) {
+                    text += `🌐 [${s}s] Esperando confirmación de Microsoft...`;
+                } else {
+                    text += `🔄 [${s}s] Reintentando vía Visual API Microsoft...`;
+                }
+                return text;
+            }
+        });
+        tracker.start(null, 2000);
 
         try {
             const cidResult = await getConfirmationID(digits);
+            tracker.stop();
+
             const cid = typeof cidResult === 'string' ? cidResult : cidResult.cid;
             const backendMethod = typeof cidResult === 'object' ? cidResult.method : 'unknown';
             
@@ -451,12 +614,14 @@ function startBot() {
             const cidStr = formatCID(cid);
             db.logTransaction(user.id, 'telegram', digits, cidStr, 'success', elapsed, 'direct');
             
+            const msSecs = (elapsed / 1000).toFixed(1);
+
             // Mensaje principal
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null,
                 `🔑 <b>@CdKeysPeru</b>\n\n` +
                 `<b>IID:</b>\n<code>${formatIID(digits)}</code>\n\n` +
                 `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
-                `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>\n` +
+                `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs} (🌐 MS: ${msSecs}s)</i>\n` +
                 `<i>🤖 Resuelto vía: ${backendMethod}</i>`,
                 { parse_mode: 'HTML' }
             );
@@ -464,6 +629,7 @@ function startBot() {
             // CID como texto separado para copiar
             await ctx.reply(`📋 CID para copiar:\n<code>${cidStr.replace(/-/g, '')}</code>`, { parse_mode: 'HTML' });
         } catch (err) {
+            tracker.stop();
             const elapsed = Date.now() - startTime;
             db.logTransaction(user.id, 'telegram', digits, null, err?.code || 'error', elapsed, null);
             
