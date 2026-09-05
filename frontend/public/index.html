@@ -298,8 +298,10 @@
 
     // Auto-check balance
     let bt = null;
+    let currentCheckVal = '';
     function triggerBalanceCheck(val) {
         clearTimeout(bt);
+        currentCheckVal = val;
         ['balance-badge','balance-notfound','balance-loading'].forEach(id => $(id).classList.add('hidden'));
         if (!val) return;
         bt = setTimeout(async () => {
@@ -307,10 +309,14 @@
             try {
                 const r = await fetch('/api/check-balance?email=' + encodeURIComponent(val));
                 const d = await r.json();
+                if (val !== currentCheckVal) return;
                 $('balance-loading').classList.add('hidden');
+                ['balance-badge','balance-notfound'].forEach(id => $(id).classList.add('hidden'));
                 if (d.found) { $('badge-count').textContent = d.balance; $('balance-badge').classList.remove('hidden'); }
                 else { $('balance-notfound').classList.remove('hidden'); }
-            } catch(e) { $('balance-loading').classList.add('hidden'); }
+            } catch(e) { 
+                if (val === currentCheckVal) $('balance-loading').classList.add('hidden'); 
+            }
         }, 600);
     }
     

@@ -269,8 +269,10 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
             if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         } else if (iid) {
             const cleanIid = iid.replace(/\D/g, '');
-            const cid = await getConfirmationID(cleanIid);
-            cidResult = { success: true, iid: cleanIid, cid, strategy: 'direct', method: 'manual' };
+            const cidResp = await getConfirmationID(cleanIid);
+            const cidVal = typeof cidResp === 'string' ? cidResp : cidResp.cid;
+            const backendMethod = typeof cidResp === 'object' ? cidResp.method : 'manual';
+            cidResult = { success: true, iid: cleanIid, cid: cidVal, strategy: 'direct', method: backendMethod };
         } else {
             return res.status(400).json({ success: false, error: 'Envía un IID o una imagen.' });
         }
@@ -294,21 +296,25 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
                 ? db.getOrderBalance(result.orderId)?.remaining || 0
                 : db.getEmailBalance(result.email);
             
-            const cidStr = Array.isArray(cidResult.cid) ? cidResult.cid.join('-') : cidResult.cid;
+            const cidStr = Array.isArray(cidResult.cid) 
+                ? cidResult.cid.join('-') 
+                : (typeof cidResult.cid === 'object' && cidResult.cid !== null ? cidResult.cid.cid : String(cidResult.cid));
             db.logTransaction(result.user.id, 'web', cidResult.iid, cidStr, 'success', elapsed, cidResult.strategy);
             
             // Notificar al admin por Telegram
             const cidFormatted = fmtCID(cidStr);
             const balanceLabel = result.isOrder ? `Pedido #${result.orderId}: ${newBalance}` : `Global: ${newBalance}`;
+            const methodResolved = cidResult.method || cidResult.backendMethod || 'manual';
             notifyAdmin(
                 `🌐 <b>CID desde Web</b>\n\n` +
                 `👤 ${result.email || identifier}\n` +
                 `📝 IID: <code>${cidResult.iid}</code>\n` +
                 `🔑 CID: <code>${cidFormatted}</code>\n` +
+                `🤖 Resuelto vía: ${methodResolved}\n` +
                 `💰 Balance: ${balanceLabel}`
             );
             
-            return res.json({ success: true, iid: cidResult.iid, cid: cidResult.cid, balance: newBalance, time_ms: elapsed });
+            return res.json({ success: true, iid: cidResult.iid, cid: cidStr, balance: newBalance, time_ms: elapsed });
         } else {
             // OCR falló completamente
             const detectedIID = cidResult.detectedDigits || null;
@@ -327,7 +333,11 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
         if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
         const elapsed = Date.now() - startTime;
         const iidForLog = e?.iid || iid?.replace(/\D/g, '') || null;
-        db.logTransaction(result.user.id, 'web', iidForLog, null, e?.code || 'error', elapsed, null);
+        try {
+            db.logTransaction(result.user.id, 'web', iidForLog, null, e?.code || 'error', elapsed, null);
+        } catch (dbErr) {
+            console.error('[DB Log Error in catch]', dbErr);
+        }
         return res.status(400).json(buildErrorResponse(e, iidForLog));
     }
 });

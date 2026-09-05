@@ -222,10 +222,13 @@ function getOrdersByEmail(email) {
 // ============================================================
 
 function logTransaction(userId, source, iid, cid, status, timeMs, strategy) {
+    const safeCid = typeof cid === 'string' 
+        ? cid 
+        : (cid ? (cid.cid || JSON.stringify(cid)) : null);
     db.prepare(`
         INSERT INTO transactions (user_id, source, iid, cid, status, time_ms, strategy)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(userId, source, iid, cid || null, status, timeMs || 0, strategy || null);
+    `).run(userId, source, iid, safeCid, status, timeMs || 0, strategy || null);
 }
 
 function getTransactions(userId, limit = 50) {
