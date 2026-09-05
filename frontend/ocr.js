@@ -57,7 +57,11 @@ async function ocrAndGetCID(filePath, getCID) {
         };
     }
 
-    let candidates = ocrResult.candidates || [{ iid: ocrResult.iid, strategy: ocrResult.strategy, method: ocrResult.method }];
+    let candidates = ocrResult.candidates || [{ 
+        iid: ocrResult.iid, 
+        strategy: ocrResult.strategy || ocrResult.method || 'v3.3-turbo', 
+        method: ocrResult.method || 'v3.3-turbo' 
+    }];
     let rescueAttempted = ocrResult.rescue_mode === true;
     
     let lastErrorObj = null;
@@ -65,8 +69,8 @@ async function ocrAndGetCID(filePath, getCID) {
 
     for (const cand of candidates) {
         const iid = cand.iid;
-        const strategy = cand.strategy;
-        const method = cand.method;
+        const strategy = cand.strategy || cand.method || 'v3.3-turbo';
+        const method = cand.method || 'v3.3-turbo';
         
         console.log(`[OCR] Probando candidato IID: ${iid} (Score: ${cand.score || '?'})`);
 
@@ -137,8 +141,8 @@ async function ocrAndGetCID(filePath, getCID) {
                                 success: true, 
                                 iid: iid, 
                                 cid: cidVal, 
-                                strategy: cand.strategy, 
-                                method: cand.method, 
+                                strategy: cand.strategy || cand.method || 'v3.3-turbo', 
+                                method: cand.method || 'v3.3-turbo', 
                                 backendMethod 
                             };
                         } catch (e) {
@@ -170,8 +174,8 @@ async function ocrExtractOnly(filePath) {
         return { 
             success: true, 
             iid: ocrResult.iid, 
-            method: ocrResult.method, 
-            strategy: ocrResult.strategy 
+            method: ocrResult.method || 'v3.3-turbo', 
+            strategy: ocrResult.strategy || ocrResult.method || 'v3.3-turbo' 
         };
     }
     return { success: false };

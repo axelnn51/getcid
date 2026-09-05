@@ -378,7 +378,7 @@ function startBot() {
                     `<b>IID:</b>\n<code>${formatIID(result.iid)}</code>\n\n` +
                     `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
                     `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs}</i>\n` +
-                    `<i>🤖 Resuelto vía: ${result.backendMethod || 'Desconocido'} (OCR: ${result.strategy})</i>`,
+                    `<i>🤖 Resuelto vía: ${result.backendMethod || 'Desconocido'} (OCR: ${result.strategy || result.method || 'v3.3 Turbo'})</i>`,
                     { parse_mode: 'HTML' }
                 );
                 
