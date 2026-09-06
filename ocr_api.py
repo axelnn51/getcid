@@ -303,8 +303,10 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(roi_img)
 
-    # Escalados Lanczos de alta fidelidad
-    scaled_raw_15 = cv2.resize(roi_img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LANCZOS4)
+    # Escalados Híbridos Adaptativos:
+    # - RAW 1.5x usa INTER_LINEAR para neutralizar el efecto moiré de subpíxeles en fotos de pantallas.
+    # - RAW 2.0x, CLAHE y 2.5x usan INTER_LANCZOS4 para máxima nitidez en capturas borrosas o de baja resolución.
+    scaled_raw_15 = cv2.resize(roi_img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LINEAR)
     scaled_raw_20 = cv2.resize(roi_img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LANCZOS4)
     scaled_clahe_15 = cv2.resize(enhanced, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_LANCZOS4)
     scaled_clahe_20 = cv2.resize(enhanced, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_LANCZOS4)
@@ -329,6 +331,7 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
         return {
             "success": True,
             "iid": r1,
+            "candidates": [{"iid": r1, "strategy": method, "method": method}],
             "method": method,
             "strategy": method,
             "elapsed": elapsed,
@@ -365,9 +368,16 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
             elapsed = time.perf_counter() - t_start
             method = f"fast-diverse-consensus-{top_count}of{len(valid_t1)}"
             logger.info(f"[OCR] Consenso Rápido Diverso en {elapsed:.2f}s ({method})")
+            cands_list = [{"iid": top_iid, "strategy": method, "method": method}]
+            seen_cands = {top_iid}
+            for c_iid, count in counts_t1.most_common():
+                if c_iid not in seen_cands and len(c_iid) in (54, 63):
+                    seen_cands.add(c_iid)
+                    cands_list.append({"iid": c_iid, "strategy": f"tier1-vote-{count}", "method": "tier1"})
             return {
                 "success": True,
                 "iid": top_iid,
+                "candidates": cands_list,
                 "method": method,
                 "strategy": method,
                 "elapsed": elapsed,
@@ -428,17 +438,36 @@ def process_image(image_bytes: bytes, rescue: bool = False, skip_crop: bool = Fa
     most_common_iid, most_common_count = iid_counts.most_common(1)[0]
     total = len(target_cands)
 
+    voted = vote_candidates(target_cands)
+    winner_iid = None
     if most_common_count > total / 2 and most_common_count >= 3:
         method = f"majority-{most_common_count}of{total}"
-        return {"success": True, "iid": most_common_iid, "method": method, "strategy": method, "elapsed": elapsed, "tier": 2}
-
-    voted = vote_candidates(target_cands)
-    if voted:
+        winner_iid = most_common_iid
+    elif voted:
         method = "voted-match" if voted in iid_counts else "voted-fusion"
-        return {"success": True, "iid": voted, "method": method, "strategy": method, "elapsed": elapsed, "tier": 2}
+        winner_iid = voted
+    elif len(iid_counts) == 1:
+        method = "single-candidate"
+        winner_iid = most_common_iid
+    else:
+        method = f"top-{most_common_count}of{total}"
+        winner_iid = most_common_iid
 
-    if len(iid_counts) == 1:
-        return {"success": True, "iid": most_common_iid, "method": "single-candidate", "strategy": "single-candidate", "elapsed": elapsed, "tier": 2}
+    cands_list = [{"iid": winner_iid, "strategy": method, "method": method}]
+    seen_cands = {winner_iid}
+    for c_iid, count in iid_counts.most_common():
+        if c_iid not in seen_cands and len(c_iid) in (54, 63):
+            seen_cands.add(c_iid)
+            cands_list.append({"iid": c_iid, "strategy": f"vote-{count}of{total}", "method": "voted-tier2"})
+            if len(cands_list) >= 5:
+                break
 
-    method = f"top-{most_common_count}of{total}"
-    return {"success": True, "iid": most_common_iid, "method": method, "strategy": method, "elapsed": elapsed, "tier": 2}
+    return {
+        "success": True,
+        "iid": winner_iid,
+        "candidates": cands_list,
+        "method": method,
+        "strategy": method,
+        "elapsed": elapsed,
+        "tier": 2
+    }

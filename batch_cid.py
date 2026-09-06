@@ -389,6 +389,22 @@ async def get_cid(iid: str) -> dict:
                 "method": "batch_api",
             }
         logger.warning(f"[{clean_iid[:12]}...] Batch API falló: {batch_result.get('error_message')}")
+        
+        # FAIL-FAST: Si el IID es matemáticamente inválido (0x90) o la clave está fatalmente bloqueada (0x67, 0x86, 0xC004C017),
+        # ningún servicio alternativo podrá activarlo. Abortar de inmediato en ~1.1s en vez de esperar 30-40s de timeouts.
+        fatal_batch_codes = ["0x90", "0x67", "0x86", "0xC004C017"]
+        if batch_result.get("error_code") in fatal_batch_codes:
+            err_code = batch_result["error_code"]
+            err_msg = batch_result.get("error_message") or BATCH_ERROR_CODES.get(err_code, "Error fatal de activación")
+            logger.warning(f"[{clean_iid[:12]}...] Error fatal no recuperable ({err_code}: {err_msg}). Abortando fallbacks.")
+            return {
+                "success": False,
+                "cid": None,
+                "formatted_cid": None,
+                "error_code": err_code,
+                "error_message": err_msg,
+                "method": "batch_api",
+            }
     except Exception as e:
         logger.error(f"[{clean_iid[:12]}...] Excepción en Batch API: {e}")
         batch_result = {"error_code": None, "error_message": f"Excepción interna: {e}"}

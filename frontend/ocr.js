@@ -65,10 +65,10 @@ async function ocrAndGetCID(filePath, getCID, onProgress = null) {
 
     let candidates = ocrResult.candidates || [{ 
         iid: ocrResult.iid, 
-        strategy: ocrResult.strategy || ocrResult.method || 'v3.3-turbo', 
-        method: ocrResult.method || 'v3.3-turbo' 
+        strategy: ocrResult.strategy || ocrResult.method || 'v3.4-fast', 
+        method: ocrResult.method || 'v3.4-fast' 
     }];
-    let rescueAttempted = ocrResult.rescue_mode === true;
+    let rescueAttempted = ocrResult.rescue_mode === true || ocrResult.tier === 2 || (ocrResult.candidates && ocrResult.candidates.length > 1);
     
     if (typeof onProgress === 'function') {
         onProgress('ocr_done', {
