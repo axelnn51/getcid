@@ -218,7 +218,7 @@
                     <div class="form-step-block">
                         <div class="field-label-group">
                             <label class="field-label">
-                                <span>📷 Screenshot / Foto <small style="font-weight:400;color:var(--text-muted);">(auto-OCR con IA)</small></span>
+                                <span>📷 Screenshot / Foto <small style="font-weight:400;color:var(--text-muted);">(auto-OCR)</small></span>
                             </label>
                             <span style="font-size:11.5px;color:var(--text-muted);">Detectaremos el IID automáticamente</span>
                         </div>
@@ -261,7 +261,7 @@
                             <div id="ocr-status" class="hidden">
                                 <div class="ocr-indicator">
                                     <span class="spinner-small"></span>
-                                    <span>Leyendo dígitos de la imagen con Inteligencia Artificial...</span>
+                                    <span>Leyendo dígitos de la imagen automáticamente...</span>
                                 </div>
                             </div>
                             <div id="ocr-success" class="hidden">
@@ -343,58 +343,6 @@
                     </div>
                 </div>
 
-                <!-- GUÍA VISUAL SIMPLE Y DIRECTA (SIN REPETICIONES) -->
-                <section id="guia-visual-sec" class="guides-section">
-                    <div class="guides-header">
-                        <h3 class="guides-title">
-                            <span>📘 Guía Visual de Activación Telefónica</span>
-                        </h3>
-                        <span class="guides-hint">🔍 Haz clic en la imagen para ampliar en pantalla completa</span>
-                    </div>
-
-                    <!-- Switcher entre Parte 1 y Parte 2 -->
-                    <div class="guide-part-switcher">
-                        <button type="button" class="guide-part-btn active" id="btn-guide-part-1">
-                            <span>1️⃣ Parte 1: Obtener el Installation ID (Office)</span>
-                        </button>
-                        <button type="button" class="guide-part-btn" id="btn-guide-part-2">
-                            <span>2️⃣ Parte 2: Colocar CID y Finalizar</span>
-                        </button>
-                    </div>
-
-                    <!-- Contenido Parte 1: Infografía nítida -->
-                    <div id="guide-content-part-1" class="guide-part-content active">
-                        <div class="infographic-wrapper" id="infographic-part1" title="Clic para ampliar en pantalla completa">
-                            <img src="images/guia-office-pt1.webp" 
-                                 onerror="this.onerror=null; this.src='https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt1.png';" 
-                                 alt="Guía de Activación Telefónica Office Parte 1 - Obtener Installation ID" 
-                                 class="infographic-img" loading="lazy">
-                            <div class="infographic-overlay">
-                                <div>
-                                    <strong>Parte 1 de 2:</strong> Coloca tu licencia, abre el asistente y obtén el Installation ID
-                                </div>
-                                <span class="btn-zoom-overlay">🔍 Clic para ampliar</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Contenido Parte 2: Infografía nítida -->
-                    <div id="guide-content-part-2" class="guide-part-content">
-                        <div class="infographic-wrapper" id="infographic-part2" title="Clic para ampliar en pantalla completa">
-                            <img src="images/guia-office-pt2.webp" 
-                                 onerror="this.onerror=null; this.src='https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt2.png';" 
-                                 alt="Guía de Activación Telefónica Office Parte 2 - Canjear CID y Activar" 
-                                 class="infographic-img" loading="lazy">
-                            <div class="infographic-overlay">
-                                <div>
-                                    <strong>Parte 2 de 2:</strong> Obtén el CID y finaliza la activación
-                                </div>
-                                <span class="btn-zoom-overlay">🔍 Clic para ampliar</span>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
             </div>
 
             <!-- COLUMNA DERECHA: POPULARES -->
@@ -443,6 +391,178 @@
                 </a>
             </aside>
 
+        </div>
+
+        <!-- ====================================================================
+             GUÍA VISUAL Y ESCRITA A PANTALLA COMPLETA (ABARCA EL CENTRO Y LATERALES)
+             ==================================================================== -->
+        <div class="container guide-fullwidth-wrap">
+            <section id="guia-visual-sec" class="guides-section guides-section-full">
+                <div class="guides-header">
+                    <div>
+                        <h2 class="guides-title">
+                            <span>📘 Guía Visual de Activación Telefónica</span>
+                        </h2>
+                        <span class="guides-hint">👉 Desliza las imágenes horizontalmente, usa las flechas ‹ › o pulsa sobre la imagen para pantalla completa</span>
+                    </div>
+
+                    <!-- Switcher entre Parte 1 y Parte 2 -->
+                    <div class="guide-part-switcher">
+                        <button type="button" class="guide-part-btn active" id="btn-guide-part-1">
+                            <span>1️⃣ Parte 1: Obtener el Installation ID (IID)</span>
+                        </button>
+                        <button type="button" class="guide-part-btn" id="btn-guide-part-2">
+                            <span>2️⃣ Parte 2: Colocar CID y Finalizar</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Carrusel / Slider Interactivo Deslizable (en chiquito) -->
+                <div class="guide-slider-wrapper">
+                    <button type="button" class="slider-arrow slider-arrow-prev" id="slider-btn-prev" aria-label="Imagen anterior" title="Parte anterior (◄)">❮</button>
+                    
+                    <div class="guide-slider-viewport" id="guide-slider-viewport">
+                        <div class="guide-slider-track" id="guide-slider-track">
+                            
+                            <!-- Slide 1: Parte 1 -->
+                            <div class="guide-slide" data-slide="0">
+                                <div class="infographic-wrapper" id="infographic-part1" title="Clic para ampliar en pantalla completa">
+                                    <img src="images/guia-office-pt1.webp" 
+                                         onerror="this.onerror=null; this.src='https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt1.png';" 
+                                         alt="Guía de Activación Telefónica Office Parte 1 - Obtener Installation ID" 
+                                         class="infographic-img" loading="lazy">
+                                    <div class="infographic-overlay">
+                                        <div>
+                                            <span class="slide-badge">PARTE 1 DE 2</span>
+                                            <div class="slide-overlay-text">Coloca tu licencia, abre el asistente de activación y obtén el Installation ID (IID)</div>
+                                        </div>
+                                        <span class="btn-zoom-overlay">🔍 Clic para ampliar</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Slide 2: Parte 2 -->
+                            <div class="guide-slide" data-slide="1">
+                                <div class="infographic-wrapper" id="infographic-part2" title="Clic para ampliar en pantalla completa">
+                                    <img src="images/guia-office-pt2.webp" 
+                                         onerror="this.onerror=null; this.src='https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt2.png';" 
+                                         alt="Guía de Activación Telefónica Office Parte 2 - Canjear CID y Activar" 
+                                         class="infographic-img" loading="lazy">
+                                    <div class="infographic-overlay">
+                                        <div>
+                                            <span class="slide-badge">PARTE 2 DE 2</span>
+                                            <div class="slide-overlay-text">Obtén el CID generado, ingrésalo en tu pantalla de Office/Windows y finaliza la activación</div>
+                                        </div>
+                                        <span class="btn-zoom-overlay">🔍 Clic para ampliar</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <button type="button" class="slider-arrow slider-arrow-next" id="slider-btn-next" aria-label="Imagen siguiente" title="Parte siguiente (►)">❯</button>
+                </div>
+
+                <!-- Paginación y Contador del Slider -->
+                <div class="slider-pagination-bar">
+                    <div class="slider-dots-group">
+                        <button type="button" class="slider-dot active" data-slide="0" aria-label="Ir a Parte 1"></button>
+                        <button type="button" class="slider-dot" data-slide="1" aria-label="Ir a Parte 2"></button>
+                    </div>
+                    <span class="slider-counter-text" id="slider-counter">Parte 1 de 2 • Obtener Installation ID</span>
+                    <span class="slider-swipe-tip">👆 Puedes arrastrar con el mouse o deslizar con el dedo</span>
+                </div>
+
+                <!-- PASO A PASO ESCRITO (BREVE Y ENTENDIBLE) -->
+                <div class="written-guide-section">
+                    <div class="wg-header">
+                        <div class="wg-badge-icon">📝</div>
+                        <div>
+                            <h3 class="wg-title">Guía Escrita: Paso a paso para activar tu software</h3>
+                            <p class="wg-subtitle">Instrucciones claras y concisas para completar tu activación en menos de 3 minutos:</p>
+                        </div>
+                    </div>
+
+                    <div class="steps-grid">
+                        <!-- Paso 1 -->
+                        <div class="step-card">
+                            <div class="step-card-top">
+                                <div class="step-number">1</div>
+                                <span class="step-tag">Paso 1</span>
+                            </div>
+                            <h4 class="step-card-title">Instala e ingresa tu clave</h4>
+                            <p class="step-card-text">
+                                Abre cualquier aplicación de tu producto (Word, Excel o Configuración de Windows) e introduce la clave de 25 caracteres que compraste en CDKeys Perú.
+                            </p>
+                            <div class="step-card-tip">
+                                <span>💡 ¿No aparece el cuadro? Abre Word &gt; Cuenta &gt; Cambiar clave de producto.</span>
+                            </div>
+                        </div>
+
+                        <!-- Paso 2 -->
+                        <div class="step-card">
+                            <div class="step-card-top">
+                                <div class="step-number">2</div>
+                                <span class="step-tag">Paso 2</span>
+                            </div>
+                            <h4 class="step-card-title">Elige "Activar por teléfono"</h4>
+                            <p class="step-card-text">
+                                En el cuadro del asistente, marca la opción <strong>"Deseo activar el software por teléfono"</strong> y presiona <strong>Siguiente</strong>. Verás en tu pantalla el <strong>ID de Instalación (IID)</strong> de 9 bloques numéricos.
+                            </p>
+                            <div class="step-card-tip">
+                                <span>💡 No necesitas hacer llamadas; nuestro portal realiza el canje de tu CID automáticamente.</span>
+                            </div>
+                        </div>
+
+                        <!-- Paso 3 -->
+                        <div class="step-card">
+                            <div class="step-card-top">
+                                <div class="step-number">3</div>
+                                <span class="step-tag">Paso 3</span>
+                            </div>
+                            <h4 class="step-card-title">Genera tu CID en este portal</h4>
+                            <p class="step-card-text">
+                                En el formulario superior, ingresa tu correo de compra o pedido y escribe los dígitos de tu IID (o pega una captura de pantalla presionando <strong>Ctrl + V</strong>). Haz clic en <strong>"Obtener ID de Confirmación"</strong>.
+                            </p>
+                            <div class="step-card-tip">
+                                <span>💡 El auto-OCR detectará los números de tu imagen automáticamente.</span>
+                            </div>
+                        </div>
+
+                        <!-- Paso 4 -->
+                        <div class="step-card">
+                            <div class="step-card-top">
+                                <div class="step-number">4</div>
+                                <span class="step-tag">Paso 4</span>
+                            </div>
+                            <h4 class="step-card-title">Coloca el CID y finaliza</h4>
+                            <p class="step-card-text">
+                                El sistema te entregará tu <strong>ID de Confirmación (CID)</strong> de 8 bloques (de la A a la H). Escríbelos en las casillas correspondientes de tu pantalla y pulsa <strong>Siguiente</strong>.
+                            </p>
+                            <div class="step-card-tip success">
+                                <span>✅ ¡Listo! Tu producto quedará activado de por vida con licencia 100% genuina.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Asistencia Directa WhatsApp -->
+                    <div class="steps-help-bar">
+                        <div class="steps-help-left">
+                            <span class="help-bubble-icon">💬</span>
+                            <div>
+                                <strong>¿Se te presentó algún error o tienes dudas durante el proceso?</strong>
+                                <p>Cuentas con garantía total y soporte humano en tiempo real. Contáctanos por WhatsApp y te ayudaremos al instante.</p>
+                            </div>
+                        </div>
+                        <a href="https://wa.me/51907463313?text=Hola%2C%20necesito%20asistencia%20para%20activar%20mi%20licencia%20en%20el%20portal%20GETCID" 
+                           target="_blank" rel="noopener noreferrer" class="btn-help-wa">
+                            <span>💬 Contactar a un Asesor WhatsApp</span>
+                        </a>
+                    </div>
+                </div>
+
+            </section>
         </div>
     </main>
 
@@ -534,7 +654,7 @@
     </footer>
 
     <!-- ====================================================================
-         5. LIGHTBOX MODAL PARA INFOGRAFÍAS (ZOOM HD)
+         5. LIGHTBOX MODAL PARA INFOGRAFÍAS (ZOOM HD & SLIDER ◄ ►)
          ==================================================================== -->
     <div id="lightbox-modal" class="lightbox-modal" role="dialog" aria-modal="true" aria-label="Visualizador de Guía">
         <div class="lightbox-toolbar">
@@ -546,8 +666,21 @@
                 <button type="button" class="btn-lightbox-close" id="btn-lightbox-close" title="Cerrar (Esc)">✕</button>
             </div>
         </div>
-        <div class="lightbox-img-container">
-            <img id="lightbox-img" class="lightbox-img-full" src="" alt="Infografía en alta definición">
+
+        <div class="lightbox-viewport" id="lightbox-viewport">
+            <button type="button" class="lightbox-nav-arrow lightbox-prev" id="btn-lightbox-prev" aria-label="Ver parte anterior" title="Parte anterior (◄)">❮</button>
+            <div class="lightbox-img-container" id="lightbox-container">
+                <img id="lightbox-img" class="lightbox-img-full" src="" alt="Infografía en alta definición">
+            </div>
+            <button type="button" class="lightbox-nav-arrow lightbox-next" id="btn-lightbox-next" aria-label="Ver parte siguiente" title="Parte siguiente (►)">❯</button>
+        </div>
+
+        <div class="lightbox-footer">
+            <div class="lightbox-pills">
+                <button type="button" class="lightbox-pill active" id="lb-pill-1">1️⃣ Parte 1: Obtener IID</button>
+                <button type="button" class="lightbox-pill" id="lb-pill-2">2️⃣ Parte 2: Colocar CID</button>
+            </div>
+            <span class="lightbox-hint">💡 Desliza en pantalla táctil o usa las flechas ◄ ► del teclado</span>
         </div>
     </div>
 
@@ -854,60 +987,180 @@
         }
 
         // ============================================================
-        // 6. Navegación de la Guía: Parte 1 vs Parte 2
+        // 6. Navegación Slider Interactivo (Deslizable Chiquito y Ampliado)
         // ============================================================
-        const btnPart1 = $('btn-guide-part-1');
-        const btnPart2 = $('btn-guide-part-2');
-        const contentPart1 = $('guide-content-part-1');
-        const contentPart2 = $('guide-content-part-2');
+        let activeGuideIndex = 0;
+        const guideSlides = [
+            {
+                src: 'images/guia-office-pt1.webp',
+                fallback: 'https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt1.png',
+                title: 'Guía Oficial Parte 1 de 2: Obtener el Installation ID (IID)',
+                counterText: 'Parte 1 de 2 • Obtener Installation ID'
+            },
+            {
+                src: 'images/guia-office-pt2.webp',
+                fallback: 'https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt2.png',
+                title: 'Guía Oficial Parte 2 de 2: Colocar CID y Finalizar Activación',
+                counterText: 'Parte 2 de 2 • Colocar CID y Finalizar'
+            }
+        ];
 
-        function switchGuidePart(part) {
-            if (part === 1) {
-                btnPart1.classList.add('active');
-                btnPart2.classList.remove('active');
-                contentPart1.classList.add('active');
-                contentPart2.classList.remove('active');
-            } else {
-                btnPart2.classList.add('active');
-                btnPart1.classList.remove('active');
-                contentPart2.classList.add('active');
-                contentPart1.classList.remove('active');
+        function goToSlide(index) {
+            if (index < 0) index = 0;
+            if (index >= guideSlides.length) index = guideSlides.length - 1;
+            activeGuideIndex = index;
+
+            // Mover pista del carrusel inline
+            const track = $('guide-slider-track');
+            if (track) {
+                track.style.transform = `translateX(-${activeGuideIndex * 50}%)`;
+            }
+
+            // Actualizar botones de pestañas
+            const btn1 = $('btn-guide-part-1');
+            const btn2 = $('btn-guide-part-2');
+            if (btn1 && btn2) {
+                btn1.classList.toggle('active', activeGuideIndex === 0);
+                btn2.classList.toggle('active', activeGuideIndex === 1);
+            }
+
+            // Actualizar dots de paginación
+            document.querySelectorAll('.slider-dot').forEach((dot, idx) => {
+                dot.classList.toggle('active', idx === activeGuideIndex);
+            });
+
+            // Actualizar texto del contador
+            const counter = $('slider-counter');
+            if (counter) {
+                counter.textContent = guideSlides[activeGuideIndex].counterText;
+            }
+
+            // Si el modal lightbox está abierto, actualizarlo también
+            if (modal && modal.classList.contains('is-open')) {
+                updateLightboxContent();
             }
         }
 
-        btnPart1.addEventListener('click', () => switchGuidePart(1));
-        btnPart2.addEventListener('click', () => switchGuidePart(2));
-
-        $('nav-btn-guia')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchGuidePart(1);
-            $('guia-visual-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Botones Anterior / Siguiente en el Slider
+        $('slider-btn-prev')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            goToSlide(activeGuideIndex - 1);
         });
 
-        $('cat-link-guia')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchGuidePart(1);
-            $('guia-visual-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        $('slider-btn-next')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            goToSlide(activeGuideIndex + 1);
         });
 
-        $('link-donde-iid')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            switchGuidePart(1);
-            $('guia-visual-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Tabs superiores
+        $('btn-guide-part-1')?.addEventListener('click', () => goToSlide(0));
+        $('btn-guide-part-2')?.addEventListener('click', () => goToSlide(1));
+
+        // Dots inferiores
+        document.querySelectorAll('.slider-dot').forEach(dot => {
+            dot.addEventListener('click', function() {
+                const idx = parseInt(this.getAttribute('data-slide'), 10);
+                if (!isNaN(idx)) goToSlide(idx);
+            });
         });
+
+        // Enlaces de navegación que apuntan a la guía
+        const scrollToGuide = (e) => {
+            e.preventDefault();
+            goToSlide(0);
+            $('guia-visual-sec')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+        $('nav-btn-guia')?.addEventListener('click', scrollToGuide);
+        $('cat-link-guia')?.addEventListener('click', scrollToGuide);
+        $('link-donde-iid')?.addEventListener('click', scrollToGuide);
+
+        // Soporte Swipe Táctil y Arrastre en el Slider Inline ("en chiquito")
+        const sliderViewport = $('guide-slider-viewport');
+        if (sliderViewport) {
+            let startX = 0;
+            let currentX = 0;
+            let isTouching = false;
+
+            // Touch en móviles y tablets
+            sliderViewport.addEventListener('touchstart', (e) => {
+                if (!e.touches || !e.touches[0]) return;
+                startX = e.touches[0].clientX;
+                currentX = startX;
+                isTouching = true;
+            }, { passive: true });
+
+            sliderViewport.addEventListener('touchmove', (e) => {
+                if (!isTouching || !e.touches || !e.touches[0]) return;
+                currentX = e.touches[0].clientX;
+            }, { passive: true });
+
+            sliderViewport.addEventListener('touchend', () => {
+                if (!isTouching) return;
+                isTouching = false;
+                const diff = startX - currentX;
+                if (Math.abs(diff) > 40) {
+                    if (diff > 0) goToSlide(activeGuideIndex + 1);
+                    else goToSlide(activeGuideIndex - 1);
+                }
+            });
+
+            // Arrastre con mouse en desktop
+            let isDragging = false;
+            let dragMoved = false;
+
+            sliderViewport.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                isDragging = true;
+                dragMoved = false;
+                startX = e.clientX;
+                currentX = e.clientX;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                currentX = e.clientX;
+                if (Math.abs(currentX - startX) > 8) {
+                    dragMoved = true;
+                }
+            });
+
+            window.addEventListener('mouseup', (e) => {
+                if (!isDragging) return;
+                isDragging = false;
+                const diff = startX - currentX;
+                if (dragMoved && Math.abs(diff) > 45) {
+                    if (diff > 0) goToSlide(activeGuideIndex + 1);
+                    else goToSlide(activeGuideIndex - 1);
+                }
+            });
+        }
 
         // ============================================================
-        // 7. Visualizador Lightbox Modal para Infografías en HD
+        // 7. Visualizador Lightbox Modal HD (Deslizable Ampliado)
         // ============================================================
         const modal = $('lightbox-modal');
         const modalImg = $('lightbox-img');
         const modalTitle = $('lightbox-title');
 
-        function openLightbox(imgSrc, title) {
-            modalImg.src = imgSrc;
-            modalTitle.textContent = title;
+        function updateLightboxContent() {
+            const slide = guideSlides[activeGuideIndex];
+            modalImg.src = slide.src;
+            modalImg.onerror = function() {
+                this.onerror = null;
+                this.src = slide.fallback;
+            };
+            modalTitle.textContent = slide.title;
             currentZoom = 1;
             modalImg.style.transform = `scale(${currentZoom})`;
+
+            $('lb-pill-1')?.classList.toggle('active', activeGuideIndex === 0);
+            $('lb-pill-2')?.classList.toggle('active', activeGuideIndex === 1);
+        }
+
+        function openLightbox(index) {
+            if (typeof index === 'number') activeGuideIndex = index;
+            goToSlide(activeGuideIndex);
+            updateLightboxContent();
             modal.classList.add('is-open');
             document.body.style.overflow = 'hidden';
         }
@@ -917,38 +1170,100 @@
             document.body.style.overflow = '';
         }
 
-        $('infographic-part1').addEventListener('click', () => {
-            openLightbox('images/guia-office-pt1.webp', 'Guía Oficial Parte 1: Obtener el Installation ID');
+        function modalPrev() {
+            activeGuideIndex = (activeGuideIndex - 1 + guideSlides.length) % guideSlides.length;
+            goToSlide(activeGuideIndex);
+        }
+
+        function modalNext() {
+            activeGuideIndex = (activeGuideIndex + 1) % guideSlides.length;
+            goToSlide(activeGuideIndex);
+        }
+
+        // Clic en las infografías para abrir modal
+        $('infographic-part1')?.addEventListener('click', () => {
+            openLightbox(0);
         });
 
-        $('infographic-part2').addEventListener('click', () => {
-            openLightbox('images/guia-office-pt2.webp', 'Guía Oficial Parte 2: Colocar CID y Finalizar');
+        $('infographic-part2')?.addEventListener('click', () => {
+            openLightbox(1);
         });
 
-        $('btn-lightbox-close').addEventListener('click', closeLightbox);
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal || e.target.classList.contains('lightbox-img-container')) {
+        // Controles de navegación del Lightbox (◄ y ►)
+        $('btn-lightbox-prev')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            modalPrev();
+        });
+
+        $('btn-lightbox-next')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            modalNext();
+        });
+
+        // Pestañas inferiores del modal
+        $('lb-pill-1')?.addEventListener('click', () => goToSlide(0));
+        $('lb-pill-2')?.addEventListener('click', () => goToSlide(1));
+
+        // Soporte Swipe táctil en el modal Lightbox ("cuando las amplias")
+        const lbViewport = $('lightbox-viewport');
+        if (lbViewport) {
+            let lbStartX = 0;
+            let lbCurrentX = 0;
+            let lbSwiping = false;
+
+            lbViewport.addEventListener('touchstart', (e) => {
+                if (!e.touches || !e.touches[0]) return;
+                lbStartX = e.touches[0].clientX;
+                lbCurrentX = lbStartX;
+                lbSwiping = true;
+            }, { passive: true });
+
+            lbViewport.addEventListener('touchmove', (e) => {
+                if (!lbSwiping || !e.touches || !e.touches[0]) return;
+                lbCurrentX = e.touches[0].clientX;
+            }, { passive: true });
+
+            lbViewport.addEventListener('touchend', () => {
+                if (!lbSwiping) return;
+                lbSwiping = false;
+                const diff = lbStartX - lbCurrentX;
+                if (Math.abs(diff) > 40) {
+                    if (diff > 0) modalNext();
+                    else modalPrev();
+                }
+            });
+        }
+
+        // Controles de zoom y teclado en el modal
+        $('btn-lightbox-close')?.addEventListener('click', closeLightbox);
+        modal?.addEventListener('click', (e) => {
+            if (e.target === modal || e.target.classList.contains('lightbox-viewport') || e.target.classList.contains('lightbox-img-container')) {
                 closeLightbox();
             }
         });
 
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && modal.classList.contains('is-open')) {
+            if (!modal.classList.contains('is-open')) return;
+            if (e.key === 'Escape') {
                 closeLightbox();
+            } else if (e.key === 'ArrowLeft') {
+                modalPrev();
+            } else if (e.key === 'ArrowRight') {
+                modalNext();
             }
         });
 
-        $('btn-zoom-in').addEventListener('click', () => {
+        $('btn-zoom-in')?.addEventListener('click', () => {
             currentZoom = Math.min(currentZoom + 0.25, 2.5);
             modalImg.style.transform = `scale(${currentZoom})`;
         });
 
-        $('btn-zoom-out').addEventListener('click', () => {
+        $('btn-zoom-out')?.addEventListener('click', () => {
             currentZoom = Math.max(currentZoom - 0.25, 0.6);
             modalImg.style.transform = `scale(${currentZoom})`;
         });
 
-        $('btn-zoom-reset').addEventListener('click', () => {
+        $('btn-zoom-reset')?.addEventListener('click', () => {
             currentZoom = 1;
             modalImg.style.transform = `scale(${currentZoom})`;
         });

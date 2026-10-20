@@ -439,7 +439,7 @@ function startBot() {
                     return `⏳ [${s}s] Descargando imagen de Telegram...`;
                 }
                 if (t.stage === 'ocr') {
-                    return `⚡ [${s}s] Analizando imagen con IA (OCR v3.3 Turbo)...`;
+                    return `⚡ [${s}s] Analizando imagen (OCR v3.3 Turbo)...`;
                 }
                 if (t.stage === 'calling_cid' || t.stage === 'waiting_ms') {
                     let text = `🔍 <b>IID detectado:</b>\n<code>${formattedIID}</code>\n\n`;
