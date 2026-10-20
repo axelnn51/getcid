@@ -7,7 +7,7 @@ __pycache__/
 *.png
 *.jpg
 scratch/
-frontend/data/*.db
+frontend/data/
 frontend/uploads/
 CID_PRUEBAS/
 AVANCES/

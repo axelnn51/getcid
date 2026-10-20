@@ -55,14 +55,14 @@ async function getConfirmationID(iid) {
     // Clasificación de errores basada en el mensaje de error del backend
     const errorText = (data.error || data.message || '').toLowerCase();
     
-    if (errorText.includes('checksum') || errorText.includes('inválido')) {
+    if (data.code === '0x90' || errorText.includes('checksum') || errorText.includes('inválido')) {
       throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
     }
-    if (errorText.includes('bloquead') || errorText.includes('blocked')) {
+    if (data.code === '0x67' || errorText.includes('bloquead') || errorText.includes('blocked')) {
       throw new CIDError('KEY_BLOCKED', '🔒 *Clave bloqueada por Microsoft*\nContacta soporte para un reemplazo.', { iid: cleanIid });
     }
-    if (errorText.includes('límite') || errorText.includes('limit') || errorText.includes('excedió')) {
-      throw new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nContacta soporte.', { iid: cleanIid });
+    if (data.code === '0xD6' || data.code === '0x71' || data.code === '0x7F' || errorText.includes('límite') || errorText.includes('limit') || errorText.includes('excedió')) {
+      throw new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nEsta licencia alcanzó el límite por lote de Microsoft y requiere activación telefónica individual (1 PC).', { iid: cleanIid });
     }
     
     throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${data.error || data.message || 'Respuesta inválida'}`, { iid: cleanIid });

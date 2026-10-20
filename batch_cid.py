@@ -14,6 +14,8 @@ import xml.etree.ElementTree as ET
 
 import httpx
 import time
+import os
+import json
 
 logger = logging.getLogger("BatchCID")
 
@@ -191,13 +193,31 @@ async def _get_cid_batch(iid: str) -> dict:
     return _parse_batch_response(response.text)
 
 
+def _is_jwt_valid(token: str) -> bool:
+    """Verifica si el token Bearer (JWT) tiene formato válido y no ha expirado."""
+    if not token or not isinstance(token, str) or len(token) < 50:
+        return False
+    try:
+        import jwt as pyjwt
+        payload = pyjwt.decode(token, options={"verify_signature": False})
+        exp = payload.get("exp", 0)
+        return exp > (time.time() + 30)
+    except Exception:
+        return True
+
+
 async def _get_shared_token(force_refresh: bool = False) -> str | None:
-    """Fetch shared Bearer token from ntriver community server with in-memory caching."""
+    """
+    Obtiene el token compartido del servidor comunitario de forma 100% transparente y automática.
+    """
     global _cached_token, _token_expiry
     now = time.time()
-    if not force_refresh and _cached_token and now < _token_expiry:
+
+    # Si hay un token en caché y aún es válido, usarlo
+    if not force_refresh and _cached_token and _is_jwt_valid(_cached_token) and now < _token_expiry:
         return _cached_token
 
+    # Consultar servidor comunitario (PKeyMaster)
     try:
         client = get_http_client()
         resp = await client.get(TOKEN_SERVER, timeout=10.0)
@@ -205,33 +225,42 @@ async def _get_shared_token(force_refresh: bool = False) -> str | None:
             data = resp.json()
             token = data.get("token") or data.get("access_token")
             if token and isinstance(token, str) and len(token) > 50:
-                _cached_token = token
-                _token_expiry = now + 600.0  # Cache for 10 minutes
-                return token
+                if _is_jwt_valid(token):
+                    _cached_token = token
+                    _token_expiry = now + 600.0  # Cache for 10 minutes
+                    return token
+                else:
+                    logger.warning("El servidor comunitario (ntriver) entregó un token que ya expiró.")
     except Exception as e:
-        logger.warning(f"No se pudo obtener token compartido: {e}")
-    return _cached_token
+        logger.warning(f"No se pudo contactar al servidor comunitario de tokens: {e}")
+
+    return None
+
 
 async def _get_cid_webact_api(iid: str) -> dict:
     """
-    Tier 2 Fallback: Try to get CID via public/premium WebAct APIs.
-    This replaces the need for Playwright by using direct HTTP proxies.
+    Tier 3 Fallback: Try to get CID via configurable VIP / WebAct APIs.
     """
     result = {"success": False, "cid": None, "error_code": None, "error_message": None}
-    
-    # Lista de APIs comunitarias / premium (puedes añadir tu API VIP aquí)
-    endpoints = [
-        f"http://104.238.163.4/api/getcid?iid={iid}",
-        f"https://api.pidchecker.com/api/v1/getcid?iid={iid}",
-    ]
-    
+
+    endpoints = []
+
+    # Endpoint VIP opcional configurable mediante variable de entorno (.env)
+    vip_endpoint = os.getenv("VIP_GETCID_URL")
+    if vip_endpoint:
+        endpoints.append(vip_endpoint.replace("{iid}", iid))
+
+    if not endpoints:
+        result["error_message"] = "No hay APIs de respaldo configuradas en VIP_GETCID_URL."
+        return result
+
     client = get_http_client()
     for url in endpoints:
         try:
-            resp = await client.get(url, timeout=10.0)
+            resp = await client.get(url, timeout=15.0)
             if resp.status_code == 200:
                 data = resp.json()
-                cid = data.get("cid") or data.get("CID") or data.get("ConfirmationID")
+                cid = data.get("cid") or data.get("CID") or data.get("ConfirmationID") or data.get("confirmation_id_with_dash")
                 if cid and len(str(cid).replace("-", "")) >= 40:
                     result["success"] = True
                     result["cid"] = str(cid).replace("-", "")
@@ -239,8 +268,8 @@ async def _get_cid_webact_api(iid: str) -> dict:
         except Exception as e:
             logger.debug(f"Fallo endpoint WebAct API {url}: {e}")
             continue
-            
-    result["error_message"] = "Todas las APIs de WebAct (Tier 2) fallaron o están caídas."
+
+    result["error_message"] = "Las APIs de respaldo (Tier 3) fallaron o no respondieron."
     return result
 
 

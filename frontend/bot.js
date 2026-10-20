@@ -79,7 +79,7 @@ function errorToMessage(error, detectedIID) {
                 return `🔒 <b>Clave bloqueada por Microsoft</b>\nEsta licencia ha sido bloqueada. Contacta a soporte para un reemplazo.${iidBlock}`;
             
             case 'TOO_MANY_ACTIVATIONS':
-                return `⚠️ <b>Límite de activaciones alcanzado</b>\nEsta licencia ya se activó en demasiados dispositivos. Contacta soporte.${iidBlock}`;
+                return `⚠️ <b>Límite de activación por lote (0xD6)</b>\nEsta clave alcanzó el límite de activación por lotes de Microsoft y requiere activación telefónica individual (1 PC).${iidBlock}`;
             
             case 'INVALID_PRODUCT':
                 return `❌ <b>Producto no soportado</b>\nEste IID corresponde a un producto que no se puede activar por teléfono.${iidBlock}`;
