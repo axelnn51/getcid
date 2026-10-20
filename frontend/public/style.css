@@ -462,6 +462,92 @@ img {
     font-family: var(--font-heading);
 }
 
+/* Product Mini Link (enlace compacto para equilibrar altura de columnas) */
+.product-mini-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #ffffff;
+    border: 1px dashed #cbd5e1;
+    border-radius: var(--radius-md);
+    padding: 10px 12px;
+    text-decoration: none;
+    transition: var(--transition);
+    box-shadow: var(--shadow-sm);
+    margin-top: 4px;
+}
+
+.product-mini-link:hover {
+    border-color: var(--primary);
+    background: #f8fafc;
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+}
+
+.pml-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.pml-badge {
+    font-size: 8.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+.pml-badge.design {
+    background: #ecfdf5;
+    color: #059669;
+    border: 1px solid #a7f3d0;
+}
+
+.pml-badge.prod {
+    background: #eff6ff;
+    color: #2563eb;
+    border: 1px solid #bfdbfe;
+}
+
+.pml-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pml-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: 6px;
+}
+
+.pml-price {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--green);
+    font-family: var(--font-heading);
+}
+
+.pml-arrow {
+    font-size: 11px;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+}
+
+.product-mini-link:hover .pml-arrow {
+    transform: translateX(3px);
+    color: var(--primary);
+}
+
 /* ==========================================================================
    3. TARJETA PRINCIPAL: GENERADOR DE CID
    ========================================================================== */
@@ -471,7 +557,7 @@ img {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-md);
     padding: 26px 28px;
-    margin-bottom: 22px;
+    margin-bottom: 0;
 }
 
 .form-header {
@@ -1602,6 +1688,151 @@ img {
     border-color: rgba(16, 185, 129, 0.25);
     color: #065f46;
     font-weight: 600;
+}
+
+/* ==========================================================================
+   AVISO EN GRANDE Y ROJO: VERIFICACIÓN Y CONDICIONES DE GARANTÍA
+   ========================================================================== */
+.warranty-alert-card {
+    background: linear-gradient(180deg, #fffafa 0%, #fff1f2 100%);
+    border: 2px solid #ef4444;
+    border-radius: var(--radius-lg);
+    padding: 22px 24px;
+    margin: 24px 0 20px;
+    box-shadow: 0 8px 24px rgba(239, 68, 68, 0.12);
+    position: relative;
+    overflow: hidden;
+}
+
+.warranty-alert-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #b91c1c, #ef4444, #f87171);
+}
+
+.warranty-alert-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px dashed rgba(239, 68, 68, 0.35);
+}
+
+.warranty-alert-icon {
+    font-size: 32px;
+    line-height: 1;
+    flex-shrink: 0;
+    animation: pulseIcon 2s infinite ease-in-out;
+}
+
+@keyframes pulseIcon {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.12); }
+}
+
+.warranty-alert-title {
+    font-family: var(--font-heading);
+    font-size: 16px;
+    font-weight: 900;
+    color: #b91c1c;
+    letter-spacing: -0.2px;
+    margin: 0 0 3px;
+    text-transform: uppercase;
+}
+
+.warranty-alert-subtitle {
+    font-size: 12.5px;
+    color: #7f1d1d;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.warranty-alert-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.25fr;
+    gap: 16px;
+}
+
+.warranty-box {
+    background: #ffffff;
+    border: 1px solid #fecaca;
+    border-radius: var(--radius-md);
+    padding: 16px 18px;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.06);
+    display: flex;
+    flex-direction: column;
+}
+
+.warranty-box-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 800;
+    color: #991c1c;
+    margin-bottom: 10px;
+    font-family: var(--font-heading);
+    border-bottom: 1px solid #fee2e2;
+    padding-bottom: 6px;
+}
+
+.warranty-box-text {
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: #374151;
+    margin: 0 0 8px;
+}
+
+.warranty-box-text:last-child {
+    margin-bottom: 0;
+}
+
+.warranty-term-title {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #991c1c;
+    margin-bottom: 3px;
+    font-family: var(--font-heading);
+}
+
+.warranty-terms-item {
+    margin-bottom: 8px;
+}
+
+.warranty-badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 10px;
+    border-radius: 6px;
+    margin-top: auto;
+    width: fit-content;
+}
+
+.warranty-badge-pill.check {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fca5a5;
+}
+
+.warranty-badge-pill.tip {
+    background: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+
+@media (max-width: 860px) {
+    .warranty-alert-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Barra de soporte / WhatsApp inferior */
