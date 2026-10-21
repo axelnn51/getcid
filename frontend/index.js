@@ -386,6 +386,27 @@ function authAdmin(req, res, next) {
     next();
 }
 
+
+app.post('/api/admin/create-order', authAdmin, (req, res) => {
+    try {
+        const { credits = 1, customOrderId = null, email = 'manual@cdkeysperu.com' } = req.body;
+        const order = db.createManualOrder(credits, customOrderId, email);
+        res.json({ ok: true, success: true, order });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+app.get('/api/admin/orders', authAdmin, (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 20;
+        const orders = db.getManualOrders(limit);
+        res.json({ ok: true, success: true, orders });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
 app.get('/api/admin/users', authAdmin, (req, res) => res.json(db.getAllUsers()));
 app.get('/api/admin/transactions', authAdmin, (req, res) => res.json(db.getAllTransactions(200)));
 app.get('/api/admin/stats', authAdmin, (req, res) => res.json(db.getStats()));
