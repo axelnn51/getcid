@@ -1,9 +1,17 @@
-// dotenv es opcional (en Docker las vars vienen del entorno)
-try { require('dotenv').config(); } catch(e) {}
-const express = require('express');
-const cors = require('cors');
-const multer = require('multer');
+// Cargar .env tanto local como del root
 const path = require('path');
+try {
+    const dotenv = require('dotenv');
+    dotenv.config({ path: path.join(__dirname, '.env') });
+    dotenv.config({ path: path.join(__dirname, '..', '.env') });
+} catch(e) {}
+
+if (!process.env.BOT_TOKEN || process.env.BOT_TOKEN === 'TU_TOKEN_AQUI') {
+    process.env.BOT_TOKEN = '8334632533:AAEMCDWK-4sMpmDSSquc5Afz6FRVZjrs6go';
+}
+if (!process.env.ADMIN_IDS) {
+    process.env.ADMIN_IDS = '7233007906';
+}
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const { getConfirmationID, CIDError } = require('./cid_helper');

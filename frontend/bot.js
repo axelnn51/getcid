@@ -5,9 +5,9 @@ const { getConfirmationID, CIDError } = require('./cid_helper');
 const { ocrAndGetCID } = require('./ocr');
 const db = require('./db');
 
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const ADMIN_IDS = (process.env.ADMIN_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_python:8000';
+const BOT_TOKEN = process.env.BOT_TOKEN || '8334632533:AAEMCDWK-4sMpmDSSquc5Afz6FRVZjrs6go';
+const ADMIN_IDS = (process.env.ADMIN_IDS || '7233007906').split(',').map(s => s.trim()).filter(Boolean);
+const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_backend:8000';
 
 // Bot instance global para notificaciones desde web
 let botInstance = null;
@@ -292,9 +292,53 @@ function startBot() {
     });
 
     bot.command('balance', (ctx) => {
-        const user = db.findUserByTelegram(String(ctx.from.id));
+        const tgId = String(ctx.from.id);
+        const user = db.findUserByTelegram(tgId);
         if (!user) return ctx.reply('Usa /start primero.');
+        if (isAdmin(tgId)) {
+            return ctx.reply('💰 Balance: <b>👑 Ilimitado (Admin)</b>', { parse_mode: 'HTML' });
+        }
         ctx.reply(`💰 Balance: *${user.balance} CIDs*`, { parse_mode: 'Markdown' });
+    });
+
+    bot.command(['help', 'ayuda'], (ctx) => {
+        const tgId = String(ctx.from.id);
+        const admin = isAdmin(tgId);
+        let msg = `👋 <b>Asistente de Activación CID — CDKeys Perú</b>\n\n` +
+            `📸 <b>Por Foto:</b> Envíame una foto clara de la pantalla de activación (OCR automático).\n` +
+            `📝 <b>Por Texto:</b> Escribe o pega los 63 dígitos del Installation ID (IID).\n` +
+            `⚡ <b>Comando:</b> <code>/cid &lt;IID&gt;</code>\n` +
+            `💰 <b>Tu Saldo:</b> /balance\n` +
+            `🔑 <b>Verificar Clave:</b> <code>/check &lt;XXXXX-XXXXX-XXXXX-XXXXX-XXXXX&gt;</code>\n\n`;
+        if (admin) {
+            msg += `👑 <b>Comandos de Administrador:</b>\n` +
+                `🎟️ <code>/pedido [n]</code> — Crear pedido con [n] créditos para WhatsApp\n` +
+                `📋 <code>/pedidos</code> — Ver últimos pedidos y saldo restante\n` +
+                `➕ <code>/addcredits &lt;id&gt; &lt;n&gt;</code> — Asignar créditos a usuario Telegram\n` +
+                `📊 <code>/stats</code> — Estadísticas globales\n` +
+                `⚙️ <code>/systemstatus</code> — Estado del servidor y motor Batch\n` +
+                `🔄 <code>/restart</code> — Reiniciar el bot\n`;
+        }
+        ctx.reply(msg, { parse_mode: 'HTML' });
+    });
+
+    bot.command(['cid', 'activar', 'getcid'], async (ctx) => {
+        const text = ctx.message.text || '';
+        const parts = text.split(/\s+/).slice(1).join(' ').trim();
+        const digits = parts.replace(/\D/g, '');
+        
+        if (digits.length >= 54) {
+            return await handleDirectIID(ctx, parts);
+        }
+        
+        return ctx.reply(
+            '🔑 <b>Obtención de Confirmation ID (CID)</b>\n\n' +
+            'Uso: <code>/cid &lt;IID de 63 dígitos&gt;</code>\n\n' +
+            '💡 <i>Ejemplo:</i>\n' +
+            '<code>/cid 3653063 3391384 3605555 1079123 5278526 9415510 9640786 1735154 8663603</code>\n\n' +
+            '📸 <i>También puedes enviarme directamente la captura o escribir los 63 dígitos sin ningún comando.</i>',
+            { parse_mode: 'HTML' }
+        );
     });
 
     const PID_CHECKER_URL = process.env.PID_CHECKER_URL || 'http://localhost:8080';
@@ -542,13 +586,16 @@ function startBot() {
     // ============================================================
     bot.on('photo', async (ctx) => {
         const tgId = String(ctx.from.id);
+        const isUserAdmin = isAdmin(tgId);
         let user = db.findUserByTelegram(tgId);
         if (!user) user = db.createUser({ telegram_id: tgId, telegram_username: ctx.from.username });
-        if (user.balance <= 0) return ctx.reply('❌ Sin créditos. Contacta al admin.');
+        if (!isUserAdmin && user.balance <= 0) return ctx.reply('❌ Sin créditos. Contacta al admin.');
 
-        // Rate limit
-        const rl = checkRateLimit(tgId);
-        if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
+        // Rate limit (admins bypass rate limit)
+        if (!isUserAdmin) {
+            const rl = checkRateLimit(tgId);
+            if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
+        }
 
         const startTime = Date.now();
         const msg = await ctx.reply('⏳ [00s] Descargando imagen de Telegram...', { parse_mode: 'HTML' });
@@ -616,8 +663,8 @@ function startBot() {
             const secs = (elapsed / 1000).toFixed(0).padStart(2, '0');
 
             if (result.success) {
-                db.debitCredit(user.id);
-                const bal = db.getBalance(user.id);
+                if (!isUserAdmin) db.debitCredit(user.id);
+                const bal = isUserAdmin ? '👑 Ilimitado (Admin)' : `${db.getBalance(user.id)} CIDs`;
                 const cidStr = formatCID(result.cid);
                 db.logTransaction(user.id, 'telegram', result.iid, cidStr, 'success', elapsed, result.strategy);
                 
@@ -636,7 +683,7 @@ function startBot() {
                     `🔑 <b>@CdKeysPeru</b>\n\n` +
                     `<b>IID:</b>\n<code>${formatIID(result.iid)}</code>\n\n` +
                     `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
-                    `<i>💰 -1 CID | Balance: ${bal} | ${timingStr}</i>\n` +
+                    `<i>💰 Saldo: ${bal} | ${timingStr}</i>\n` +
                     `<i>🤖 Resuelto vía: ${result.backendMethod || 'Desconocido'} (OCR: ${result.strategy || result.method || 'v3.3 Turbo'})</i>`,
                     { parse_mode: 'HTML' }
                 );
@@ -672,9 +719,8 @@ function startBot() {
     // ============================================================
     // TEXTO (IID directo) — Con contador en tiempo real y progreso
     // ============================================================
-    bot.on('text', async (ctx) => {
-        if (ctx.message.text.startsWith('/')) return;
-        const digits = ctx.message.text.replace(/\D/g, '');
+    async function handleDirectIID(ctx, rawText) {
+        const digits = rawText.replace(/\D/g, '');
         
         // Feedback para texto que parece un IID pero es muy corto
         if (digits.length >= 20 && digits.length < 54) {
@@ -688,13 +734,16 @@ function startBot() {
         if (digits.length < 54) return; // Ignorar mensajes no relevantes
 
         const tgId = String(ctx.from.id);
+        const isUserAdmin = isAdmin(tgId);
         let user = db.findUserByTelegram(tgId);
         if (!user) user = db.createUser({ telegram_id: tgId, telegram_username: ctx.from.username });
-        if (user.balance <= 0) return ctx.reply('❌ Sin créditos.');
+        if (!isUserAdmin && user.balance <= 0) return ctx.reply('❌ Sin créditos. Contacta al admin.');
 
-        // Rate limit
-        const rl = checkRateLimit(tgId);
-        if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
+        // Rate limit (admins bypass rate limit)
+        if (!isUserAdmin) {
+            const rl = checkRateLimit(tgId);
+            if (rl.limited) return ctx.reply(`⏳ Espera ${rl.waitSecs}s antes de enviar otra solicitud.`);
+        }
 
         const startTime = Date.now();
         const msg = await ctx.reply(
@@ -734,8 +783,8 @@ function startBot() {
             
             const elapsed = Date.now() - startTime;
             const secs = (elapsed / 1000).toFixed(0).padStart(2, '0');
-            db.debitCredit(user.id);
-            const bal = db.getBalance(user.id);
+            if (!isUserAdmin) db.debitCredit(user.id);
+            const bal = isUserAdmin ? '👑 Ilimitado (Admin)' : `${db.getBalance(user.id)} CIDs`;
             const cidStr = formatCID(cid);
             db.logTransaction(user.id, 'telegram', digits, cidStr, 'success', elapsed, 'direct');
             
@@ -746,7 +795,7 @@ function startBot() {
                 `🔑 <b>@CdKeysPeru</b>\n\n` +
                 `<b>IID:</b>\n<code>${formatIID(digits)}</code>\n\n` +
                 `<b>CID:</b>\n<code>${cidStr}</code>\n\n` +
-                `<i>💰 -1 CID | Balance: ${bal} | ⏱ 00:${secs} (🌐 MS: ${msSecs}s)</i>\n` +
+                `<i>💰 Saldo: ${bal} | ⏱ 00:${secs} (🌐 MS: ${msSecs}s)</i>\n` +
                 `<i>🤖 Resuelto vía: ${backendMethod}</i>`,
                 { parse_mode: 'HTML' }
             );
@@ -761,6 +810,11 @@ function startBot() {
             const errorMsg = errorToMessage(err, digits);
             await ctx.telegram.editMessageText(ctx.chat.id, msg.message_id, null, errorMsg, { parse_mode: 'HTML' });
         }
+    }
+
+    bot.on('text', async (ctx) => {
+        if (ctx.message.text.startsWith('/')) return;
+        await handleDirectIID(ctx, ctx.message.text);
     });
 
     // ============================================================
@@ -850,7 +904,7 @@ function startBot() {
                 // primero limpiamos el webhook/getUpdates viejo
                 if (reconnectAttempts > 0) {
                     try {
-                        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+                        await bot.telegram.deleteWebhook({ drop_pending_updates: false });
                     } catch (e) { /* ignore */ }
                     
                     const delay = Math.min(5000 * Math.pow(2, reconnectAttempts - 1), MAX_RECONNECT_DELAY);
@@ -858,7 +912,7 @@ function startBot() {
                     await new Promise(r => setTimeout(r, delay));
                 }
                 
-                await bot.launch({ dropPendingUpdates: true });
+                await bot.launch({ dropPendingUpdates: false });
                 
                 // Si llegamos aquí, el bot se conectó exitosamente
                 if (reconnectAttempts > 0) {

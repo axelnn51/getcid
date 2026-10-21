@@ -62,13 +62,25 @@
                          alt="CDKeys Perú Logo" class="logo-img">
                 </a>
 
-                <nav class="main-nav">
+                <!-- Acciones Rápidas en Móvil -->
+                <div class="header-mobile-actions">
+                    <a href="#guia-visual-sec" class="mobile-action-pill pill-guide" title="Ver Guía de Activación">📘 Guía</a>
+                    <a href="https://wa.me/51907463313?text=Hola%2C%20necesito%20asistencia%20con%20mi%20activaci%C3%B3n%20telef%C3%B3nica%20CID" 
+                       target="_blank" rel="noopener noreferrer" class="mobile-action-pill pill-wa" title="WhatsApp Asesor">💬 Soporte</a>
+                    <button type="button" class="mobile-nav-toggle" id="mobile-menu-toggle" aria-label="Abrir menú de navegación">
+                        <span class="hamburger-line"></span>
+                        <span class="hamburger-line"></span>
+                        <span class="hamburger-line"></span>
+                    </button>
+                </div>
+
+                <nav class="main-nav" id="main-nav-menu">
                     <a href="https://cdkeysperu.com/" class="nav-link">Inicio</a>
                     <a href="https://cdkeysperu.com/tienda/" class="nav-link">Productos</a>
                     <a href="https://cdkeysperu.com/mi-cuenta/" class="nav-link">Mi Cuenta</a>
                     <a href="https://cdkeysperu.com/blog/" class="nav-link">Blog</a>
                     <a href="#guia-visual-sec" id="nav-btn-guia" class="nav-link nav-active">📘 Guía de Activación</a>
-                    <a href="/admin.html" class="nav-link nav-admin" title="Panel de Administración" aria-label="Admin">⚙️</a>
+                    <a href="/admin.html" class="nav-link nav-admin" title="Panel de Administración" aria-label="Admin">⚙️ Admin</a>
                 </nav>
 
                 <a href="https://wa.me/51907463313?text=Hola%2C%20necesito%20asistencia%20con%20mi%20activaci%C3%B3n%20telef%C3%B3nica%20CID" 
@@ -79,7 +91,7 @@
         </div>
 
         <!-- Sub Navbar Categorías -->
-        <div class="header-cats">
+        <div class="header-cats" id="header-cats-bar">
             <div class="container hcats">
                 <a href="https://cdkeysperu.com/product-category/windows/" class="cat-link">🪟 Windows</a>
                 <a href="https://cdkeysperu.com/product-category/office/" class="cat-link">📊 Office</a>
@@ -97,7 +109,7 @@
         <div class="container layout-3col">
 
             <!-- COLUMNA IZQUIERDA: RECOMENDADOS -->
-            <aside class="products-col" aria-label="Productos recomendados">
+            <aside class="products-col products-col-left" aria-label="Productos recomendados">
                 <div class="col-header">
                     <span class="col-title">Recomendados</span>
                 </div>
@@ -238,6 +250,11 @@
                                     <span>para pegar tu captura directamente!</span>
                                 </div>
 
+                                <div class="mobile-photo-banner">
+                                    <span class="mobile-cam-icon">📸</span>
+                                    <span class="mobile-cam-text"><strong>Toca aquí</strong> para subir o tomar foto de tu pantalla</span>
+                                </div>
+
                                 <div class="dropzone-icon-wrap">📋</div>
                                 <div class="dropzone-main-text" id="dropzone-main-label">
                                     Arrastra una imagen, haz clic para seleccionar o presiona Ctrl + V
@@ -350,7 +367,7 @@
             </div>
 
             <!-- COLUMNA DERECHA: POPULARES -->
-            <aside class="products-col" aria-label="Productos populares">
+            <aside class="products-col products-col-right" aria-label="Productos populares">
                 <div class="col-header">
                     <span class="col-title">Populares</span>
                 </div>
@@ -1347,6 +1364,50 @@
             currentZoom = 1;
             modalImg.style.transform = `scale(${currentZoom})`;
         });
+
+        // Toggle del Menú Móvil
+        const menuToggle = $('mobile-menu-toggle');
+        const mainNav = $('main-nav-menu');
+        if (menuToggle && mainNav) {
+            menuToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                menuToggle.classList.toggle('is-active');
+                mainNav.classList.toggle('nav-open');
+            });
+
+            // Cerrar menú al hacer clic en un enlace
+            mainNav.querySelectorAll('.nav-link').forEach(link => {
+                link.addEventListener('click', () => {
+                    menuToggle.classList.remove('is-active');
+                    mainNav.classList.remove('nav-open');
+                });
+            });
+
+            // Cerrar menú al tocar fuera
+            document.addEventListener('click', (e) => {
+                if (!mainNav.contains(e.target) && !menuToggle.contains(e.target)) {
+                    menuToggle.classList.remove('is-active');
+                    mainNav.classList.remove('nav-open');
+                }
+            });
+        }
+
+        // Soporte Touch Swipe para Lightbox en Móvil
+        if (modal) {
+            let touchStartX = 0;
+            let touchEndX = 0;
+            modal.addEventListener('touchstart', (e) => {
+                touchStartX = e.changedTouches[0].screenX;
+            }, { passive: true });
+            modal.addEventListener('touchend', (e) => {
+                touchEndX = e.changedTouches[0].screenX;
+                const diff = touchStartX - touchEndX;
+                if (Math.abs(diff) > 45) {
+                    if (diff > 0) modalNext();
+                    else modalPrev();
+                }
+            }, { passive: true });
+        }
 
     })();
     </script>

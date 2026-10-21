@@ -11,6 +11,7 @@ frontend/data/
 frontend/uploads/
 CID_PRUEBAS/
 AVANCES/
+avances/
 bin/
 test_runner.bat
 tesseract_setup.exe
