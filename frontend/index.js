@@ -12,6 +12,9 @@ if (!process.env.BOT_TOKEN || process.env.BOT_TOKEN === 'TU_TOKEN_AQUI') {
 if (!process.env.ADMIN_IDS) {
     process.env.ADMIN_IDS = '7233007906';
 }
+const express = require('express');
+const cors = require('cors');
+const multer = require('multer');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const { getConfirmationID, CIDError } = require('./cid_helper');
