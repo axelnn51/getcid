@@ -147,12 +147,26 @@ function syncOrderCredits(orderId, email, totalLicenses) {
 
 /**
  * Obtiene los créditos restantes de un pedido específico.
- * @returns {{ total: number, used: number, remaining: number } | null}
+ * Busca tanto por ID exacto, insensible a mayúsculas, o con prefijo 'CDK-'.
+ * @returns {{ total: number, used: number, remaining: number, orderId: string, email: string } | null}
  */
 function getOrderBalance(orderId) {
-    const row = db.prepare('SELECT * FROM order_credits WHERE order_id = ?').get(String(orderId));
+    if (!orderId) return null;
+    const str = String(orderId).trim();
+    const upper = str.toUpperCase();
+    const prefixed = upper.startsWith('CDK-') ? upper : `CDK-${upper}`;
+
+    const row = db.prepare(`
+        SELECT * FROM order_credits 
+        WHERE order_id = ? 
+           OR UPPER(order_id) = ? 
+           OR order_id = ?
+        LIMIT 1
+    `).get(str, upper, prefixed);
+
     if (!row) return null;
     return {
+        orderId: row.order_id,
         total: row.total_credits,
         used: row.used_credits,
         remaining: row.total_credits - row.used_credits,
@@ -177,11 +191,23 @@ function getEmailBalance(email) {
  * @returns {boolean} true si se pudo consumir
  */
 function consumeOrderCredit(orderId) {
-    const order = db.prepare('SELECT * FROM order_credits WHERE order_id = ?').get(String(orderId));
+    if (!orderId) return false;
+    const str = String(orderId).trim();
+    const upper = str.toUpperCase();
+    const prefixed = upper.startsWith('CDK-') ? upper : `CDK-${upper}`;
+
+    const order = db.prepare(`
+        SELECT * FROM order_credits 
+        WHERE order_id = ? 
+           OR UPPER(order_id) = ? 
+           OR order_id = ?
+        LIMIT 1
+    `).get(str, upper, prefixed);
+
     if (!order || order.used_credits >= order.total_credits) return false;
     
     db.prepare('UPDATE order_credits SET used_credits = used_credits + 1 WHERE order_id = ?')
-        .run(String(orderId));
+        .run(order.order_id);
     return true;
 }
 
@@ -219,20 +245,22 @@ function getOrdersByEmail(email) {
 
 /**
  * Crea o asigna un pedido manual con cierta cantidad de créditos.
- * Si no se especifica un orderId, genera uno aleatorio numérico de 5 dígitos (ej. 68429).
+ * Utiliza por defecto el prefijo oficial 'CDK-XXXXX' (ej. CDK-84920).
+ * Esto garantiza que NUNCA colisione con los IDs puramente numéricos de WooCommerce (ej. 15632).
  */
 function createManualOrder(credits = 1, customOrderId = null, email = 'manual@cdkeysperu.com') {
-    let orderId = customOrderId ? String(customOrderId).trim() : null;
+    let orderId = customOrderId ? String(customOrderId).trim().toUpperCase() : null;
     if (!orderId) {
         let attempts = 0;
         do {
-            orderId = String(Math.floor(20000 + Math.random() * 80000));
+            const randomNum = Math.floor(10000 + Math.random() * 90000);
+            orderId = `CDK-${randomNum}`;
             attempts++;
             if (attempts > 100) {
-                orderId = String(Date.now()).slice(-6);
+                orderId = `CDK-${Date.now().toString().slice(-6)}`;
                 break;
             }
-        } while (db.prepare('SELECT order_id FROM order_credits WHERE order_id = ?').get(orderId));
+        } while (db.prepare('SELECT order_id FROM order_credits WHERE UPPER(order_id) = ?').get(orderId));
     }
 
     const numCredits = Math.max(1, parseInt(credits, 10) || 1);
