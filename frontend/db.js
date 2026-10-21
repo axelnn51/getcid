@@ -217,6 +217,52 @@ function getOrdersByEmail(email) {
     `).all(email.toLowerCase());
 }
 
+/**
+ * Crea o asigna un pedido manual con cierta cantidad de créditos.
+ * Si no se especifica un orderId, genera uno aleatorio numérico de 5 dígitos (ej. 68429).
+ */
+function createManualOrder(credits = 1, customOrderId = null, email = 'manual@cdkeysperu.com') {
+    let orderId = customOrderId ? String(customOrderId).trim() : null;
+    if (!orderId) {
+        let attempts = 0;
+        do {
+            orderId = String(Math.floor(20000 + Math.random() * 80000));
+            attempts++;
+            if (attempts > 100) {
+                orderId = String(Date.now()).slice(-6);
+                break;
+            }
+        } while (db.prepare('SELECT order_id FROM order_credits WHERE order_id = ?').get(orderId));
+    }
+
+    const numCredits = Math.max(1, parseInt(credits, 10) || 1);
+    const userEmail = (email || 'manual@cdkeysperu.com').toLowerCase();
+
+    db.prepare(`
+        INSERT OR REPLACE INTO order_credits (order_id, email, total_credits, used_credits, synced_at)
+        VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+    `).run(orderId, userEmail, numCredits);
+
+    let user = findUserByEmail(userEmail);
+    if (!user) user = createUser({ email: userEmail });
+
+    return {
+        orderId,
+        email: userEmail,
+        totalCredits: numCredits,
+        remaining: numCredits
+    };
+}
+
+function getManualOrders(limit = 10) {
+    return db.prepare(`
+        SELECT order_id, email, total_credits, used_credits, (total_credits - used_credits) as remaining, synced_at
+        FROM order_credits
+        ORDER BY synced_at DESC
+        LIMIT ?
+    `).all(limit);
+}
+
 // ============================================================
 // FUNCIONES DE TRANSACCIONES
 // ============================================================
@@ -270,6 +316,7 @@ module.exports = {
     // Nuevo sistema de créditos por pedido
     syncOrderCredits, getOrderBalance, getEmailBalance,
     consumeOrderCredit, consumeEmailCredit, getOrdersByEmail,
+    createManualOrder, getManualOrders,
     // Transacciones
     logTransaction, getTransactions,
     getAllUsers, getAllTransactions, getStats,

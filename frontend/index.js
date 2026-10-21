@@ -179,11 +179,28 @@ function countLicenses(order) {
  * @returns {{ user, email, balance, isOrder, orderId } | null}
  */
 async function syncAndGetUser(identifier) {
-    const isOrderNumber = /^\d+$/.test(identifier);
+    if (!identifier) return null;
+    const cleanId = String(identifier).trim();
+
+    // 1. Verificar si el pedido ya existe en SQLite (pedidos manuales creados por Telegram o previamente sincronizados)
+    const localOrder = db.getOrderBalance(cleanId);
+    if (localOrder) {
+        let user = db.findUserByEmail(localOrder.email);
+        if (!user) user = db.createUser({ email: localOrder.email });
+        return {
+            user,
+            email: localOrder.email,
+            balance: localOrder.remaining,
+            isOrder: true,
+            orderId: cleanId
+        };
+    }
+
+    const isOrderNumber = /^\d+$/.test(cleanId);
 
     if (isOrderNumber && wc.isConfigured()) {
         // ===== MODO PEDIDO =====
-        const order = await wc.getOrderById(identifier);
+        const order = await wc.getOrderById(cleanId);
         
         if (!order) return null;
         if (order.status !== 'completed') return null;

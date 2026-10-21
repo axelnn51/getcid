@@ -675,6 +675,40 @@ img {
     background: #f0fdf4;
 }
 
+.text-input.input-error {
+    border-color: #ef4444 !important;
+    background: #fff5f5 !important;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15) !important;
+    animation: shakeInput 0.35s ease-in-out;
+}
+
+@keyframes shakeInput {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-4px); }
+    40%, 80% { transform: translateX(4px); }
+}
+
+.field-error-tip {
+    margin-top: 6px;
+    padding: 7px 12px;
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: var(--radius-sm);
+    color: #991b1b;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    animation: fadeInTip 0.2s ease;
+}
+
+@keyframes fadeInTip {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 .field-meta-row {
     display: flex;
     justify-content: space-between;

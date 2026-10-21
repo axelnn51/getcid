@@ -161,7 +161,7 @@ function startBot() {
                 parse_mode: 'Markdown',
                 ...Markup.keyboard([
                     ['📊 Estado Sistema', '👥 Usuarios'],
-                    ['⚙️ Ayuda Admin']
+                    ['🎟️ Generar Pedido', '⚙️ Ayuda Admin']
                 ]).resize()
             };
         }
@@ -205,13 +205,85 @@ function startBot() {
         ctx.reply('Para gestionar usuarios usa los comandos manuales por ahora:\n`/addcredits <id> <n>`', { parse_mode: 'Markdown' });
     });
 
+    bot.hears('🎟️ Generar Pedido', (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return;
+        
+        ctx.reply(
+            '🎟️ <b>Generar Pedido con Créditos (Para ventas externas/WhatsApp)</b>\n\n' +
+            'Selecciona cuántos créditos CID deseas asignarle a este nuevo pedido aleatorio:\n\n' +
+            '💡 <i>O escribe directamente:</i> <code>/pedido &lt;créditos&gt;</code> <i>(ejemplo: /pedido 3)</i>',
+            {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([
+                    [
+                        Markup.button.callback('⚡ 1 Crédito', 'gen_order_1'),
+                        Markup.button.callback('⚡ 2 Créditos', 'gen_order_2'),
+                        Markup.button.callback('⚡ 3 Créditos', 'gen_order_3')
+                    ],
+                    [
+                        Markup.button.callback('🌟 5 Créditos', 'gen_order_5'),
+                        Markup.button.callback('💎 10 Créditos', 'gen_order_10'),
+                        Markup.button.callback('📋 Ver Pedidos', 'list_orders')
+                    ]
+                ])
+            }
+        );
+    });
+
+    // Callback handlers para los botones de generar pedido
+    bot.action(/^gen_order_(\d+)$/, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        
+        const credits = parseInt(ctx.match[1], 10);
+        const order = db.createManualOrder(credits);
+        
+        await ctx.answerCbQuery(`¡Pedido #${order.orderId} creado con ${credits} crédito(s)!`);
+        
+        const clientText = `Hola! Puedes activar tu software en nuestro portal oficial:\n` +
+            `🌐 https://getcid.cdkeysperu.com/\n` +
+            `Ingresa tu N° de pedido: ${order.orderId}\n` +
+            `Cuentas con ${credits} activación(es) disponible(s).`;
+
+        ctx.reply(
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
+            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
+            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
+            `🌐 <b>Portal Web:</b> https://getcid.cdkeysperu.com/\n` +
+            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
+            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
+            `<code>${clientText}</code>`,
+            { parse_mode: 'HTML' }
+        );
+    });
+
+    bot.action('list_orders', (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        ctx.answerCbQuery();
+        
+        const orders = db.getManualOrders(10);
+        if (!orders || orders.length === 0) {
+            return ctx.reply('📦 No hay pedidos registrados aún.');
+        }
+        
+        let msg = '📋 <b>Últimos Pedidos Registrados:</b>\n\n';
+        orders.forEach(o => {
+            const status = o.remaining > 0 ? `🟢 <b>${o.remaining}/${o.total_credits} disponibles</b>` : `🔴 Agotado (${o.used_credits}/${o.total_credits})`;
+            msg += `📦 <code>#${o.order_id}</code> — ${status}\n`;
+        });
+        msg += '\n💡 <i>Usa /pedido &lt;créditos&gt; para generar uno nuevo al instante.</i>';
+        ctx.reply(msg, { parse_mode: 'HTML' });
+    });
+
     bot.hears('⚙️ Ayuda Admin', (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
         ctx.reply(
             '⚙️ *Comandos Admin Disponibles:*\n\n' +
+            '🎟️ *Generar Pedido* — Crear pedido aleatorio con créditos para ventas externas\n' +
             '📊 *Estado Sistema* — Resumen rápido del servidor\n' +
             '👥 *Usuarios* — Ver usuarios actuales\n\n' +
             '*Comandos manuales:*\n' +
+            '/pedido <n> — Crear pedido aleatorio con <n> créditos\n' +
+            '/pedidos — Listar pedidos y créditos restantes\n' +
             '/systemstatus — Estado completo del servidor (JSON)\n' +
             '/addcredits <id> <n> — Agregar créditos a un usuario\n' +
             '/stats — Estadísticas globales',
@@ -297,6 +369,59 @@ function startBot() {
         if (!target) target = db.createUser({ telegram_id: targetId, telegram_username: 'unknown' });
         const bal = db.addCredits(target.id, amount, 'admin_tg', admin ? admin.id : null);
         ctx.reply(`✅ +${amount} créditos → ${targetId}\nBalance: *${bal}*`, { parse_mode: 'Markdown' });
+    });
+
+    bot.command(['pedido', 'generarpedido', 'crearpedido'], (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+        
+        const args = ctx.message.text.split(' ').slice(1);
+        let credits = 1;
+        let customOrderId = null;
+        
+        if (args.length >= 1) {
+            const parsed = parseInt(args[0], 10);
+            if (!isNaN(parsed) && parsed > 0) credits = parsed;
+        }
+        if (args.length >= 2) {
+            customOrderId = args[1].trim();
+        }
+        
+        const order = db.createManualOrder(credits, customOrderId);
+        
+        const clientText = `Hola! Puedes activar tu software en nuestro portal oficial:\n` +
+            `🌐 https://getcid.cdkeysperu.com/\n` +
+            `Ingresa tu N° de pedido: ${order.orderId}\n` +
+            `Cuentas con ${credits} activación(es) disponible(s).`;
+
+        ctx.reply(
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
+            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
+            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
+            `🌐 <b>Portal Web:</b> https://getcid.cdkeysperu.com/\n` +
+            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
+            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
+            `<code>${clientText}</code>`,
+            { parse_mode: 'HTML' }
+        );
+    });
+
+    bot.command(['pedidos', 'listarpedidos'], (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+        
+        const orders = db.getManualOrders(12);
+        if (!orders || orders.length === 0) {
+            return ctx.reply('📦 No hay pedidos registrados aún.');
+        }
+        
+        let msg = '📋 <b>Últimos Pedidos Registrados:</b>\n\n';
+        orders.forEach(o => {
+            const status = o.remaining > 0 ? `🟢 <b>${o.remaining}/${o.total_credits} disponibles</b>` : `🔴 Agotado (${o.used_credits}/${o.total_credits})`;
+            msg += `📦 <code>#${o.order_id}</code> — ${status}\n`;
+        });
+        msg += '\n💡 <i>Usa /pedido &lt;créditos&gt; para crear uno nuevo.</i>';
+        ctx.reply(msg, { parse_mode: 'HTML' });
     });
 
     bot.command('stats', (ctx) => {
@@ -695,9 +820,11 @@ function startBot() {
         { command: 'cid', description: 'Obtener CID (uso: /cid [IID])' },
         { command: 'check', description: 'Revisar Key' },
         { command: 'balance', description: 'Ver tus créditos' },
-        { command: 'addcredits', description: 'Admin: Agregar créditos' },
-        { command: 'systemstatus', description: 'Admin: Ver estado' },
-        { command: 'stats', description: 'Admin: Estadísticas de uso' },
+        { command: 'pedido', description: 'Admin: Crear pedido con créditos' },
+        { command: 'pedidos', description: 'Admin: Listar pedidos y saldo' },
+        { command: 'addcredits', description: 'Admin: Agregar créditos a usuario' },
+        { command: 'systemstatus', description: 'Admin: Ver estado servidor' },
+        { command: 'stats', description: 'Admin: Estadísticas globales' },
         { command: 'restart', description: 'Admin: Reiniciar el bot' }
     ]).catch(err => console.log('⚠️ Error configurando comandos:', err.message));
 

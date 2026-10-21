@@ -27,15 +27,28 @@
   2. **🛡️ Garantía de Licencia Activada (1 Año):** Una vez activado el software en el equipo, el cliente cuenta con 1 año de garantía y soporte oficial (la licencia permanece activa siempre y cuando no se desinstale el programa, no se borre Office ni se formatee la máquina).
   3. **⏳ Garantía de Claves Sin Activar / Guardadas (30 Días):** Para clientes que guardan la clave sin usar, se estipula un plazo máximo de 30 días de garantía desde la compra para canjearla en el portal. Pasados los 30 días, la clave pierde la cobertura de canje inicial.
 
+### 1.4. Corrección de Bug en Validación de Formulario Web
+- **Problema detectado:** Al ingresar o pegar un IID y pulsar *"Obtener ID de Confirmación"* sin haber ingresado aún el correo o pedido, el sistema ejecutaba el manejador global de errores, activando la caja de soporte de WhatsApp (`error-help`) con el IID pegado antes de tiempo, generando confusión.
+- **Solución:** Se implementó validación visual inline inmediata. Ahora, si falta el correo/pedido o el IID, el input correspondiente se enfoca automáticamente, se resalta con borde de advertencia animado (`.input-error`) y muestra un mensaje contextual debajo del campo (`.field-error-tip`). La caja de WhatsApp solo se despliega ante errores reales de activación de Microsoft o checksums inválidos reportados por el servidor.
+
+### 1.5. Generador de Pedidos Aleatorios con Créditos en Telegram (Para Ventas Externas)
+- **Nueva funcionalidad:** Para ventas fuera de la web (WhatsApp, MercadoLibre, etc.), el administrador puede generar al instante un número de pedido aleatorio con la cantidad deseada de activaciones CID:
+  - **Botón en teclado de Admin:** `🎟️ Generar Pedido` con selector rápido interactivo (1, 2, 3, 5, 10 créditos o ver historial).
+  - **Comando:** `/pedido <créditos>` (ej: `/pedido 3` o `/pedido` para 1 por defecto).
+  - **Totalmente funcional en la web:** El número de pedido generado queda registrado inmediatamente en SQLite (`order_credits`) y es 100% canjeable en el portal web `getcid.cdkeysperu.com`, descontando los créditos de forma automática.
+  - **Texto listo para el cliente:** El bot entrega un bloque formateado para copiar con un solo toque y enviárselo directamente al comprador.
+
 ---
 
 ## 2. Archivos Modificados
 
 | Archivo | Tipo de Cambio | Descripción |
 |---|---|---|
-| [`frontend/public/index.html`](frontend/public/index.html) | Estructura & Contenido | Nivelación de columnas, mini links de Canva/Nitro, nueva imagen Parte 2 y banner de garantía/reinicio en rojo |
-| [`frontend/public/style.css`](frontend/public/style.css) | Estilos CSS | Estilos de `.product-mini-link`, eliminación de margen sobrante en `.card-main` y estilos responsivos de `.warranty-alert-card` |
-| [`frontend/public/images/guia-office-pt2.webp`](frontend/public/images/guia-office-pt2.webp) | Assets | Actualización del asset local con la nueva infografía oficial de Parte 2 |
+| [`frontend/public/index.html`](frontend/public/index.html) | Frontend / UI & Lógica | Validación inline de email/IID, eliminación del falso disparo del error de WhatsApp |
+| [`frontend/public/style.css`](frontend/public/style.css) | Estilos CSS | Estilos y animaciones para `.input-error` y `.field-error-tip` |
+| [`frontend/bot.js`](frontend/bot.js) | Telegram Bot | Botón `🎟️ Generar Pedido`, callbacks interactivos y comandos `/pedido` y `/pedidos` |
+| [`frontend/db.js`](frontend/db.js) | Base de Datos | Funciones `createManualOrder` y `getManualOrders` en SQLite |
+| [`frontend/index.js`](frontend/index.js) | API Backend | `syncAndGetUser` prioriza pedidos manuales de SQLite haciéndolos 100% funcionales en la web |
 
 ---
 

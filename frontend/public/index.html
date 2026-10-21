@@ -163,6 +163,9 @@
                         <div class="field-input-wrap">
                             <input type="text" id="email" class="text-input" placeholder="ejemplo@email.com o N° de pedido (ej. 15632)" autocomplete="email">
                         </div>
+                        <div id="email-error-tip" class="field-error-tip hidden">
+                            <span>⚠️ Por favor ingresa tu correo de compra o tu número de pedido para obtener tu CID.</span>
+                        </div>
                         
                         <!-- Estado de Saldo / Créditos -->
                         <div class="balance-status-wrap">
@@ -205,6 +208,9 @@
                             <input type="text" id="iid" class="text-input iid-input" 
                                    placeholder="0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000" 
                                    autocomplete="off" spellcheck="false">
+                        </div>
+                        <div id="iid-error-tip" class="field-error-tip hidden">
+                            <span>⚠️ Por favor ingresa los 63 dígitos de tu Installation ID o pega una captura con Ctrl+V.</span>
                         </div>
                         <div class="field-meta-row">
                             <span>Son 9 bloques de 7 dígitos cada uno (total 63 dígitos)</span>
@@ -777,6 +783,8 @@
         }
 
         $('email').addEventListener('input', () => {
+            $('email').classList.remove('input-error');
+            $('email-error-tip')?.classList.add('hidden');
             triggerBalanceCheck($('email').value.trim());
         });
 
@@ -784,6 +792,8 @@
         // 2. Formateo en tiempo real del Installation ID (9 x 7 dígitos)
         // ============================================================
         $('iid').addEventListener('input', function() {
+            this.classList.remove('input-error');
+            $('iid-error-tip')?.classList.add('hidden');
             const raw = this.value.replace(/\D/g, '').substring(0, 63);
             const formatted = raw.match(/.{1,7}/g)?.join(' ') || raw;
             this.value = formatted;
@@ -839,6 +849,8 @@
         function setUploadedFile(file, isPasted = false) {
             if (!file) return;
             activeFile = file;
+            $('iid').classList.remove('input-error');
+            $('iid-error-tip')?.classList.add('hidden');
 
             try {
                 const dt = new DataTransfer();
@@ -928,15 +940,34 @@
         // 5. Envío de Formulario para Generar CID
         // ============================================================
         $('btn-submit').addEventListener('click', async () => {
-            const email = $('email').value.trim();
-            const iid = $('iid').value.trim();
+            const emailInput = $('email');
+            const iidInput = $('iid');
+            const email = emailInput.value.trim();
+            const iid = iidInput.value.trim();
             const file = activeFile || $('screenshot').files[0];
 
+            // Limpiar errores visuales previos
+            emailInput.classList.remove('input-error');
+            iidInput.classList.remove('input-error');
+            $('email-error-tip')?.classList.add('hidden');
+            $('iid-error-tip')?.classList.add('hidden');
+            $('error-area').classList.add('hidden');
+
+            // Validación amigable en el cliente sin abrir caja de error de WhatsApp
             if (!email) {
-                return showErr('Por favor ingresa tu correo de compra o tu número de pedido.');
+                emailInput.classList.add('input-error');
+                $('email-error-tip')?.classList.remove('hidden');
+                emailInput.focus();
+                emailInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
             }
+
             if (!iid && !file) {
-                return showErr('Ingresa tu ID de Instalación (IID) o pega una captura con Ctrl+V.');
+                iidInput.classList.add('input-error');
+                $('iid-error-tip')?.classList.remove('hidden');
+                iidInput.focus();
+                iidInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
             }
 
             const btn = $('btn-submit');
@@ -1011,7 +1042,9 @@
             const manualIid = $('iid').value.trim();
             const cleanIid = (iid || manualIid).replace(/\D/g, '');
 
-            if (cleanIid && cleanIid.length >= 20) {
+            // Asistencia de WhatsApp solo si hubo un error real de activación en Microsoft o checksum inválido
+            const isParamError = msg && (msg.includes('Por favor') || msg.includes('requerido') || msg.includes('No encontrado') || msg.includes('Sin créditos'));
+            if (!isParamError && cleanIid && cleanIid.length >= 20) {
                 const formatted = cleanIid.match(/.{1,7}/g)?.join(' ') || cleanIid;
                 digitsEl.textContent = formatted;
 
@@ -1022,7 +1055,7 @@
                 };
 
                 const email = $('email').value.trim();
-                const waText = `${formatted}\n\nNecesito ayuda con mi CID (Pedido: ${email})`;
+                const waText = `${formatted}\n\nNecesito ayuda con mi CID (Pedido: ${email || 'Sin pedido'})`;
                 waBtn.href = `https://wa.me/51907463313?text=${encodeURIComponent(waText)}`;
 
                 helpBox.classList.remove('hidden');
