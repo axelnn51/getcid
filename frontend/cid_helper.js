@@ -14,7 +14,29 @@ class CIDError extends Error {
   }
 }
 
+const path = require('path');
+const { execFile } = require('child_process');
+
 const GETCID_SERVICE_URL = process.env.GETCID_SERVICE_URL || 'http://getcid_backend:8000';
+
+const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+
+function runPythonCID(cleanIid) {
+  return new Promise((resolve, reject) => {
+    const scriptPath = path.resolve(__dirname, '..', 'cli_cid.py');
+    execFile(pythonBin, [scriptPath, cleanIid], { timeout: 60000 }, (error, stdout, stderr) => {
+      if (error) return reject(error);
+      try {
+        const lines = stdout.trim().split('\n');
+        const lastLine = lines[lines.length - 1];
+        const data = JSON.parse(lastLine);
+        resolve(data);
+      } catch (e) {
+        reject(new Error(`Error parseando respuesta de Python CLI: ${stdout}`));
+      }
+    });
+  });
+}
 
 async function getConfirmationID(iid) {
   if (!iid || typeof iid !== 'string') {
@@ -32,50 +54,64 @@ async function getConfirmationID(iid) {
       { iid: cleanIid });
   }
 
-  console.log(`[CID] Solicitando CID al backend: ${GETCID_SERVICE_URL}`);
-  
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  let data = null;
+  const urlsToTry = [
+    GETCID_SERVICE_URL,
+    'http://127.0.0.1:8000',
+    'http://localhost:8000'
+  ];
 
-  try {
-    const response = await fetch(`${GETCID_SERVICE_URL}/check_pid`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pid: cleanIid }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-    const data = await response.json();
-
-    if (response.ok && data.success && data.cid) {
-      return { cid: data.cid, method: data.method || 'unknown' };
+  // 1. Intentar vía HTTP endpoints
+  for (const baseUrl of urlsToTry) {
+    if (!baseUrl) continue;
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(`${baseUrl}/check_pid`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pid: cleanIid }),
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (response.ok) {
+        data = await response.json();
+        break;
+      }
+    } catch (e) {
+      // Ignorar fallo y probar siguiente endpoint
     }
-
-    // Clasificación de errores basada en el mensaje de error del backend
-    const errorText = (data.error || data.message || '').toLowerCase();
-    
-    if (data.code === '0x90' || errorText.includes('checksum') || errorText.includes('inválido')) {
-      throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
-    }
-    if (data.code === '0x67' || errorText.includes('bloquead') || errorText.includes('blocked')) {
-      throw new CIDError('KEY_BLOCKED', '🔒 *Clave bloqueada por Microsoft*\nContacta soporte para un reemplazo.', { iid: cleanIid });
-    }
-    if (data.code === '0xD6' || data.code === '0x71' || data.code === '0x7F' || errorText.includes('límite') || errorText.includes('limit') || errorText.includes('excedió')) {
-      throw new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nEsta licencia alcanzó el límite por lote de Microsoft y requiere activación telefónica individual (1 PC).', { iid: cleanIid });
-    }
-    
-    throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${data.error || data.message || 'Respuesta inválida'}`, { iid: cleanIid });
-
-  } catch (err) {
-    clearTimeout(timeout);
-    console.error('[CID_HELPER ERROR] Falló la petición al backend:', err);
-    if (err instanceof CIDError) throw err;
-    if (err.name === 'AbortError') {
-      throw new CIDError('TIMEOUT', '⏱ *Tiempo agotado*\nEl servicio tardó más de 60 segundos. Intenta de nuevo.', { iid: cleanIid });
-    }
-    throw new CIDError('NETWORK_ERROR', `❌ *Error de conexión interna:* No se pudo alcanzar el backend. Detalle: ${err.message}`, { iid: cleanIid });
   }
+
+  // 2. Si fallaron los endpoints HTTP, invocar Python CLI directamente
+  if (!data) {
+    console.log('[CID] Backend HTTP no disponible, ejecutando CLI local de Python...');
+    try {
+      data = await runPythonCID(cleanIid);
+    } catch (err) {
+      console.error('[CID_HELPER CLI ERROR]:', err.message);
+      throw new CIDError('NETWORK_ERROR', `❌ *Error conectando al motor CID:* ${err.message}`, { iid: cleanIid });
+    }
+  }
+
+  if (data && data.success && data.cid) {
+    return { cid: data.cid, method: data.method || 'unknown' };
+  }
+
+  // Clasificación de errores basada en el mensaje de error del backend
+  const errorText = (data?.error || data?.message || data?.error_message || '').toLowerCase();
+  
+  if (data?.code === '0x90' || errorText.includes('checksum') || errorText.includes('inválido')) {
+    throw new CIDError('INVALID_CHECKSUM', '❌ *IID con checksum inválido*\nUn dígito está incorrecto. Verifica cada bloque contra tu pantalla.', { iid: cleanIid });
+  }
+  if (data?.code === '0x67' || errorText.includes('bloquead') || errorText.includes('blocked')) {
+    throw new CIDError('KEY_BLOCKED', '🔒 *Clave bloqueada por Microsoft*\nContacta soporte para un reemplazo.', { iid: cleanIid });
+  }
+  if (data?.code === '0xD6' || data?.code === '0x71' || data?.code === '0x7F' || errorText.includes('límite') || errorText.includes('limit') || errorText.includes('excedió')) {
+    throw new CIDError('TOO_MANY_ACTIVATIONS', '⚠️ *Límite de activaciones alcanzado*\nEsta licencia alcanzó el límite por lote de Microsoft y requiere activación telefónica individual (1 PC).', { iid: cleanIid });
+  }
+  
+  throw new CIDError('MS_ERROR', `❌ *Error al procesar IID*\n${data?.error || data?.message || data?.error_message || 'Respuesta inválida'}`, { iid: cleanIid });
 }
 
 module.exports = { getConfirmationID, CIDError };

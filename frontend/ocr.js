@@ -18,31 +18,65 @@ function safeUnlink(filePath) {
     try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch(e) { /* ignore */ }
 }
 
-async function extractFromBackend(filePath, rescue = false) {
-    try {
-        const form = new FormData();
-        form.append('file', fs.createReadStream(filePath));
-        form.append('rescue', rescue ? 'true' : 'false');
+const path = require('path');
+const { execFile } = require('child_process');
 
-        // fetch nativo en Node 18+ (FormData no es totalmente nativo en node fetch antiguo, 
-        // pero usaremos node-fetch o el fetch global con el form de form-data)
-        const fetch = require('node-fetch'); // Asumiendo que node-fetch está en package.json
-        const response = await fetch(`${GETCID_SERVICE_URL}/extract-iid`, {
-            method: 'POST',
-            body: form
+const pythonBin = process.env.PYTHON_BIN || (process.platform === 'win32' ? 'python' : 'python3');
+
+function runPythonOCR(filePath, rescue = false) {
+    return new Promise((resolve) => {
+        const scriptPath = path.resolve(__dirname, '..', 'cli_ocr.py');
+        execFile(pythonBin, [scriptPath, filePath, rescue ? 'true' : 'false'], { timeout: 45000 }, (error, stdout, stderr) => {
+            if (error) {
+                console.error('[OCR CLI ERROR]', error.message);
+                return resolve({ success: false, error: error.message });
+            }
+            try {
+                const lines = stdout.trim().split('\n');
+                const lastLine = lines[lines.length - 1];
+                const data = JSON.parse(lastLine);
+                resolve(data);
+            } catch (e) {
+                console.error('[OCR CLI PARSE ERROR]', stdout);
+                resolve({ success: false, error: 'Error parseando salida de OCR' });
+            }
         });
-        
-        if (!response.ok) {
-            console.error(`[OCR] Error HTTP del backend: ${response.status}`);
-            return { success: false, error: `HTTP ${response.status}` };
+    });
+}
+
+async function extractFromBackend(filePath, rescue = false) {
+    const urlsToTry = [
+        GETCID_SERVICE_URL,
+        'http://127.0.0.1:8000',
+        'http://localhost:8000'
+    ];
+
+    for (const baseUrl of urlsToTry) {
+        if (!baseUrl) continue;
+        try {
+            const form = new FormData();
+            form.append('file', fs.createReadStream(filePath));
+            form.append('rescue', rescue ? 'true' : 'false');
+
+            const fetch = require('node-fetch');
+            const response = await fetch(`${baseUrl}/extract-iid`, {
+                method: 'POST',
+                body: form,
+                timeout: 20000
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                return data;
+            }
+        } catch (e) {
+            // Probar siguiente endpoint
         }
-        
-        const data = await response.json();
-        return data;
-    } catch (e) {
-        console.error(`[OCR] Error conectando al backend: ${e.message}`);
-        return { success: false, error: e.message };
     }
+
+    // Fallback: Si los servidores HTTP están apagados, ejecutar motor Python CLI directamente
+    console.log('[OCR] Backend HTTP no disponible, ejecutando OCR local de Python vía CLI...');
+    return await runPythonOCR(filePath, rescue);
 }
 
 // Procesar imagen con OCR y obtener CID
