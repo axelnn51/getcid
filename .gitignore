@@ -20,3 +20,7 @@ innoextract.zip
 innoextract_dir/
 eng.traineddata
 local_tests_and_tools/
+# Informes y reportes
+INFORME*.md
+INFORME_*.md
+avances/
