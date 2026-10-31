@@ -161,11 +161,24 @@ app.post('/api/ocr-only', upload.single('image'), async (req, res) => {
     }
 });
 
-const apiLimiter = rateLimit({
-    windowMs: 30 * 60 * 1000, 
-    max: 5, 
+// ============================================================
+// RATE LIMITING INTELIGENTE Y DIFERENCIADO
+// ============================================================
+// 1. Consultas de Saldo: Permisivo (60 req/min) para permitir debounce fluido al escribir.
+// NUNCA bloquea al cliente con un baneo de 30 minutos.
+const balanceLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, 
+    max: 60, 
+    message: { success: false, error: 'Demasiadas consultas de saldo. Por favor espera un momento.' }
+});
+
+// 2. Canje de CID: Diseñado para clientes con compras por lote (10, 20 o 40 licencias).
+// Permite hasta 30 fallos en ventana corta de 10 min antes de pausar temporalmente.
+const portalLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, 
+    max: 30, 
     skipSuccessfulRequests: true,
-    message: { success: false, error: 'Demasiados intentos fallidos desde esta IP. Por favor espera 30 minutos antes de volver a intentar.' }
+    message: { success: false, error: 'Demasiados intentos fallidos continuos desde esta red. Por favor espera unos minutos o contáctanos por WhatsApp.' }
 });
 
 // ============================================================
@@ -191,7 +204,7 @@ function countLicenses(order) {
  */
 async function syncAndGetUser(identifier) {
     if (!identifier) return null;
-    const cleanId = String(identifier).trim();
+    const cleanId = String(identifier).trim().replace(/^#+/, '').trim();
 
     // 1. Verificar si el pedido ya existe en SQLite (pedidos manuales creados por Telegram o previamente sincronizados)
     const localOrder = db.getOrderBalance(cleanId);
@@ -203,7 +216,7 @@ async function syncAndGetUser(identifier) {
             email: localOrder.email,
             balance: localOrder.remaining,
             isOrder: true,
-            orderId: cleanId
+            orderId: localOrder.orderId || cleanId
         };
     }
 
@@ -279,7 +292,7 @@ async function syncAndGetUser(identifier) {
 // ============================================================
 // API: Portal Web con créditos (por email o num de pedido)
 // ============================================================
-app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (req, res) => {
+app.post('/api/portal/getcid', portalLimiter, upload.single('screenshot'), async (req, res) => {
     const { email, iid } = req.body;
     if (!email) return res.status(400).json({ success: false, error: 'Email o Nro de pedido requerido.' });
 
@@ -373,7 +386,7 @@ app.post('/api/portal/getcid', apiLimiter, upload.single('screenshot'), async (r
 // ============================================================
 // API: Verificar balance por email o pedido
 // ============================================================
-app.get('/api/check-balance', apiLimiter, async (req, res) => {
+app.get('/api/check-balance', balanceLimiter, async (req, res) => {
     const identifier = (req.query.email || '').trim().toLowerCase();
     if (!identifier) return res.json({ found: false });
 

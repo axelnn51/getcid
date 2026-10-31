@@ -190,7 +190,7 @@
                             </div>
                             <div id="balance-notfound" class="hidden">
                                 <div class="badge-none">
-                                    <span>⚠️ No se encontró cuenta con este email o pedido.</span>
+                                    <span id="balance-notfound-text">⚠️ No se encontró cuenta con este email o pedido.</span>
                                 </div>
                             </div>
                             <div id="balance-loading" class="hidden">
@@ -787,10 +787,25 @@
                     $('balance-loading').classList.add('hidden');
                     ['balance-badge', 'balance-notfound'].forEach(id => $(id).classList.add('hidden'));
 
+                    const notFoundTextEl = $('balance-notfound-text');
+
+                    if (res.status === 429) {
+                        if (notFoundTextEl) notFoundTextEl.textContent = '⏳ ' + (data.error || 'Demasiadas consultas de saldo. Espera un momento.');
+                        $('balance-notfound').classList.remove('hidden');
+                        return;
+                    }
+
+                    if (!res.ok && data.error) {
+                        if (notFoundTextEl) notFoundTextEl.textContent = '⚠️ ' + data.error;
+                        $('balance-notfound').classList.remove('hidden');
+                        return;
+                    }
+
                     if (data.found) {
                         $('badge-count').textContent = data.balance;
                         $('balance-badge').classList.remove('hidden');
                     } else {
+                        if (notFoundTextEl) notFoundTextEl.textContent = '⚠️ No se encontró cuenta con este email o pedido.';
                         $('balance-notfound').classList.remove('hidden');
                     }
                 } catch(e) {

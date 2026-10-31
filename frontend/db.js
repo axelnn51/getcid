@@ -152,17 +152,20 @@ function syncOrderCredits(orderId, email, totalLicenses) {
  */
 function getOrderBalance(orderId) {
     if (!orderId) return null;
-    const str = String(orderId).trim();
+    let str = String(orderId).trim().replace(/^#+/, '').trim();
     const upper = str.toUpperCase();
     const prefixed = upper.startsWith('CDK-') ? upper : `CDK-${upper}`;
+    const digitsOnly = upper.replace(/\D/g, '');
+    const numPrefixed = digitsOnly ? `CDK-${digitsOnly}` : upper;
 
     const row = db.prepare(`
         SELECT * FROM order_credits 
         WHERE order_id = ? 
            OR UPPER(order_id) = ? 
            OR order_id = ?
+           OR order_id = ?
         LIMIT 1
-    `).get(str, upper, prefixed);
+    `).get(str, upper, prefixed, numPrefixed);
 
     if (!row) return null;
     return {
@@ -192,17 +195,20 @@ function getEmailBalance(email) {
  */
 function consumeOrderCredit(orderId) {
     if (!orderId) return false;
-    const str = String(orderId).trim();
+    let str = String(orderId).trim().replace(/^#+/, '').trim();
     const upper = str.toUpperCase();
     const prefixed = upper.startsWith('CDK-') ? upper : `CDK-${upper}`;
+    const digitsOnly = upper.replace(/\D/g, '');
+    const numPrefixed = digitsOnly ? `CDK-${digitsOnly}` : upper;
 
     const order = db.prepare(`
         SELECT * FROM order_credits 
         WHERE order_id = ? 
            OR UPPER(order_id) = ? 
            OR order_id = ?
+           OR order_id = ?
         LIMIT 1
-    `).get(str, upper, prefixed);
+    `).get(str, upper, prefixed, numPrefixed);
 
     if (!order || order.used_credits >= order.total_credits) return false;
     
