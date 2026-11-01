@@ -241,13 +241,10 @@ function startBot() {
         
         const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
             `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n\n` +
+            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n` +
             `🛒 Producto: `;
 
         ctx.reply(
-            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n` +
-            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto para el cliente (un clic para copiar todo):</b>\n` +
             `<pre>${clientText}</pre>`,
             { parse_mode: 'HTML' }
         );
@@ -442,13 +439,10 @@ function startBot() {
         
         const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
             `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n\n` +
+            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n` +
             `🛒 Producto: ${productName}`;
 
         ctx.reply(
-            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n` +
-            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto para el cliente (un clic para copiar todo):</b>\n` +
             `<pre>${clientText}</pre>`,
             { parse_mode: 'HTML' }
         );
