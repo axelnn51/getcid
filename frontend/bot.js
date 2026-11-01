@@ -239,10 +239,10 @@ function startBot() {
         
         await ctx.answerCbQuery(`¡Pedido #${order.orderId} creado con ${credits} crédito(s)!`);
         
-        const clientText = `Hola! Puedes activar tu software en nuestro portal oficial:\n` +
-            `🌐 https://getcid.cdkeysperu.com/\n` +
-            `Ingresa tu N° de pedido: ${order.orderId}\n` +
-            `Cuentas con ${credits} activación(es) disponible(s).`;
+        const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
+            `💰 Créditos CID: ${credits}\n` +
+            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n\n` +
+            `🛒 Producto: `;
 
         ctx.reply(
             `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
@@ -422,21 +422,31 @@ function startBot() {
         const args = ctx.message.text.split(' ').slice(1);
         let credits = 1;
         let customOrderId = null;
+        let productName = '';
         
         if (args.length >= 1) {
             const parsed = parseInt(args[0], 10);
-            if (!isNaN(parsed) && parsed > 0) credits = parsed;
-        }
-        if (args.length >= 2) {
-            customOrderId = args[1].trim();
+            if (!isNaN(parsed) && parsed > 0) {
+                credits = parsed;
+                if (args.length >= 2) {
+                    if (args[1].toUpperCase().startsWith('CDK-') || /^\d+$/.test(args[1])) {
+                        customOrderId = args[1].trim();
+                        if (args.length >= 3) productName = args.slice(2).join(' ').trim();
+                    } else {
+                        productName = args.slice(1).join(' ').trim();
+                    }
+                }
+            } else {
+                productName = args.join(' ').trim();
+            }
         }
         
         const order = db.createManualOrder(credits, customOrderId);
         
-        const clientText = `Hola! Puedes activar tu software en nuestro portal oficial:\n` +
-            `🌐 https://getcid.cdkeysperu.com/\n` +
-            `Ingresa tu N° de pedido: ${order.orderId}\n` +
-            `Cuentas con ${credits} activación(es) disponible(s).`;
+        const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
+            `💰 Créditos CID: ${credits}\n` +
+            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n\n` +
+            `🛒 Producto: ${productName}`;
 
         ctx.reply(
             `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
