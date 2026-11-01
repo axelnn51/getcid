@@ -250,9 +250,25 @@ function startBot() {
             `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
             `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
             `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
-            `<code>${clientText}</code>`,
-            { parse_mode: 'HTML', disable_web_page_preview: true }
+            `📋 <b>Texto para WhatsApp:</b>\n` +
+            `📦 N° de Pedido: <code>${order.orderId}</code>\n` +
+            `💰 Créditos CID: ${credits}\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
+            `🛒 Producto: `,
+            {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: '📋 Copiar Formato WhatsApp (1 Clic)',
+                                copy_text: { text: clientText }
+                            }
+                        ]
+                    ]
+                }
+            }
         );
     });
 
@@ -454,9 +470,25 @@ function startBot() {
             `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
             `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
             `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
-            `<code>${clientText}</code>`,
-            { parse_mode: 'HTML', disable_web_page_preview: true }
+            `📋 <b>Texto para WhatsApp:</b>\n` +
+            `📦 N° de Pedido: <code>${order.orderId}</code>\n` +
+            `💰 Créditos CID: ${credits}\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
+            `🛒 Producto: ${productName}`,
+            {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            {
+                                text: '📋 Copiar Formato WhatsApp (1 Clic)',
+                                copy_text: { text: clientText }
+                            }
+                        ]
+                    ]
+                }
+            }
         );
     });
 

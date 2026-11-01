@@ -1,14 +1,15 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-01 | Versión: Estable v3.9 | Estado: ✅ PUSHEADO A GITHUB Y OPERATIVO EN PRODUCCIÓN
+> Última Actualización: 2026-11-01 | Versión: Estable v4.0 | Estado: ✅ PUSHEADO A GITHUB Y OPERATIVO EN PRODUCCIÓN
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
 - **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`).
 - **Bot de Telegram:** Generador de pedidos manuales (`/pedido <créditos> [producto]`, `/pedidos`).
 - **Formato Oficial 1-Click WhatsApp:**
-  - Bloque suave en `<code>` nativo de Telegram (sin la caja negra `<pre>`).
-  - Sin previsualización de enlaces invasiva (`disable_web_page_preview: true`).
-  - Copia exactamente en 1 solo clic:
+  - Botón nativo de Telegram `copy_text`: `[ 📋 Copiar Formato WhatsApp (1 Clic) ]` para copia instantánea de las 4 líneas al portapapeles sin cajas negras ni código oscuro.
+  - Mensaje claro, legible y estético con cabeceras `✅ ¡PEDIDO GENERADO CON ÉXITO!`, `<code>${order.orderId}</code>` clickeable individualmente, y plantilla limpia.
+  - Sin previsualizaciones invasivas (`disable_web_page_preview: true`).
+  - Formato exacto copiado al portapapeles:
     ```text
     📦 N° de Pedido: CDK-XXXXX
     💰 Créditos CID: X
