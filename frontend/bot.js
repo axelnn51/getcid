@@ -245,13 +245,10 @@ function startBot() {
             `🛒 Producto: `;
 
         ctx.reply(
-            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
-            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
-            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
-            `🌐 <b>Portal Web:</b> https://getcid.cdkeysperu.com/\n` +
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n` +
             `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
-            `<code>${clientText}</code>`,
+            `📋 <b>Texto para el cliente (un clic para copiar todo):</b>\n` +
+            `<pre>${clientText}</pre>`,
             { parse_mode: 'HTML' }
         );
     });
@@ -449,13 +446,10 @@ function startBot() {
             `🛒 Producto: ${productName}`;
 
         ctx.reply(
-            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
-            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
-            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
-            `🌐 <b>Portal Web:</b> https://getcid.cdkeysperu.com/\n` +
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n` +
             `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
-            `<code>${clientText}</code>`,
+            `📋 <b>Texto para el cliente (un clic para copiar todo):</b>\n` +
+            `<pre>${clientText}</pre>`,
             { parse_mode: 'HTML' }
         );
     });
