@@ -241,12 +241,18 @@ function startBot() {
         
         const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
             `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
             `🛒 Producto: `;
 
         ctx.reply(
-            `<pre>${clientText}</pre>`,
-            { parse_mode: 'HTML' }
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
+            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
+            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
+            `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
+            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
+            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
+            `<code>${clientText}</code>`,
+            { parse_mode: 'HTML', disable_web_page_preview: true }
         );
     });
 
@@ -439,12 +445,18 @@ function startBot() {
         
         const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
             `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web: https://getcid.cdkeysperu.com/\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
             `🛒 Producto: ${productName}`;
 
         ctx.reply(
-            `<pre>${clientText}</pre>`,
-            { parse_mode: 'HTML' }
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
+            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
+            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
+            `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
+            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
+            `📋 <b>Texto listo para enviar a tu cliente (toca para copiar):</b>\n` +
+            `<code>${clientText}</code>`,
+            { parse_mode: 'HTML', disable_web_page_preview: true }
         );
     });
 

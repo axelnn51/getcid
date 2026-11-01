@@ -1,19 +1,22 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-01 | Versión: Estable v3.8 | Estado: ✅ PUSHEADO A GITHUB Y OPERATIVO EN PRODUCCIÓN
+> Última Actualización: 2026-11-01 | Versión: Estable v3.9 | Estado: ✅ PUSHEADO A GITHUB Y OPERATIVO EN PRODUCCIÓN
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
 - **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`).
 - **Bot de Telegram:** Generador de pedidos manuales (`/pedido <créditos> [producto]`, `/pedidos`).
-- **Mensaje Puro 1-Click WhatsApp:** El bot envía ÚNICAMENTE el bloque `<pre>` limpio sin cabeceras ni saludos, permitiendo copiar el 100% del texto con 1 solo clic en Telegram Desktop (PC) y móvil:
-  ```text
-  📦 N° de Pedido: CDK-XXXXX
-  💰 Créditos CID: X
-  🌐 Portal Web: https://getcid.cdkeysperu.com/
-  🛒 Producto: 
-  ```
+- **Formato Oficial 1-Click WhatsApp:**
+  - Bloque suave en `<code>` nativo de Telegram (sin la caja negra `<pre>`).
+  - Sin previsualización de enlaces invasiva (`disable_web_page_preview: true`).
+  - Copia exactamente en 1 solo clic:
+    ```text
+    📦 N° de Pedido: CDK-XXXXX
+    💰 Créditos CID: X
+    🌐 Portal Web CID: https://getcid.cdkeysperu.com/
+    🛒 Producto: 
+    ```
 - **Control de Tasa y Balance:** Rate limiters desacoplados (balance permisivo 60 req/min vs portal 30 fallos/10 min). Normalización integral de códigos de pedido (`CDK-XXXXX`, `#CDK-XXXXX`, dígitos directos).
-- **Git Push:** Sincronizado exitosamente a `https://github.com/axelnn51/getcid.git` (commit `be05c6b`).
+- **Git Push:** Sincronizado a `https://axelnn51@github.com/axelnn51/getcid.git`.
 
 ---
 
@@ -36,15 +39,16 @@
      2) `/api/portal/getcid` ampliado a `portalLimiter` con hasta 30 fallos en 10 min.
      3) Frontend `index.html` distingue HTTP 429 / errores de red de un `found: false` real, mostrando mensajes contextuales precisos.
      4) Normalización robusta en `db.js` y `index.js` soportando `#`, prefijos numéricos o espacios accidentales.
-5. **Copia Incompleta en PC por Texto Mixto y Falta de Bloque `<pre>`:**
-   - *Causa:* El bot enviaba texto plano mixto con solo el ID en `<code>` y un bloque inferior largo. En Telegram Desktop de PC, hacer clic copiaba exclusivamente el ID aislado.
-   - *Solución:* El mensaje entero enviado por el bot es un bloque único `<pre>` con únicamente las 4 líneas requeridas. Al hacer un clic en PC o móvil, copia todo el bloque de inmediato.
+5. **Copia Incompleta en PC por Texto Mixto y Bloque `<pre>` Rígido:**
+   - *Causa:* El bloque `<pre>` generaba una caja negra rígida con cabecera "copy" poco estética.
+   - *Solución:* Se usa `<code>` multilínea integrado en el estilo nativo de Telegram, con `disable_web_page_preview: true` para suprimir la tarjeta de enlace que ocupaba media pantalla. El bloque copia fielmente las 4 líneas solicitadas con `Portal Web CID:`.
 6. **Conflicto de Credenciales Git en Windows (Colisión entre `cdkeysperu-com` y `axelnn51`):**
    - *Causa:* En Windows Credential Manager existían dos credenciales para GitHub: una de `cdkeysperu-com` y otra de `axelnn51`. Git intentaba autenticar con `cdkeysperu-com`, el cual no tenía permisos sobre `axelnn51/getcid`, recibiendo HTTP 401 y congelando el push en subshells sin GUI.
    - *Solución:* Configurar explícitamente `remote.origin.url` con `https://axelnn51@github.com/axelnn51/getcid.git` y `git config credential.username "axelnn51"`. Git selecciona de inmediato la credencial correcta de `axelnn51` y el push completa en 2 segundos.
 
 ### ❌ Caminos Técnicos Descartados (Prohibido reintentar)
-- **Descartado:** Incluir cabeceras con `<code>` individual para el ID (provoca que en PC solo se copie el ID).
+- **Descartado:** Usar bloque `<pre>` aislado (genera recuadro negro poco estético en Telegram Desktop con barra superior de depuración).
+- **Descartado:** Permitir previsualizaciones de enlaces web en el bot (la tarjeta de cdkeysperu satura visualmente el chat).
 - **Descartado:** Compartir un rate limiter de fallos de generación CID con el endpoint de consulta de balance (bloquea la lectura de saldos legítimos).
 - **Descartado:** Asumir que cualquier respuesta sin `data.found === true` significa que la orden no existe (confunde rate limits 429 y errores de red con cuentas inexistentes).
 - **Descartado:** Dejar que Git resuelva automáticamente la cuenta de GitHub en Windows si coexisten credenciales de varias organizaciones.
