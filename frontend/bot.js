@@ -184,6 +184,41 @@ function startBot() {
         return { credits, customOrderId, productName };
     }
 
+    function buildFullGuideText(guideUrl) {
+        return (
+            `📥 *GUÍA DE INSTALACIÓN Y DESCARGA*\n\n` +
+            `👉 ${guideUrl}\n\n` +
+            `🔐 *ACTIVACIÓN*\n` +
+            `Ingresa al portal CID y utiliza tu N.º de pedido para generar tu código de activación (CID).\n\n` +
+            `⚠️ Aplica para Office Pro Plus 2016–2024.\n\n` +
+            `💬 ¿Necesitas ayuda? Escríbenos, estamos para asistirte. 😊`
+        );
+    }
+
+    function buildCompactGuideText(guideUrl) {
+        return (
+            `📥 *GUÍA DE INSTALACIÓN Y DESCARGA*\n\n` +
+            `👉 ${guideUrl}\n\n` +
+            `🔐 *ACTIVACIÓN*\n` +
+            `Ingresa al portal CID y usa tu N.º de pedido.\n\n` +
+            `⚠️ Aplica Office Pro Plus 2016–2024.\n` +
+            `💬 ¿Necesitas ayuda? Escríbenos 😊`
+        );
+    }
+
+    function buildStockStatusLine(presetCode, credits, keysCount, stockRemaining) {
+        if (!presetCode) return '';
+        if (keysCount === credits) {
+            const lowWarn = stockRemaining === 0 ? ' ⚠️ <i>(¡Última key! Stock en 0)</i>' : '';
+            return `🗝️ <b>Stock (/pedido${escapeHtml(presetCode)}):</b> ${keysCount} asignada(s) · Restantes: <b>${stockRemaining}</b>${lowWarn}\n`;
+        }
+        if (keysCount > 0) {
+            const missing = credits - keysCount;
+            return `⚠️ <b>Stock parcial (/pedido${escapeHtml(presetCode)}):</b> se asignaron <b>${keysCount}/${credits}</b> (coloca ${missing} manual). Restantes: <b>0</b>\n`;
+        }
+        return `⚠️ <b>Sin stock local (/pedido${escapeHtml(presetCode)}):</b> coloca la key manualmente.\n`;
+    }
+
     function buildManualOrderReply({ orderId, credits, productName = '', keys = [], presetCode = null, stockRemaining = null }) {
         const baseLines =
             `📦 N° de Pedido: ${orderId}\n` +
@@ -198,23 +233,11 @@ function startBot() {
             } else if (keys.length > 1) {
                 clientText += `\n🔑 Keys:\n${keys.join('\n')}`;
             } else {
-                // Sin stock: salto de línea listo para pegar/escribir la key manualmente
-                clientText += `\n`;
+                clientText += `\n🔑 Key: `;
             }
         }
 
-        let stockStatusLine = '';
-        if (presetCode) {
-            if (keys.length === credits) {
-                const lowWarn = stockRemaining === 0 ? ' ⚠️ <i>(¡Última key! Stock en 0)</i>' : '';
-                stockStatusLine = `🗝️ <b>Stock (/pedido${escapeHtml(presetCode)}):</b> ${keys.length} asignada(s) · Restantes: <b>${stockRemaining}</b>${lowWarn}\n`;
-            } else if (keys.length > 0) {
-                const missing = credits - keys.length;
-                stockStatusLine = `⚠️ <b>Stock parcial (/pedido${escapeHtml(presetCode)}):</b> se asignaron <b>${keys.length}/${credits}</b> (coloca ${missing} manual). Restantes: <b>0</b>\n`;
-            } else {
-                stockStatusLine = `⚠️ <b>Sin stock local (/pedido${escapeHtml(presetCode)}):</b> coloca la key manualmente.\n`;
-            }
-        }
+        const stockStatusLine = buildStockStatusLine(presetCode, credits, keys.length, stockRemaining);
 
         let bodyWhatsApp =
             `📦 N° de Pedido: <code>${escapeHtml(orderId)}</code>\n` +
@@ -222,10 +245,14 @@ function startBot() {
             `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
             `🛒 Producto: ${escapeHtml(productName)}`;
 
-        if (presetCode && keys.length === 1) {
-            bodyWhatsApp += `\n🔑 Key: <code>${escapeHtml(keys[0])}</code>`;
-        } else if (presetCode && keys.length > 1) {
-            bodyWhatsApp += `\n🔑 Keys:\n<code>${escapeHtml(keys.join('\n'))}</code>`;
+        if (presetCode) {
+            if (keys.length === 1) {
+                bodyWhatsApp += `\n🔑 Key: <code>${escapeHtml(keys[0])}</code>`;
+            } else if (keys.length > 1) {
+                bodyWhatsApp += `\n🔑 Keys:\n<code>${escapeHtml(keys.join('\n'))}</code>`;
+            } else {
+                bodyWhatsApp += `\n🔑 Key: `;
+            }
         }
 
         const headerProduct = productName
@@ -244,14 +271,13 @@ function startBot() {
             bodyWhatsApp;
 
         const inlineKeyboard = [];
-        // Telegram Bot API limita copy_text.text a máximo 256 caracteres
         if (clientText.length <= 256) {
             inlineKeyboard.push([{
                 text: '📋 Copiar Formato WhatsApp (1 Clic)',
                 copy_text: { text: clientText }
             }]);
         } else {
-            const orderOnly = `${baseLines}\n`;
+            const orderOnly = `${baseLines}\n🔑 Key: `;
             const keysOnly = keys.join('\n');
             if (orderOnly.length <= 256) {
                 inlineKeyboard.push([{
@@ -284,22 +310,118 @@ function startBot() {
         };
     }
 
-    function sendPresetOrder(ctx, preset, rawArgs = '') {
+    async function sendPresetOrder(ctx, preset, rawArgs = '') {
         const args = rawArgs ? rawArgs.trim().split(/\s+/).filter(Boolean) : [];
         const parsed = parseManualOrderArgs(args, preset.default_credits || 1);
         const order = db.createManualOrder(parsed.credits, parsed.customOrderId);
         const popped = db.popKeysFromStock(preset.code, parsed.credits, order.orderId);
 
-        const reply = buildManualOrderReply({
-            orderId: order.orderId,
-            credits: parsed.credits,
-            productName: preset.product_name,
-            keys: popped.keys,
-            presetCode: preset.code,
-            stockRemaining: popped.remaining
+        if (!preset.guide_url) {
+            const reply = buildManualOrderReply({
+                orderId: order.orderId,
+                credits: parsed.credits,
+                productName: preset.product_name,
+                keys: popped.keys,
+                presetCode: preset.code,
+                stockRemaining: popped.remaining
+            });
+            return ctx.reply(reply.text, reply.extra);
+        }
+
+        // Mensaje 1: Resumen administrativo y control de stock
+        const stockStatusLine = buildStockStatusLine(preset.code, parsed.credits, popped.keys.length, popped.remaining);
+        const adminMsg =
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
+            `📦 <b>N° de Pedido:</b> <code>${escapeHtml(order.orderId)}</code>\n` +
+            `💰 <b>Créditos CID:</b> <b>${parsed.credits}</b>\n` +
+            `🛒 <b>Producto:</b> ${escapeHtml(preset.product_name)}\n` +
+            stockStatusLine +
+            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
+            `👇 <i>Copia el mensaje de abajo completo (clic derecho → Copiar texto en PC) o usa los botones:</i>`;
+
+        const adminButtons = popped.remaining === 0 ? [[
+            Markup.button.callback(`📥 Cargar Stock (${preset.code})`, `load_stock_${preset.code}`),
+            Markup.button.callback('🗄️ Ver Stock', 'open_stock')
+        ]] : [];
+
+        await ctx.reply(adminMsg, {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...(adminButtons.length > 0 ? Markup.inlineKeyboard(adminButtons) : {})
         });
 
-        return ctx.reply(reply.text, reply.extra);
+        // Mensaje 2: Plantilla pura unificada lista para cliente en WhatsApp (sin cabeceras admin)
+        const keysPlainLine = popped.keys.length === 1
+            ? `🔑 Key: ${popped.keys[0]}`
+            : (popped.keys.length > 1
+                ? `🔑 Keys:\n${popped.keys.join('\n')}`
+                : `🔑 Key: `);
+
+        const keysHtmlLine = popped.keys.length === 1
+            ? `🔑 Key: <code>${escapeHtml(popped.keys[0])}</code>`
+            : (popped.keys.length > 1
+                ? `🔑 Keys:\n<code>${escapeHtml(popped.keys.join('\n'))}</code>`
+                : `🔑 Key: `);
+
+        const orderAndKeyPlain =
+            `📦 N° de Pedido: ${order.orderId}\n` +
+            `💰 Créditos CID: ${parsed.credits}\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
+            `🛒 Producto: ${preset.product_name}\n` +
+            keysPlainLine;
+
+        const fullGuidePlain = buildFullGuideText(preset.guide_url);
+        const fullUnifiedPlain = `${orderAndKeyPlain}\n\n━━━━━━━━━━━━━━\n\n${fullGuidePlain}`;
+
+        const fullUnifiedHtml =
+            `📦 N° de Pedido: <code>${escapeHtml(order.orderId)}</code>\n` +
+            `💰 Créditos CID: ${parsed.credits}\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
+            `🛒 Producto: ${escapeHtml(preset.product_name)}\n` +
+            `${keysHtmlLine}\n\n` +
+            `━━━━━━━━━━━━━━\n\n` +
+            `${escapeHtml(fullGuidePlain)}`;
+
+        const copyButtonsRow = [];
+        if (orderAndKeyPlain.length <= 256) {
+            copyButtonsRow.push({
+                text: '📋 Copiar Pedido + Key',
+                copy_text: { text: orderAndKeyPlain }
+            });
+        } else {
+            const keysOnly = popped.keys.join('\n');
+            if (keysOnly && keysOnly.length <= 256) {
+                copyButtonsRow.push({
+                    text: `🔑 Copiar ${popped.keys.length} Keys`,
+                    copy_text: { text: keysOnly }
+                });
+            }
+        }
+
+        const compactGuidePlain = buildCompactGuideText(preset.guide_url);
+        if (compactGuidePlain.length <= 256) {
+            copyButtonsRow.push({
+                text: '📘 Copiar Guía',
+                copy_text: { text: compactGuidePlain }
+            });
+        }
+
+        const msg2Rows = [];
+        if (copyButtonsRow.length > 0) msg2Rows.push(copyButtonsRow);
+
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(fullUnifiedPlain)}`;
+        if (waUrl.length <= 2000) {
+            msg2Rows.push([{
+                text: '💬 Enviar Completo por WhatsApp',
+                url: waUrl
+            }]);
+        }
+
+        return ctx.reply(fullUnifiedHtml, {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...(msg2Rows.length > 0 ? { reply_markup: { inline_keyboard: msg2Rows } } : {})
+        });
     }
 
     function buildStockOverviewPayload() {
@@ -610,9 +732,10 @@ function startBot() {
             '🎟️ *Generar Pedido* — Crear pedido aleatorio con créditos o producto rápido\n' +
             '📊 *Estado Sistema* — Resumen rápido del servidor\n' +
             '👥 *Usuarios* — Ver usuarios actuales\n\n' +
-            '*Pedidos y Stock Local (FIFO):*\n' +
-            '/pedido24 [n] — Office Pro Plus LTSC 2024 + key de stock\n' +
-            '/pedido21 [n] — Office Pro Plus 2021 + key de stock\n' +
+            '*Pedidos, Stock Local y Guías:*\n' +
+            '/pedido24 [n] — Office Pro Plus LTSC 2024 + key + guía\n' +
+            '/pedido21 [n] — Office Pro Plus 2021 + key + guía\n' +
+            '/guia24 o /guia21 — Solo enviar guía de instalación\n' +
             '/pedido [n] — Pedido genérico con producto manual\n' +
             '/cargar24 o /cargar21 — Cargar keys (1 por línea/ENTER)\n' +
             '/stock — Ver stock restante y colas FIFO\n' +
@@ -647,8 +770,9 @@ function startBot() {
             `🔑 <b>Verificar Clave:</b> <code>/check &lt;XXXXX-XXXXX-XXXXX-XXXXX-XXXXX&gt;</code>\n\n`;
         if (admin) {
             msg += `👑 <b>Comandos de Administrador:</b>\n` +
-                `🏷️ <code>/pedido24 [n]</code> — Office LTSC 2024 (+ key FIFO)\n` +
-                `🏷️ <code>/pedido21 [n]</code> — Office 2021 (+ key FIFO)\n` +
+                `🏷️ <code>/pedido24 [n]</code> — Office LTSC 2024 (+ key FIFO + guía)\n` +
+                `🏷️ <code>/pedido21 [n]</code> — Office 2021 (+ key FIFO + guía)\n` +
+                `📘 <code>/guia24</code> / <code>/guia21</code> — Solo guía WhatsApp\n` +
                 `🎟️ <code>/pedido [n]</code> — Crear pedido genérico para WhatsApp\n` +
                 `📥 <code>/cargar24</code> / <code>/cargar21</code> — Cargar keys por ENTER\n` +
                 `🗄️ <code>/stock</code> — Ver y administrar colas de keys\n` +
@@ -909,6 +1033,67 @@ function startBot() {
         return ctx.reply(payload.text, payload.extra);
     });
 
+    function sendStandaloneGuide(ctx, preset) {
+        if (!preset || !preset.guide_url) {
+            return ctx.reply(`⚠️ El producto <code>${escapeHtml(preset?.code || '')}</code> no tiene URL de guía configurada.`, { parse_mode: 'HTML' });
+        }
+
+        const fullGuide = buildFullGuideText(preset.guide_url);
+        const compactGuide = buildCompactGuideText(preset.guide_url);
+        const rows = [];
+
+        if (compactGuide.length <= 256) {
+            rows.push([{ text: `📘 Copiar Guía ${preset.code} (1 Clic)`, copy_text: { text: compactGuide } }]);
+        }
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(fullGuide)}`;
+        if (waUrl.length <= 2000) {
+            rows.push([{ text: '💬 Enviar Guía Completa por WhatsApp', url: waUrl }]);
+        }
+
+        return ctx.reply(escapeHtml(fullGuide), {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...(rows.length > 0 ? { reply_markup: { inline_keyboard: rows } } : {})
+        });
+    }
+
+    bot.hears(/^\/guia([a-z0-9_-]+)(?:@\w+)?$/i, (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.reply('❌ No tienes permisos de admin.');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) {
+            return ctx.reply(`⚠️ No existe el producto <code>${escapeHtml(ctx.match[1])}</code>. Usa /guia21 o /guia24.`, { parse_mode: 'HTML' });
+        }
+        return sendStandaloneGuide(ctx, preset);
+    });
+
+    bot.command('guia', (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.reply('❌ No tienes permisos de admin.');
+        const arg = ctx.message.text.split(/\s+/)[1];
+        if (arg) {
+            const preset = db.getProductPreset(arg);
+            if (!preset) return ctx.reply(`⚠️ Producto <code>${escapeHtml(arg)}</code> no encontrado.`, { parse_mode: 'HTML' });
+            return sendStandaloneGuide(ctx, preset);
+        }
+
+        const withGuide = db.getAllProductPresetsWithStock().filter(p => p.guide_url);
+        if (withGuide.length === 0) {
+            return ctx.reply('📘 No hay guías configuradas.');
+        }
+        const rows = withGuide.map(p => [Markup.button.callback(`📘 Guía /pedido${p.code} (${p.product_name})`, `send_guide_${p.code}`)]);
+        return ctx.reply('📘 <b>Selecciona la guía que deseas enviar:</b>', {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard(rows)
+        });
+    });
+
+    bot.action(/^send_guide_([a-z0-9_-]+)$/i, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) return ctx.answerCbQuery('❌ Producto no encontrado');
+        await ctx.answerCbQuery();
+        return sendStandaloneGuide(ctx, preset);
+    });
+
     bot.command('addprod', (ctx) => {
         const tgId = String(ctx.from.id);
         if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
@@ -917,22 +1102,26 @@ function startBot() {
         if (!m) {
             return ctx.reply(
                 '➕ <b>Crear / Editar Producto Rápido</b>\n\n' +
-                'Uso: <code>/addprod &lt;codigo&gt; &lt;Nombre del Producto&gt;</code>\n\n' +
-                '💡 Ejemplo:\n<code>/addprod 11 Windows 11 Pro</code>\n' +
-                'Luego podrás usar <code>/pedido11</code>, <code>/cargar11</code> y <code>/stock11</code>.',
+                'Uso: <code>/addprod &lt;codigo&gt; &lt;Nombre del Producto&gt;</code>\n' +
+                'Opcional con guía: <code>/addprod &lt;codigo&gt; &lt;Nombre&gt; | &lt;url_guia&gt;</code>\n\n' +
+                '💡 Ejemplo:\n<code>/addprod 19 Office Pro Plus 2019 | https://cdkeysperu.com/guias/office/office-2021</code>',
                 { parse_mode: 'HTML' }
             );
         }
 
         try {
-            const preset = db.upsertProductPreset(m[1], m[2], 1);
+            const parts = m[2].split('|').map(s => s.trim());
+            const productName = parts[0];
+            const guideUrl = parts[1] || null;
+            const preset = db.upsertProductPreset(m[1], productName, 1, guideUrl);
+            const guideInfo = preset.guide_url ? `\n• Guía: ${escapeHtml(preset.guide_url)}` : '';
             return ctx.reply(
                 `✅ <b>Producto configurado:</b>\n\n` +
                 `• Comando pedido: <code>/pedido${escapeHtml(preset.code)}</code>\n` +
-                `• Producto: <b>${escapeHtml(preset.product_name)}</b>\n` +
+                `• Producto: <b>${escapeHtml(preset.product_name)}</b>${guideInfo}\n` +
                 `• Cargar stock: <code>/cargar${escapeHtml(preset.code)}</code>\n` +
                 `• Ver cola: <code>/stock${escapeHtml(preset.code)}</code>`,
-                { parse_mode: 'HTML' }
+                { parse_mode: 'HTML', disable_web_page_preview: true }
             );
         } catch (err) {
             return ctx.reply(`❌ ${escapeHtml(err.message)}`, { parse_mode: 'HTML' });
@@ -1401,8 +1590,10 @@ function startBot() {
         { command: 'cid', description: 'Obtener CID (uso: /cid [IID])' },
         { command: 'check', description: 'Revisar Key' },
         { command: 'balance', description: 'Ver tus créditos' },
-        { command: 'pedido24', description: 'Admin: Pedido Office LTSC 2024 + key' },
-        { command: 'pedido21', description: 'Admin: Pedido Office 2021 + key' },
+        { command: 'pedido24', description: 'Admin: Pedido Office LTSC 2024 + key + guía' },
+        { command: 'pedido21', description: 'Admin: Pedido Office 2021 + key + guía' },
+        { command: 'guia24', description: 'Admin: Solo guía Office 2024' },
+        { command: 'guia21', description: 'Admin: Solo guía Office 2021' },
         { command: 'pedido', description: 'Admin: Crear pedido genérico' },
         { command: 'cargar24', description: 'Admin: Cargar keys Office 2024' },
         { command: 'cargar21', description: 'Admin: Cargar keys Office 2021' },

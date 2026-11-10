@@ -72,6 +72,7 @@ db.exec(`
         code TEXT PRIMARY KEY,
         product_name TEXT NOT NULL,
         default_credits INTEGER NOT NULL DEFAULT 1,
+        guide_url TEXT DEFAULT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -87,12 +88,24 @@ db.exec(`
     );
 
     CREATE INDEX IF NOT EXISTS idx_key_stock_lookup ON key_stock(product_code, status, id);
-
-    INSERT OR IGNORE INTO product_presets (code, product_name, default_credits)
-    VALUES
-        ('21', 'Office Pro Plus 2021', 1),
-        ('24', 'Office Pro Plus LTSC 2024', 1);
 `);
+
+// Migración segura para BD existente sin columna guide_url
+const presetCols = db.prepare('PRAGMA table_info(product_presets)').all().map(c => c.name);
+if (!presetCols.includes('guide_url')) {
+    db.exec('ALTER TABLE product_presets ADD COLUMN guide_url TEXT DEFAULT NULL');
+}
+
+db.prepare(`
+    INSERT OR IGNORE INTO product_presets (code, product_name, default_credits, guide_url)
+    VALUES
+        ('21', 'Office Pro Plus 2021', 1, 'https://cdkeysperu.com/guias/office/office-2021'),
+        ('24', 'Office Pro Plus LTSC 2024', 1, 'https://cdkeysperu.com/guias/office/office-2024')
+`).run();
+
+// Rellenar guide_url si los presets 21/24 ya existían de la versión anterior
+db.prepare("UPDATE product_presets SET guide_url = 'https://cdkeysperu.com/guias/office/office-2021' WHERE code = '21' AND guide_url IS NULL").run();
+db.prepare("UPDATE product_presets SET guide_url = 'https://cdkeysperu.com/guias/office/office-2024' WHERE code = '24' AND guide_url IS NULL").run();
 
 // ============================================================
 // FUNCIONES DE USUARIO
@@ -375,28 +388,28 @@ function markOrderUsed(orderId) {
 // ============================================================
 
 function normalizeProductCode(code) {
-    return String(code || '').trim().toLowerCase().replace(/^\/?(pedido|cargar|stock)/i, '');
+    return String(code || '').trim().toLowerCase().replace(/^\/?(pedido|cargar|stock|guia)/i, '');
 }
 
 function getProductPreset(code) {
     const clean = normalizeProductCode(code);
     if (!clean) return null;
-    return db.prepare('SELECT code, product_name, default_credits FROM product_presets WHERE code = ?').get(clean) || null;
+    return db.prepare('SELECT code, product_name, default_credits, guide_url FROM product_presets WHERE code = ?').get(clean) || null;
 }
 
 function getAllProductPresetsWithStock() {
     return db.prepare(`
-        SELECT p.code, p.product_name, p.default_credits,
+        SELECT p.code, p.product_name, p.default_credits, p.guide_url,
                COALESCE(SUM(CASE WHEN k.status = 'available' THEN 1 ELSE 0 END), 0) AS available_count,
                COALESCE(SUM(CASE WHEN k.status = 'used' THEN 1 ELSE 0 END), 0) AS used_count
         FROM product_presets p
         LEFT JOIN key_stock k ON k.product_code = p.code
-        GROUP BY p.code, p.product_name, p.default_credits
+        GROUP BY p.code, p.product_name, p.default_credits, p.guide_url
         ORDER BY p.code ASC
     `).all();
 }
 
-function upsertProductPreset(code, productName, defaultCredits = 1) {
+function upsertProductPreset(code, productName, defaultCredits = 1, guideUrl = null) {
     const clean = normalizeProductCode(code);
     if (!clean || !/^[a-z0-9_-]+$/i.test(clean) || clean === 's') {
         throw new Error('Código de producto inválido (usa ej. 21, 24, 11, win11).');
@@ -404,14 +417,16 @@ function upsertProductPreset(code, productName, defaultCredits = 1) {
     const name = String(productName || '').trim();
     if (!name) throw new Error('Nombre del producto vacío.');
     const credits = Math.max(1, parseInt(defaultCredits, 10) || 1);
+    const cleanGuide = guideUrl ? String(guideUrl).trim() : null;
 
     db.prepare(`
-        INSERT INTO product_presets (code, product_name, default_credits)
-        VALUES (?, ?, ?)
+        INSERT INTO product_presets (code, product_name, default_credits, guide_url)
+        VALUES (?, ?, ?, ?)
         ON CONFLICT(code) DO UPDATE SET
             product_name = excluded.product_name,
-            default_credits = excluded.default_credits
-    `).run(clean, name, credits);
+            default_credits = excluded.default_credits,
+            guide_url = COALESCE(excluded.guide_url, product_presets.guide_url)
+    `).run(clean, name, credits, cleanGuide);
 
     return getProductPreset(clean);
 }

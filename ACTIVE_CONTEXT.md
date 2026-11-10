@@ -1,17 +1,16 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-10 | Versión: Estable v4.1 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
+> Última Actualización: 2026-11-10 | Versión: Estable v4.2 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
-- **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`, `product_presets`, `key_stock`).
+- **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`, `product_presets` con `guide_url`, `key_stock`).
 - **Bot de Telegram:**
   - Generador genérico (`/pedido <créditos> [producto]`, `/pedidos`).
-  - Atajos rápidos con stock local FIFO (`/pedido21` → `Office Pro Plus 2021`, `/pedido24` → `Office Pro Plus LTSC 2024`, ampliable vía `/addprod <cod> <Nombre>`).
+  - Atajos rápidos con stock local FIFO + Guía integrada: `/pedido21` (`Office Pro Plus 2021` + `office-2021`) y `/pedido24` (`Office Pro Plus LTSC 2024` + `office-2024`), ampliable con `/addprod <cod> <Nombre> | [url_guia]`. También comandos independientes `/guia21`, `/guia24` y `/guia`.
   - Cola local FIFO persistente en SQLite (`/app/data/getcid.db` en volumen `./frontend/data`): cargar con `/cargar24`, `/cargar21` o botones de `/stock` (cada `ENTER` = 1 key; permite keys repetidas o únicas; consume 1 key por crédito en estricto orden `ORDER BY id ASC`).
-  - Formato WhatsApp 1-Click:
-    - Con stock: añade `🔑 Key: <key>` (o `🔑 Keys:` si >1) debajo de `🛒 Producto: <Producto>`.
-    - Sin stock: deja línea vacía debajo de `🛒 Producto: <Producto>` para pegar manualmente y alerta en cabecera.
-    - Guard automático de 256 caracteres en `copy_text` (divide en botones separados si un lote supera el límite de Telegram Bot API).
+  - Flujo de entrega WhatsApp para presets con guía (`/pedido21`, `/pedido24`):
+    - **Mensaje 1 (Admin):** Resumen del pedido + stock restante (y botón rápido de recarga si llega a 0).
+    - **Mensaje 2 (Cliente puro):** Mensaje unificado exacto (Pedido + Key FIFO o `🔑 Key: ` vacío si no hay stock + separador + Guía específica 2021/2024), listo para clic derecho → Copiar texto en PC, botones 1-clic separados (`Copiar Pedido + Key` y `Copiar Guía` <=256c) o envío directo completo con `wa.me/?text=`.
 - **Lógica GETCID / OCR:** **100% intacta**, sin modificaciones en `index.js`, `cid_helper.js`, `ocr.js`, `main.py`, `bot.on('photo')` ni `handleDirectIID`.
 - **Git Push:** Sincronizado a `https://axelnn51@github.com/axelnn51/getcid.git`.
 
