@@ -1,8 +1,11 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-10 | Versión: Estable v4.3 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
+> Última Actualización: 2026-11-10 | Versión: Estable v4.4 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
+  - **Guía Visual por Video Vimeo (`1245359068`):** Reemplazó el carrusel antiguo de imágenes en `#guia-visual-sec` con reproductor 16:9 embebido directo en el portal (sin enlaces externos) + modal teatro a pantalla grande (`#video-modal`) y pausa/detención limpia al cerrar.
+  - **Botón `#link-donde-iid` destacado:** Botón azul pulsante de alto contraste `▶️ ¿Dónde encuentro mi IID? Ver Video` encima del campo `#iid` que abre al instante el modal gigante de video sin salir del portal.
+  - **Placeholder `#iid` limpio:** Reemplazado `0000000 0000000...` por `Pega aquí los 63 dígitos de tu IID (ej: 3653063 3391384 ...)` con tipografía legible.
 - **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`, `product_presets` con `guide_url`, `key_stock`).
 - **Bot de Telegram:**
   - Generador genérico (`/pedido <créditos> [producto]`, `/pedidos`): usa botón nativo `copy_text` (`<= 256` caracteres).

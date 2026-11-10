@@ -620,24 +620,35 @@ img {
 }
 
 .field-help-btn {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--primary);
-    background: var(--primary-light);
-    border: 1px solid rgba(37, 99, 235, 0.2);
-    border-radius: 6px;
-    padding: 2px 8px;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #ffffff;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    border: 1.5px solid #60a5fa;
+    border-radius: 8px;
+    padding: 6px 13px;
     cursor: pointer;
     transition: var(--transition);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
+    font-family: var(--font-heading);
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.32);
+    animation: helpVideoPulse 2.6s infinite;
 }
 
 .field-help-btn:hover {
-    background: rgba(37, 99, 235, 0.15);
-    color: var(--primary-hover);
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+    color: #ffffff;
+    border-color: var(--cdk-gold);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.42);
+}
+
+@keyframes helpVideoPulse {
+    0%, 100% { box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28), 0 0 0 0 rgba(37, 99, 235, 0.35); }
+    50% { box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35), 0 0 0 5px rgba(37, 99, 235, 0); }
 }
 
 .field-input-wrap {
@@ -668,6 +679,14 @@ img {
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.8px;
+}
+
+.text-input.iid-input::placeholder {
+    font-family: var(--font-body);
+    font-size: 13.5px;
+    font-weight: 500;
+    letter-spacing: normal;
+    color: #94a3b8;
 }
 
 .text-input.input-success {
@@ -1593,6 +1612,122 @@ img {
 .slider-swipe-tip {
     font-size: 12px;
     color: var(--text-muted);
+}
+
+/* ==========================================================================
+   VIDEO TUTORIAL EMBEBIDO (VIMEO INLINE & PANTALLA GRANDE)
+   ========================================================================== */
+.btn-video-expand {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: #ffffff;
+    border: 1.5px solid #60a5fa;
+    padding: 10px 18px;
+    border-radius: var(--radius-md);
+    font-family: var(--font-heading);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.28);
+}
+
+.btn-video-expand:hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+    border-color: var(--cdk-gold);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+}
+
+.video-guide-wrapper {
+    position: relative;
+    width: 100%;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #090a0f;
+    border: 2px solid #1e293b;
+    box-shadow: 0 14px 36px rgba(15, 23, 42, 0.22);
+}
+
+.video-aspect-box {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000000;
+}
+
+.video-aspect-box iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
+.video-caption-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 4px 0;
+}
+
+.video-quick-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.video-quick-pill {
+    background: #eff6ff;
+    color: #1e40af;
+    border: 1px solid #bfdbfe;
+    border-radius: 20px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.video-modal-frame-wrap {
+    width: min(1120px, 95vw);
+    aspect-ratio: 16 / 9;
+    max-height: 78vh;
+    background: #000000;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85);
+}
+
+.video-modal-frame-wrap iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+}
+
+.btn-video-go-iid {
+    background: var(--cdk-gold);
+    color: #0c0d11;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-family: var(--font-heading);
+    font-size: 12.5px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: var(--transition);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-video-go-iid:hover {
+    background: #ffc453;
+    transform: translateY(-1px);
 }
 
 /* ==========================================================================
@@ -2645,9 +2780,18 @@ img {
     }
 
     .field-help-btn {
-        font-size: 11px;
-        padding: 2px 7px;
-        border-radius: 6px;
+        width: 100%;
+        justify-content: center;
+        font-size: 12.5px;
+        padding: 8px 12px;
+        border-radius: 8px;
+    }
+
+    .btn-video-expand {
+        width: 100%;
+        justify-content: center;
+        font-size: 12.5px;
+        padding: 9px 14px;
     }
 
     /* Inputs Táctiles (16px evita zoom automático en iPhone Safari) */

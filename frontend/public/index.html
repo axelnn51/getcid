@@ -64,7 +64,7 @@
 
                 <!-- Acciones Rápidas en Móvil -->
                 <div class="header-mobile-actions">
-                    <a href="#guia-visual-sec" class="mobile-action-pill pill-guide" title="Ver Guía de Activación">📘 Guía</a>
+                    <a href="#guia-visual-sec" class="mobile-action-pill pill-guide" id="mobile-btn-guia" title="Ver Video Tutorial">🎬 Video</a>
                     <a href="https://wa.me/51907463313?text=Hola%2C%20necesito%20asistencia%20con%20mi%20activaci%C3%B3n%20telef%C3%B3nica%20CID" 
                        target="_blank" rel="noopener noreferrer" class="mobile-action-pill pill-wa" title="WhatsApp Asesor">💬 Soporte</a>
                     <button type="button" class="mobile-nav-toggle" id="mobile-menu-toggle" aria-label="Abrir menú de navegación">
@@ -79,7 +79,7 @@
                     <a href="https://cdkeysperu.com/tienda/" class="nav-link">Productos</a>
                     <a href="https://cdkeysperu.com/mi-cuenta/" class="nav-link">Mi Cuenta</a>
                     <a href="https://cdkeysperu.com/blog/" class="nav-link">Blog</a>
-                    <a href="#guia-visual-sec" id="nav-btn-guia" class="nav-link nav-active">📘 Guía de Activación</a>
+                    <a href="#guia-visual-sec" id="nav-btn-guia" class="nav-link nav-active">🎬 Video Guía</a>
                     <a href="/admin.html" class="nav-link nav-admin" title="Panel de Administración" aria-label="Admin">⚙️ Admin</a>
                 </nav>
 
@@ -97,7 +97,7 @@
                 <a href="https://cdkeysperu.com/product-category/office/" class="cat-link">📊 Office</a>
                 <a href="https://cdkeysperu.com/product-category/antivirus/" class="cat-link">🛡️ Antivirus</a>
                 <a href="https://cdkeysperu.com/contacto/" class="cat-link">💬 Contacto</a>
-                <a href="#guia-visual-sec" class="cat-link highlight" id="cat-link-guia">📸 Ver Infografía Paso a Paso</a>
+                <a href="#guia-visual-sec" class="cat-link highlight" id="cat-link-guia">🎬 Ver Video Tutorial Paso a Paso</a>
             </div>
         </div>
     </header>
@@ -212,13 +212,13 @@
                             <label for="iid" class="field-label">
                                 <span>🔢 Installation ID / ID de Instalación <small style="font-weight:400;color:var(--text-muted);">(9 × 7 dígitos)</small></span>
                             </label>
-                            <a href="#guia-visual-sec" class="field-help-btn" id="link-donde-iid">
-                                <span>❓ ¿Dónde encuentro mi IID? Ver Guía</span>
-                            </a>
+                            <button type="button" class="field-help-btn" id="link-donde-iid" title="Abrir video tutorial en pantalla grande sin salir del portal">
+                                <span>▶️ ¿Dónde encuentro mi IID? Ver Video</span>
+                            </button>
                         </div>
                         <div class="field-input-wrap">
                             <input type="text" id="iid" class="text-input iid-input" 
-                                   placeholder="0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000 0000000" 
+                                   placeholder="Pega aquí los 63 dígitos de tu IID (ej: 3653063 3391384 ...)" 
                                    autocomplete="off" spellcheck="false">
                         </div>
                         <div id="iid-error-tip" class="field-error-tip hidden">
@@ -413,84 +413,43 @@
         </div>
 
         <!-- ====================================================================
-             GUÍA VISUAL Y ESCRITA A PANTALLA COMPLETA (ABARCA EL CENTRO Y LATERALES)
+             VIDEO TUTORIAL Y GUÍA ESCRITA A PANTALLA COMPLETA
              ==================================================================== -->
         <div class="container guide-fullwidth-wrap">
             <section id="guia-visual-sec" class="guides-section guides-section-full">
                 <div class="guides-header">
                     <div>
                         <h2 class="guides-title">
-                            <span>📘 Guía Visual de Activación Telefónica</span>
+                            <span>🎬 Video Tutorial Oficial: Activación Telefónica Paso a Paso</span>
                         </h2>
-                        <span class="guides-hint">👉 Desliza las imágenes horizontalmente, usa las flechas ‹ › o pulsa sobre la imagen para pantalla completa</span>
+                        <span class="guides-hint">▶️ Reproduce el video aquí mismo — mira cómo encontrar tu IID y generar el CID sin salir de esta página</span>
                     </div>
 
-                    <!-- Switcher entre Parte 1 y Parte 2 -->
-                    <div class="guide-part-switcher">
-                        <button type="button" class="guide-part-btn active" id="btn-guide-part-1">
-                            <span>1️⃣ Parte 1: Obtener el Installation ID (IID)</span>
-                        </button>
-                        <button type="button" class="guide-part-btn" id="btn-guide-part-2">
-                            <span>2️⃣ Parte 2: Colocar CID y Finalizar</span>
-                        </button>
+                    <button type="button" class="btn-video-expand" id="btn-open-video-modal">
+                        <span>⛶ Ver Video en Pantalla Grande</span>
+                    </button>
+                </div>
+
+                <!-- Reproductor Vimeo Embebido 16:9 -->
+                <div class="video-guide-wrapper">
+                    <div class="video-aspect-box">
+                        <iframe id="vimeo-inline-player"
+                                src="https://player.vimeo.com/video/1245359068?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479&amp;title=0&amp;byline=0&amp;portrait=0&amp;dnt=1"
+                                allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+                                referrerpolicy="strict-origin-when-cross-origin"
+                                allowfullscreen
+                                loading="lazy"
+                                title="Video Tutorial Oficial GETCID — CDKeys Perú"></iframe>
                     </div>
                 </div>
 
-                <!-- Carrusel / Slider Interactivo Deslizable (en chiquito) -->
-                <div class="guide-slider-wrapper">
-                    <button type="button" class="slider-arrow slider-arrow-prev" id="slider-btn-prev" aria-label="Imagen anterior" title="Parte anterior (◄)">❮</button>
-                    
-                    <div class="guide-slider-viewport" id="guide-slider-viewport">
-                        <div class="guide-slider-track" id="guide-slider-track">
-                            
-                            <!-- Slide 1: Parte 1 -->
-                            <div class="guide-slide" data-slide="0">
-                                <div class="infographic-wrapper" id="infographic-part1" title="Clic para ampliar en pantalla completa">
-                                    <img src="images/guia-office-pt1.webp" 
-                                         onerror="this.onerror=null; this.src='https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt1.png';" 
-                                         alt="Guía de Activación Telefónica Office Parte 1 - Obtener Installation ID" 
-                                         class="infographic-img" loading="lazy">
-                                    <div class="infographic-overlay">
-                                        <div>
-                                            <span class="slide-badge">PARTE 1 DE 2</span>
-                                            <div class="slide-overlay-text">Coloca tu licencia, abre el asistente de activación y obtén el Installation ID (IID)</div>
-                                        </div>
-                                        <span class="btn-zoom-overlay">🔍 Clic para ampliar</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Slide 2: Parte 2 -->
-                            <div class="guide-slide" data-slide="1">
-                                <div class="infographic-wrapper" id="infographic-part2" title="Clic para ampliar en pantalla completa">
-                                    <img src="https://cdkeysperu.com/wp-content/uploads/2026/10/Guiade-activacion-telefonica-de-Office-pt2.png" 
-                                         onerror="this.onerror=null; this.src='images/guia-office-pt2.webp';" 
-                                         alt="Guía de Activación Telefónica Office Parte 2 - Canjear CID y Activar" 
-                                         class="infographic-img" loading="lazy">
-                                    <div class="infographic-overlay">
-                                        <div>
-                                            <span class="slide-badge">PARTE 2 DE 2</span>
-                                            <div class="slide-overlay-text">Obtén el CID generado, ingrésalo en tu pantalla de Office/Windows y finaliza la activación</div>
-                                        </div>
-                                        <span class="btn-zoom-overlay">🔍 Clic para ampliar</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>
+                <div class="video-caption-bar">
+                    <div class="video-quick-pills">
+                        <span class="video-quick-pill">1️⃣ Obtén los 9 bloques de tu IID</span>
+                        <span class="video-quick-pill">2️⃣ Pega el código o foto arriba</span>
+                        <span class="video-quick-pill">3️⃣ Ingresa tu CID (A–H) y reinicia Office</span>
                     </div>
-
-                    <button type="button" class="slider-arrow slider-arrow-next" id="slider-btn-next" aria-label="Imagen siguiente" title="Parte siguiente (►)">❯</button>
-                </div>
-
-                <!-- Paginación y Contador del Slider -->
-                <div class="slider-pagination-bar">
-                    <div class="slider-dots-group">
-                        <button type="button" class="slider-dot active" data-slide="0" aria-label="Ir a Parte 1"></button>
-                        <button type="button" class="slider-dot" data-slide="1" aria-label="Ir a Parte 2"></button>
-                    </div>
-                    <span class="slider-counter-text" id="slider-counter">Parte 1 de 2 • Obtener Installation ID</span>
-                    <span class="slider-swipe-tip">👆 Puedes arrastrar con el mouse o deslizar con el dedo</span>
+                    <span class="slider-swipe-tip">🔒 Reproducción directa dentro del portal</span>
                 </div>
 
                 <!-- PASO A PASO ESCRITO (BREVE Y ENTENDIBLE) -->
@@ -724,33 +683,32 @@
     </footer>
 
     <!-- ====================================================================
-         5. LIGHTBOX MODAL PARA INFOGRAFÍAS (ZOOM HD & SLIDER ◄ ►)
+         5. MODAL PANTALLA GRANDE PARA VIDEO TUTORIAL VIMEO
          ==================================================================== -->
-    <div id="lightbox-modal" class="lightbox-modal" role="dialog" aria-modal="true" aria-label="Visualizador de Guía">
+    <div id="video-modal" class="lightbox-modal" role="dialog" aria-modal="true" aria-label="Video Tutorial de Activación">
         <div class="lightbox-toolbar">
-            <span id="lightbox-title" class="lightbox-title">Guía de Activación Telefónica</span>
+            <span class="lightbox-title">🎬 Video Tutorial: ¿Dónde encuentro mi IID y cómo activar?</span>
             <div class="lightbox-controls">
-                <button type="button" class="btn-lightbox-ctrl" id="btn-zoom-in" title="Acercar">🔍 +</button>
-                <button type="button" class="btn-lightbox-ctrl" id="btn-zoom-out" title="Alejar">🔍 -</button>
-                <button type="button" class="btn-lightbox-ctrl" id="btn-zoom-reset" title="Restablecer tamaño">100%</button>
-                <button type="button" class="btn-lightbox-close" id="btn-lightbox-close" title="Cerrar (Esc)">✕</button>
+                <button type="button" class="btn-lightbox-close" id="btn-video-modal-close" title="Cerrar (Esc)">✕ Cerrar Video</button>
             </div>
         </div>
 
-        <div class="lightbox-viewport" id="lightbox-viewport">
-            <button type="button" class="lightbox-nav-arrow lightbox-prev" id="btn-lightbox-prev" aria-label="Ver parte anterior" title="Parte anterior (◄)">❮</button>
-            <div class="lightbox-img-container" id="lightbox-container">
-                <img id="lightbox-img" class="lightbox-img-full" src="" alt="Infografía en alta definición">
+        <div class="lightbox-viewport" id="video-modal-viewport">
+            <div class="video-modal-frame-wrap">
+                <iframe id="vimeo-modal-player"
+                        src=""
+                        allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media; web-share"
+                        referrerpolicy="strict-origin-when-cross-origin"
+                        allowfullscreen
+                        title="Video Tutorial CDKeys Perú — Pantalla Completa"></iframe>
             </div>
-            <button type="button" class="lightbox-nav-arrow lightbox-next" id="btn-lightbox-next" aria-label="Ver parte siguiente" title="Parte siguiente (►)">❯</button>
         </div>
 
         <div class="lightbox-footer">
-            <div class="lightbox-pills">
-                <button type="button" class="lightbox-pill active" id="lb-pill-1">1️⃣ Parte 1: Obtener IID</button>
-                <button type="button" class="lightbox-pill" id="lb-pill-2">2️⃣ Parte 2: Colocar CID</button>
-            </div>
-            <span class="lightbox-hint">💡 Desliza en pantalla táctil o usa las flechas ◄ ► del teclado</span>
+            <span class="lightbox-hint">💡 Cuando tengas tus 9 bloques de 7 dígitos (IID) o una captura de pantalla, cierra este recuadro para pegarlos arriba.</span>
+            <button type="button" class="btn-video-go-iid" id="btn-video-modal-go-iid">
+                <span>📝 Ya tengo mi IID, ir a pegarlo</span>
+            </button>
         </div>
     </div>
 
@@ -762,7 +720,6 @@
         const $ = id => document.getElementById(id);
 
         let activeFile = null;
-        let currentZoom = 1;
 
         // ============================================================
         // 1. Verificación automática de saldo / pedido (Debounced)
@@ -1099,285 +1056,69 @@
         }
 
         // ============================================================
-        // 6. Navegación Slider Interactivo (Deslizable Chiquito y Ampliado)
+        // 6. Control del Video Tutorial Vimeo (Inline y Pantalla Grande)
         // ============================================================
-        let activeGuideIndex = 0;
-        const guideSlides = [
-            {
-                src: 'images/guia-office-pt1.webp',
-                fallback: 'https://cdkeysperu.com/wp-content/uploads/2026/10/Guia-de-activacion-telefonica-de-Office-pt1.png',
-                title: 'Guía Oficial Parte 1 de 2: Obtener el Installation ID (IID)',
-                counterText: 'Parte 1 de 2 • Obtener Installation ID'
-            },
-            {
-                src: 'https://cdkeysperu.com/wp-content/uploads/2026/10/Guiade-activacion-telefonica-de-Office-pt2.png',
-                fallback: 'images/guia-office-pt2.webp',
-                title: 'Guía Oficial Parte 2 de 2: Colocar CID y Finalizar Activación',
-                counterText: 'Parte 2 de 2 • Colocar CID y Finalizar'
-            }
-        ];
+        const VIMEO_MODAL_SRC = 'https://player.vimeo.com/video/1245359068?autoplay=1&badge=0&autopause=0&player_id=0&app_id=58479&title=0&byline=0&portrait=0&dnt=1';
+        const videoModal = $('video-modal');
+        const videoModalPlayer = $('vimeo-modal-player');
+        const videoInlinePlayer = $('vimeo-inline-player');
 
-        function goToSlide(index) {
-            if (index < 0) index = 0;
-            if (index >= guideSlides.length) index = guideSlides.length - 1;
-            activeGuideIndex = index;
-
-            // Mover pista del carrusel inline
-            const track = $('guide-slider-track');
-            if (track) {
-                track.style.transform = `translateX(-${activeGuideIndex * 50}%)`;
-            }
-
-            // Actualizar botones de pestañas
-            const btn1 = $('btn-guide-part-1');
-            const btn2 = $('btn-guide-part-2');
-            if (btn1 && btn2) {
-                btn1.classList.toggle('active', activeGuideIndex === 0);
-                btn2.classList.toggle('active', activeGuideIndex === 1);
-            }
-
-            // Actualizar dots de paginación
-            document.querySelectorAll('.slider-dot').forEach((dot, idx) => {
-                dot.classList.toggle('active', idx === activeGuideIndex);
-            });
-
-            // Actualizar texto del contador
-            const counter = $('slider-counter');
-            if (counter) {
-                counter.textContent = guideSlides[activeGuideIndex].counterText;
-            }
-
-            // Si el modal lightbox está abierto, actualizarlo también
-            if (modal && modal.classList.contains('is-open')) {
-                updateLightboxContent();
-            }
+        function pauseInlineVideo() {
+            try {
+                videoInlinePlayer?.contentWindow?.postMessage(
+                    JSON.stringify({ method: 'pause' }),
+                    'https://player.vimeo.com'
+                );
+            } catch (e) { /* ignore cross-origin postMessage errors */ }
         }
 
-        // Botones Anterior / Siguiente en el Slider
-        $('slider-btn-prev')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            goToSlide(activeGuideIndex - 1);
-        });
-
-        $('slider-btn-next')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            goToSlide(activeGuideIndex + 1);
-        });
-
-        // Tabs superiores
-        $('btn-guide-part-1')?.addEventListener('click', () => goToSlide(0));
-        $('btn-guide-part-2')?.addEventListener('click', () => goToSlide(1));
-
-        // Dots inferiores
-        document.querySelectorAll('.slider-dot').forEach(dot => {
-            dot.addEventListener('click', function() {
-                const idx = parseInt(this.getAttribute('data-slide'), 10);
-                if (!isNaN(idx)) goToSlide(idx);
-            });
-        });
-
-        // Enlaces de navegación que apuntan a la guía
-        const scrollToGuide = (e) => {
-            e.preventDefault();
-            goToSlide(0);
-            $('guia-visual-sec')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        };
-        $('nav-btn-guia')?.addEventListener('click', scrollToGuide);
-        $('cat-link-guia')?.addEventListener('click', scrollToGuide);
-        $('link-donde-iid')?.addEventListener('click', scrollToGuide);
-
-        // Soporte Swipe Táctil y Arrastre en el Slider Inline ("en chiquito")
-        const sliderViewport = $('guide-slider-viewport');
-        if (sliderViewport) {
-            let startX = 0;
-            let currentX = 0;
-            let isTouching = false;
-
-            // Touch en móviles y tablets
-            sliderViewport.addEventListener('touchstart', (e) => {
-                if (!e.touches || !e.touches[0]) return;
-                startX = e.touches[0].clientX;
-                currentX = startX;
-                isTouching = true;
-            }, { passive: true });
-
-            sliderViewport.addEventListener('touchmove', (e) => {
-                if (!isTouching || !e.touches || !e.touches[0]) return;
-                currentX = e.touches[0].clientX;
-            }, { passive: true });
-
-            sliderViewport.addEventListener('touchend', () => {
-                if (!isTouching) return;
-                isTouching = false;
-                const diff = startX - currentX;
-                if (Math.abs(diff) > 40) {
-                    if (diff > 0) goToSlide(activeGuideIndex + 1);
-                    else goToSlide(activeGuideIndex - 1);
-                }
-            });
-
-            // Arrastre con mouse en desktop
-            let isDragging = false;
-            let dragMoved = false;
-
-            sliderViewport.addEventListener('mousedown', (e) => {
-                if (e.button !== 0) return;
-                isDragging = true;
-                dragMoved = false;
-                startX = e.clientX;
-                currentX = e.clientX;
-            });
-
-            window.addEventListener('mousemove', (e) => {
-                if (!isDragging) return;
-                currentX = e.clientX;
-                if (Math.abs(currentX - startX) > 8) {
-                    dragMoved = true;
-                }
-            });
-
-            window.addEventListener('mouseup', (e) => {
-                if (!isDragging) return;
-                isDragging = false;
-                const diff = startX - currentX;
-                if (dragMoved && Math.abs(diff) > 45) {
-                    if (diff > 0) goToSlide(activeGuideIndex + 1);
-                    else goToSlide(activeGuideIndex - 1);
-                }
-            });
-        }
-
-        // ============================================================
-        // 7. Visualizador Lightbox Modal HD (Deslizable Ampliado)
-        // ============================================================
-        const modal = $('lightbox-modal');
-        const modalImg = $('lightbox-img');
-        const modalTitle = $('lightbox-title');
-
-        function updateLightboxContent() {
-            const slide = guideSlides[activeGuideIndex];
-            modalImg.src = slide.src;
-            modalImg.onerror = function() {
-                this.onerror = null;
-                this.src = slide.fallback;
-            };
-            modalTitle.textContent = slide.title;
-            currentZoom = 1;
-            modalImg.style.transform = `scale(${currentZoom})`;
-
-            $('lb-pill-1')?.classList.toggle('active', activeGuideIndex === 0);
-            $('lb-pill-2')?.classList.toggle('active', activeGuideIndex === 1);
-        }
-
-        function openLightbox(index) {
-            if (typeof index === 'number') activeGuideIndex = index;
-            goToSlide(activeGuideIndex);
-            updateLightboxContent();
-            modal.classList.add('is-open');
+        function openVideoModal() {
+            if (!videoModal || !videoModalPlayer) return;
+            pauseInlineVideo();
+            videoModalPlayer.src = VIMEO_MODAL_SRC;
+            videoModal.classList.add('is-open');
             document.body.style.overflow = 'hidden';
         }
 
-        function closeLightbox() {
-            modal.classList.remove('is-open');
+        function closeVideoModal(focusIid = false) {
+            if (!videoModal) return;
+            videoModal.classList.remove('is-open');
             document.body.style.overflow = '';
+            if (videoModalPlayer) videoModalPlayer.src = '';
+            if (focusIid) {
+                const iidEl = $('iid');
+                iidEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                setTimeout(() => iidEl?.focus(), 350);
+            }
         }
 
-        function modalPrev() {
-            activeGuideIndex = (activeGuideIndex - 1 + guideSlides.length) % guideSlides.length;
-            goToSlide(activeGuideIndex);
-        }
+        const scrollToGuide = (e) => {
+            e.preventDefault();
+            $('guia-visual-sec')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
 
-        function modalNext() {
-            activeGuideIndex = (activeGuideIndex + 1) % guideSlides.length;
-            goToSlide(activeGuideIndex);
-        }
+        $('nav-btn-guia')?.addEventListener('click', scrollToGuide);
+        $('cat-link-guia')?.addEventListener('click', scrollToGuide);
+        $('mobile-btn-guia')?.addEventListener('click', scrollToGuide);
 
-        // Clic en las infografías para abrir modal
-        $('infographic-part1')?.addEventListener('click', () => {
-            openLightbox(0);
+        $('link-donde-iid')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            openVideoModal();
         });
+        $('btn-open-video-modal')?.addEventListener('click', openVideoModal);
+        $('btn-video-modal-close')?.addEventListener('click', () => closeVideoModal(false));
+        $('btn-video-modal-go-iid')?.addEventListener('click', () => closeVideoModal(true));
 
-        $('infographic-part2')?.addEventListener('click', () => {
-            openLightbox(1);
-        });
-
-        // Controles de navegación del Lightbox (◄ y ►)
-        $('btn-lightbox-prev')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            modalPrev();
-        });
-
-        $('btn-lightbox-next')?.addEventListener('click', (e) => {
-            e.stopPropagation();
-            modalNext();
-        });
-
-        // Pestañas inferiores del modal
-        $('lb-pill-1')?.addEventListener('click', () => goToSlide(0));
-        $('lb-pill-2')?.addEventListener('click', () => goToSlide(1));
-
-        // Soporte Swipe táctil en el modal Lightbox ("cuando las amplias")
-        const lbViewport = $('lightbox-viewport');
-        if (lbViewport) {
-            let lbStartX = 0;
-            let lbCurrentX = 0;
-            let lbSwiping = false;
-
-            lbViewport.addEventListener('touchstart', (e) => {
-                if (!e.touches || !e.touches[0]) return;
-                lbStartX = e.touches[0].clientX;
-                lbCurrentX = lbStartX;
-                lbSwiping = true;
-            }, { passive: true });
-
-            lbViewport.addEventListener('touchmove', (e) => {
-                if (!lbSwiping || !e.touches || !e.touches[0]) return;
-                lbCurrentX = e.touches[0].clientX;
-            }, { passive: true });
-
-            lbViewport.addEventListener('touchend', () => {
-                if (!lbSwiping) return;
-                lbSwiping = false;
-                const diff = lbStartX - lbCurrentX;
-                if (Math.abs(diff) > 40) {
-                    if (diff > 0) modalNext();
-                    else modalPrev();
-                }
-            });
-        }
-
-        // Controles de zoom y teclado en el modal
-        $('btn-lightbox-close')?.addEventListener('click', closeLightbox);
-        modal?.addEventListener('click', (e) => {
-            if (e.target === modal || e.target.classList.contains('lightbox-viewport') || e.target.classList.contains('lightbox-img-container')) {
-                closeLightbox();
+        videoModal?.addEventListener('click', (e) => {
+            if (e.target === videoModal || e.target.id === 'video-modal-viewport') {
+                closeVideoModal(false);
             }
         });
 
         window.addEventListener('keydown', (e) => {
-            if (!modal.classList.contains('is-open')) return;
-            if (e.key === 'Escape') {
-                closeLightbox();
-            } else if (e.key === 'ArrowLeft') {
-                modalPrev();
-            } else if (e.key === 'ArrowRight') {
-                modalNext();
+            if (e.key === 'Escape' && videoModal?.classList.contains('is-open')) {
+                closeVideoModal(false);
             }
-        });
-
-        $('btn-zoom-in')?.addEventListener('click', () => {
-            currentZoom = Math.min(currentZoom + 0.25, 2.5);
-            modalImg.style.transform = `scale(${currentZoom})`;
-        });
-
-        $('btn-zoom-out')?.addEventListener('click', () => {
-            currentZoom = Math.max(currentZoom - 0.25, 0.6);
-            modalImg.style.transform = `scale(${currentZoom})`;
-        });
-
-        $('btn-zoom-reset')?.addEventListener('click', () => {
-            currentZoom = 1;
-            modalImg.style.transform = `scale(${currentZoom})`;
         });
 
         // Toggle del Menú Móvil
@@ -1390,7 +1131,6 @@
                 mainNav.classList.toggle('nav-open');
             });
 
-            // Cerrar menú al hacer clic en un enlace
             mainNav.querySelectorAll('.nav-link').forEach(link => {
                 link.addEventListener('click', () => {
                     menuToggle.classList.remove('is-active');
@@ -1398,30 +1138,12 @@
                 });
             });
 
-            // Cerrar menú al tocar fuera
             document.addEventListener('click', (e) => {
                 if (!mainNav.contains(e.target) && !menuToggle.contains(e.target)) {
                     menuToggle.classList.remove('is-active');
                     mainNav.classList.remove('nav-open');
                 }
             });
-        }
-
-        // Soporte Touch Swipe para Lightbox en Móvil
-        if (modal) {
-            let touchStartX = 0;
-            let touchEndX = 0;
-            modal.addEventListener('touchstart', (e) => {
-                touchStartX = e.changedTouches[0].screenX;
-            }, { passive: true });
-            modal.addEventListener('touchend', (e) => {
-                touchEndX = e.changedTouches[0].screenX;
-                const diff = touchStartX - touchEndX;
-                if (Math.abs(diff) > 45) {
-                    if (diff > 0) modalNext();
-                    else modalPrev();
-                }
-            }, { passive: true });
         }
 
     })();
