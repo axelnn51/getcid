@@ -145,6 +145,267 @@ function startBot() {
         return ADMIN_IDS.includes(String(tgId));
     }
 
+    // Estado temporal para carga interactiva de keys por ENTER (solo admin)
+    const pendingStockUpload = new Map();
+    const STOCK_UPLOAD_TTL_MS = 5 * 60 * 1000;
+
+    function escapeHtml(text) {
+        return String(text ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function parseManualOrderArgs(args, defaultCredits = 1) {
+        let credits = defaultCredits;
+        let customOrderId = null;
+        let productName = '';
+
+        if (args.length >= 1) {
+            const parsed = parseInt(args[0], 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                credits = parsed;
+                if (args.length >= 2) {
+                    if (args[1].toUpperCase().startsWith('CDK-') || /^\d+$/.test(args[1])) {
+                        customOrderId = args[1].trim();
+                        if (args.length >= 3) productName = args.slice(2).join(' ').trim();
+                    } else {
+                        productName = args.slice(1).join(' ').trim();
+                    }
+                }
+            } else if (args[0].toUpperCase().startsWith('CDK-')) {
+                customOrderId = args[0].trim();
+                if (args.length >= 2) productName = args.slice(1).join(' ').trim();
+            } else {
+                productName = args.join(' ').trim();
+            }
+        }
+
+        return { credits, customOrderId, productName };
+    }
+
+    function buildManualOrderReply({ orderId, credits, productName = '', keys = [], presetCode = null, stockRemaining = null }) {
+        const baseLines =
+            `📦 N° de Pedido: ${orderId}\n` +
+            `💰 Créditos CID: ${credits}\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
+            `🛒 Producto: ${productName}`;
+
+        let clientText = baseLines;
+        if (presetCode) {
+            if (keys.length === 1) {
+                clientText += `\n🔑 Key: ${keys[0]}`;
+            } else if (keys.length > 1) {
+                clientText += `\n🔑 Keys:\n${keys.join('\n')}`;
+            } else {
+                // Sin stock: salto de línea listo para pegar/escribir la key manualmente
+                clientText += `\n`;
+            }
+        }
+
+        let stockStatusLine = '';
+        if (presetCode) {
+            if (keys.length === credits) {
+                const lowWarn = stockRemaining === 0 ? ' ⚠️ <i>(¡Última key! Stock en 0)</i>' : '';
+                stockStatusLine = `🗝️ <b>Stock (/pedido${escapeHtml(presetCode)}):</b> ${keys.length} asignada(s) · Restantes: <b>${stockRemaining}</b>${lowWarn}\n`;
+            } else if (keys.length > 0) {
+                const missing = credits - keys.length;
+                stockStatusLine = `⚠️ <b>Stock parcial (/pedido${escapeHtml(presetCode)}):</b> se asignaron <b>${keys.length}/${credits}</b> (coloca ${missing} manual). Restantes: <b>0</b>\n`;
+            } else {
+                stockStatusLine = `⚠️ <b>Sin stock local (/pedido${escapeHtml(presetCode)}):</b> coloca la key manualmente.\n`;
+            }
+        }
+
+        let bodyWhatsApp =
+            `📦 N° de Pedido: <code>${escapeHtml(orderId)}</code>\n` +
+            `💰 Créditos CID: ${credits}\n` +
+            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
+            `🛒 Producto: ${escapeHtml(productName)}`;
+
+        if (presetCode && keys.length === 1) {
+            bodyWhatsApp += `\n🔑 Key: <code>${escapeHtml(keys[0])}</code>`;
+        } else if (presetCode && keys.length > 1) {
+            bodyWhatsApp += `\n🔑 Keys:\n<code>${escapeHtml(keys.join('\n'))}</code>`;
+        }
+
+        const headerProduct = productName
+            ? `🛒 <b>Producto:</b> ${escapeHtml(productName)}\n`
+            : '';
+
+        const text =
+            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
+            `📦 <b>N° de Pedido:</b> <code>${escapeHtml(orderId)}</code>\n` +
+            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
+            `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
+            headerProduct +
+            stockStatusLine +
+            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
+            `📋 <b>Texto para WhatsApp:</b>\n` +
+            bodyWhatsApp;
+
+        const inlineKeyboard = [];
+        // Telegram Bot API limita copy_text.text a máximo 256 caracteres
+        if (clientText.length <= 256) {
+            inlineKeyboard.push([{
+                text: '📋 Copiar Formato WhatsApp (1 Clic)',
+                copy_text: { text: clientText }
+            }]);
+        } else {
+            const orderOnly = `${baseLines}\n`;
+            const keysOnly = keys.join('\n');
+            if (orderOnly.length <= 256) {
+                inlineKeyboard.push([{
+                    text: '📋 Copiar Datos del Pedido (1 Clic)',
+                    copy_text: { text: orderOnly }
+                }]);
+            }
+            if (keysOnly && keysOnly.length <= 256) {
+                inlineKeyboard.push([{
+                    text: `🔑 Copiar ${keys.length} Keys (1 Clic)`,
+                    copy_text: { text: keysOnly }
+                }]);
+            }
+        }
+
+        if (presetCode && stockRemaining === 0) {
+            inlineKeyboard.push([
+                Markup.button.callback(`📥 Cargar Stock (${presetCode})`, `load_stock_${presetCode}`),
+                Markup.button.callback('🗄️ Ver Stock', 'open_stock')
+            ]);
+        }
+
+        return {
+            text,
+            extra: {
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+                ...(inlineKeyboard.length > 0 ? { reply_markup: { inline_keyboard: inlineKeyboard } } : {})
+            }
+        };
+    }
+
+    function sendPresetOrder(ctx, preset, rawArgs = '') {
+        const args = rawArgs ? rawArgs.trim().split(/\s+/).filter(Boolean) : [];
+        const parsed = parseManualOrderArgs(args, preset.default_credits || 1);
+        const order = db.createManualOrder(parsed.credits, parsed.customOrderId);
+        const popped = db.popKeysFromStock(preset.code, parsed.credits, order.orderId);
+
+        const reply = buildManualOrderReply({
+            orderId: order.orderId,
+            credits: parsed.credits,
+            productName: preset.product_name,
+            keys: popped.keys,
+            presetCode: preset.code,
+            stockRemaining: popped.remaining
+        });
+
+        return ctx.reply(reply.text, reply.extra);
+    }
+
+    function buildStockOverviewPayload() {
+        const presets = db.getAllProductPresetsWithStock();
+        if (!presets || presets.length === 0) {
+            return {
+                text: '🗄️ <b>No hay productos configurados.</b>\nUsa <code>/addprod 24 Office Pro Plus LTSC 2024</code>',
+                extra: { parse_mode: 'HTML' }
+            };
+        }
+
+        let text = '🗄️ <b>STOCK LOCAL DE KEYS (FIFO)</b>\n\n';
+        const buttons = [];
+
+        for (const p of presets) {
+            const badge = p.available_count > 0 ? `🟢 <b>${p.available_count} disp.</b>` : `🔴 <b>0 disp.</b>`;
+            text += `• <code>/pedido${escapeHtml(p.code)}</code> — <b>${escapeHtml(p.product_name)}</b>\n`;
+            text += `  Stock: ${badge} | Usadas: ${p.used_count} | Cargar: <code>/cargar${escapeHtml(p.code)}</code>\n\n`;
+            buttons.push([
+                Markup.button.callback(`📥 Cargar ${p.code} (${p.available_count})`, `load_stock_${p.code}`),
+                Markup.button.callback(`👁️ Ver Cola ${p.code}`, `view_stock_${p.code}`)
+            ]);
+        }
+
+        text += '💡 <i>Cada ENTER al cargar cuenta como 1 key y se entregan en orden FIFO.</i>\n';
+        text += '➕ <i>Nuevo producto:</i> <code>/addprod &lt;cod&gt; &lt;Nombre&gt;</code>';
+
+        return {
+            text,
+            extra: {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard(buttons)
+            }
+        };
+    }
+
+    function buildStockQueuePayload(preset) {
+        const queue = db.getStockQueue(preset.code, 15);
+        let text = `📦 <b>Cola FIFO — ${escapeHtml(preset.product_name)}</b> (<code>/pedido${escapeHtml(preset.code)}</code>)\n\n`;
+        text += `🟢 Disponibles: <b>${queue.available}</b> | ✅ Entregadas: <b>${queue.used}</b>\n\n`;
+
+        if (queue.nextKeys.length === 0) {
+            text += '<i>No hay keys disponibles en este producto.</i>\n';
+        } else {
+            text += `<b>Próximas en salir (en orden):</b>\n`;
+            queue.nextKeys.forEach((k, idx) => {
+                text += `${idx + 1}. <code>${escapeHtml(k)}</code>\n`;
+            });
+            if (queue.available > queue.nextKeys.length) {
+                text += `<i>... y ${queue.available - queue.nextKeys.length} más en cola.</i>\n`;
+            }
+        }
+
+        const row1 = [
+            Markup.button.callback(`📥 Cargar ${preset.code}`, `load_stock_${preset.code}`),
+            Markup.button.callback(`⚡ Generar /pedido${preset.code}`, `gen_preset_${preset.code}`)
+        ];
+        const rows = [row1];
+        if (queue.available > 0) {
+            rows.push([
+                Markup.button.callback(`🗑️ Vaciar disponibles (${queue.available})`, `ask_clear_stock_${preset.code}`),
+                Markup.button.callback('🔙 Todo el Stock', 'open_stock')
+            ]);
+        } else {
+            rows.push([Markup.button.callback('🔙 Todo el Stock', 'open_stock')]);
+        }
+
+        return {
+            text,
+            extra: {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard(rows)
+            }
+        };
+    }
+
+    function startPendingStockUpload(ctx, preset) {
+        const tgId = String(ctx.from.id);
+        pendingStockUpload.set(tgId, {
+            code: preset.code,
+            productName: preset.product_name,
+            expiresAt: Date.now() + STOCK_UPLOAD_TTL_MS
+        });
+
+        const currentQueue = db.getStockQueue(preset.code, 1);
+        return ctx.reply(
+            `📥 <b>Cargar Keys — ${escapeHtml(preset.product_name)}</b> (<code>/pedido${escapeHtml(preset.code)}</code>)\n\n` +
+            `Stock actual disponible: <b>${currentQueue.available}</b>\n\n` +
+            `Envía ahora tus keys en un solo mensaje (<b>cada ENTER cuenta como 1 key</b>, se entregarán en ese orden exacto):\n` +
+            `<code>KEY-1\nKEY-2\nKEY-3</code>`,
+            {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancelar carga', 'cancel_stock_upload')]])
+            }
+        );
+    }
+
+    // Limpiar sesión de carga si el admin ejecuta cualquier comando "/"
+    bot.use((ctx, next) => {
+        if (ctx.message?.text?.startsWith('/')) {
+            const tgId = String(ctx.from?.id || '');
+            if (tgId) pendingStockUpload.delete(tgId);
+        }
+        return next();
+    });
+
     // /start
     bot.start((ctx) => {
         const tgId = String(ctx.from.id);
@@ -207,25 +468,37 @@ function startBot() {
 
     bot.hears('🎟️ Generar Pedido', (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return;
-        
+
+        const presets = db.getAllProductPresetsWithStock();
+        const presetButtons = presets.slice(0, 4).map(p =>
+            Markup.button.callback(`🏷️ /pedido${p.code} (${p.available_count})`, `gen_preset_${p.code}`)
+        );
+
+        const keyboardRows = [
+            [
+                Markup.button.callback('⚡ 1 Crédito', 'gen_order_1'),
+                Markup.button.callback('⚡ 2 Créditos', 'gen_order_2'),
+                Markup.button.callback('⚡ 3 Créditos', 'gen_order_3')
+            ],
+            [
+                Markup.button.callback('🌟 5 Créditos', 'gen_order_5'),
+                Markup.button.callback('💎 10 Créditos', 'gen_order_10'),
+                Markup.button.callback('📋 Ver Pedidos', 'list_orders')
+            ]
+        ];
+
+        for (let i = 0; i < presetButtons.length; i += 2) {
+            keyboardRows.push(presetButtons.slice(i, i + 2));
+        }
+        keyboardRows.push([Markup.button.callback('🗄️ Gestionar Stock Local', 'open_stock')]);
+
         ctx.reply(
             '🎟️ <b>Generar Pedido con Créditos (Para ventas externas/WhatsApp)</b>\n\n' +
-            'Selecciona cuántos créditos CID deseas asignarle a este nuevo pedido aleatorio:\n\n' +
-            '💡 <i>O escribe directamente:</i> <code>/pedido &lt;créditos&gt;</code> <i>(ejemplo: /pedido 3)</i>',
+            'Selecciona cuántos créditos CID o un producto rápido con stock FIFO:\n\n' +
+            '💡 <i>Atajos:</i> <code>/pedido21</code>, <code>/pedido24</code> o <code>/pedido &lt;créditos&gt;</code>',
             {
                 parse_mode: 'HTML',
-                ...Markup.inlineKeyboard([
-                    [
-                        Markup.button.callback('⚡ 1 Crédito', 'gen_order_1'),
-                        Markup.button.callback('⚡ 2 Créditos', 'gen_order_2'),
-                        Markup.button.callback('⚡ 3 Créditos', 'gen_order_3')
-                    ],
-                    [
-                        Markup.button.callback('🌟 5 Créditos', 'gen_order_5'),
-                        Markup.button.callback('💎 10 Créditos', 'gen_order_10'),
-                        Markup.button.callback('📋 Ver Pedidos', 'list_orders')
-                    ]
-                ])
+                ...Markup.inlineKeyboard(keyboardRows)
             }
         );
     });
@@ -233,43 +506,83 @@ function startBot() {
     // Callback handlers para los botones de generar pedido
     bot.action(/^gen_order_(\d+)$/, async (ctx) => {
         if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
-        
+
         const credits = parseInt(ctx.match[1], 10);
         const order = db.createManualOrder(credits);
-        
-        await ctx.answerCbQuery(`¡Pedido #${order.orderId} creado con ${credits} crédito(s)!`);
-        
-        const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
-            `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
-            `🛒 Producto: `;
 
-        ctx.reply(
-            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
-            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
-            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
-            `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
-            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto para WhatsApp:</b>\n` +
-            `📦 N° de Pedido: <code>${order.orderId}</code>\n` +
-            `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
-            `🛒 Producto: `,
+        await ctx.answerCbQuery(`¡Pedido #${order.orderId} creado con ${credits} crédito(s)!`);
+
+        const reply = buildManualOrderReply({
+            orderId: order.orderId,
+            credits,
+            productName: ''
+        });
+        ctx.reply(reply.text, reply.extra);
+    });
+
+    bot.action(/^gen_preset_([a-z0-9_-]+)$/i, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) return ctx.answerCbQuery('❌ Producto no encontrado');
+        await ctx.answerCbQuery(`Generando /pedido${preset.code}...`);
+        return sendPresetOrder(ctx, preset, '');
+    });
+
+    bot.action('open_stock', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        await ctx.answerCbQuery();
+        const payload = buildStockOverviewPayload();
+        return ctx.reply(payload.text, payload.extra);
+    });
+
+    bot.action(/^view_stock_([a-z0-9_-]+)$/i, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) return ctx.answerCbQuery('❌ Producto no encontrado');
+        await ctx.answerCbQuery();
+        const payload = buildStockQueuePayload(preset);
+        return ctx.reply(payload.text, payload.extra);
+    });
+
+    bot.action(/^load_stock_([a-z0-9_-]+)$/i, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) return ctx.answerCbQuery('❌ Producto no encontrado');
+        await ctx.answerCbQuery();
+        return startPendingStockUpload(ctx, preset);
+    });
+
+    bot.action(/^ask_clear_stock_([a-z0-9_-]+)$/i, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) return ctx.answerCbQuery('❌ Producto no encontrado');
+        await ctx.answerCbQuery();
+        return ctx.reply(
+            `⚠️ ¿Seguro que deseas vaciar todas las keys disponibles de <b>${escapeHtml(preset.product_name)}</b> (<code>/pedido${escapeHtml(preset.code)}</code>)?`,
             {
                 parse_mode: 'HTML',
-                disable_web_page_preview: true,
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            {
-                                text: '📋 Copiar Formato WhatsApp (1 Clic)',
-                                copy_text: { text: clientText }
-                            }
-                        ]
-                    ]
-                }
+                ...Markup.inlineKeyboard([[
+                    Markup.button.callback('🗑️ Sí, vaciar disponibles', `confirm_clear_stock_${preset.code}`),
+                    Markup.button.callback('❌ Cancelar', 'cancel_stock_upload')
+                ]])
             }
         );
+    });
+
+    bot.action(/^confirm_clear_stock_([a-z0-9_-]+)$/i, async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) return ctx.answerCbQuery('❌ Producto no encontrado');
+        const removed = db.clearAvailableStock(preset.code);
+        await ctx.answerCbQuery(`Vaciadas ${removed} keys`);
+        return ctx.reply(`🗑️ Se eliminaron <b>${removed}</b> key(s) disponibles de <b>${escapeHtml(preset.product_name)}</b>.`, { parse_mode: 'HTML' });
+    });
+
+    bot.action('cancel_stock_upload', async (ctx) => {
+        if (!isAdmin(String(ctx.from.id))) return ctx.answerCbQuery('❌ No autorizado');
+        pendingStockUpload.delete(String(ctx.from.id));
+        await ctx.answerCbQuery('Cancelado');
+        return ctx.reply('✅ Operación cancelada.', { parse_mode: 'HTML' });
     });
 
     bot.action('list_orders', (ctx) => {
@@ -294,13 +607,19 @@ function startBot() {
         if (!isAdmin(String(ctx.from.id))) return;
         ctx.reply(
             '⚙️ *Comandos Admin Disponibles:*\n\n' +
-            '🎟️ *Generar Pedido* — Crear pedido aleatorio con créditos para ventas externas\n' +
+            '🎟️ *Generar Pedido* — Crear pedido aleatorio con créditos o producto rápido\n' +
             '📊 *Estado Sistema* — Resumen rápido del servidor\n' +
             '👥 *Usuarios* — Ver usuarios actuales\n\n' +
-            '*Comandos manuales:*\n' +
-            '/pedido <n> — Crear pedido aleatorio con <n> créditos\n' +
-            '/pedidos — Listar pedidos y créditos restantes\n' +
-            '/systemstatus — Estado completo del servidor (JSON)\n' +
+            '*Pedidos y Stock Local (FIFO):*\n' +
+            '/pedido24 [n] — Office Pro Plus LTSC 2024 + key de stock\n' +
+            '/pedido21 [n] — Office Pro Plus 2021 + key de stock\n' +
+            '/pedido [n] — Pedido genérico con producto manual\n' +
+            '/cargar24 o /cargar21 — Cargar keys (1 por línea/ENTER)\n' +
+            '/stock — Ver stock restante y colas FIFO\n' +
+            '/addprod <cod> <Nombre> — Crear nuevo atajo /pedido<cod>\n' +
+            '/pedidos — Listar últimos pedidos y créditos\n\n' +
+            '*Sistema:*\n' +
+            '/systemstatus — Estado completo del servidor\n' +
             '/addcredits <id> <n> — Agregar créditos a un usuario\n' +
             '/stats — Estadísticas globales',
             { parse_mode: 'Markdown' }
@@ -328,7 +647,12 @@ function startBot() {
             `🔑 <b>Verificar Clave:</b> <code>/check &lt;XXXXX-XXXXX-XXXXX-XXXXX-XXXXX&gt;</code>\n\n`;
         if (admin) {
             msg += `👑 <b>Comandos de Administrador:</b>\n` +
-                `🎟️ <code>/pedido [n]</code> — Crear pedido con [n] créditos para WhatsApp\n` +
+                `🏷️ <code>/pedido24 [n]</code> — Office LTSC 2024 (+ key FIFO)\n` +
+                `🏷️ <code>/pedido21 [n]</code> — Office 2021 (+ key FIFO)\n` +
+                `🎟️ <code>/pedido [n]</code> — Crear pedido genérico para WhatsApp\n` +
+                `📥 <code>/cargar24</code> / <code>/cargar21</code> — Cargar keys por ENTER\n` +
+                `🗄️ <code>/stock</code> — Ver y administrar colas de keys\n` +
+                `➕ <code>/addprod &lt;cod&gt; &lt;Nombre&gt;</code> — Nuevo atajo de producto\n` +
                 `📋 <code>/pedidos</code> — Ver últimos pedidos y saldo restante\n` +
                 `➕ <code>/addcredits &lt;id&gt; &lt;n&gt;</code> — Asignar créditos a usuario Telegram\n` +
                 `📊 <code>/stats</code> — Estadísticas globales\n` +
@@ -434,62 +758,17 @@ function startBot() {
     bot.command(['pedido', 'generarpedido', 'crearpedido'], (ctx) => {
         const tgId = String(ctx.from.id);
         if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
-        
-        const args = ctx.message.text.split(' ').slice(1);
-        let credits = 1;
-        let customOrderId = null;
-        let productName = '';
-        
-        if (args.length >= 1) {
-            const parsed = parseInt(args[0], 10);
-            if (!isNaN(parsed) && parsed > 0) {
-                credits = parsed;
-                if (args.length >= 2) {
-                    if (args[1].toUpperCase().startsWith('CDK-') || /^\d+$/.test(args[1])) {
-                        customOrderId = args[1].trim();
-                        if (args.length >= 3) productName = args.slice(2).join(' ').trim();
-                    } else {
-                        productName = args.slice(1).join(' ').trim();
-                    }
-                }
-            } else {
-                productName = args.join(' ').trim();
-            }
-        }
-        
-        const order = db.createManualOrder(credits, customOrderId);
-        
-        const clientText = `📦 N° de Pedido: ${order.orderId}\n` +
-            `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
-            `🛒 Producto: ${productName}`;
 
-        ctx.reply(
-            `✅ <b>¡PEDIDO GENERADO CON ÉXITO!</b>\n\n` +
-            `📦 <b>N° de Pedido:</b> <code>${order.orderId}</code>\n` +
-            `💰 <b>Créditos CID:</b> <b>${credits}</b>\n` +
-            `🌐 <b>Portal Web CID:</b> https://getcid.cdkeysperu.com/\n` +
-            `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `📋 <b>Texto para WhatsApp:</b>\n` +
-            `📦 N° de Pedido: <code>${order.orderId}</code>\n` +
-            `💰 Créditos CID: ${credits}\n` +
-            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
-            `🛒 Producto: ${productName}`,
-            {
-                parse_mode: 'HTML',
-                disable_web_page_preview: true,
-                reply_markup: {
-                    inline_keyboard: [
-                        [
-                            {
-                                text: '📋 Copiar Formato WhatsApp (1 Clic)',
-                                copy_text: { text: clientText }
-                            }
-                        ]
-                    ]
-                }
-            }
-        );
+        const args = ctx.message.text.split(/\s+/).slice(1).filter(Boolean);
+        const { credits, customOrderId, productName } = parseManualOrderArgs(args, 1);
+        const order = db.createManualOrder(credits, customOrderId);
+
+        const reply = buildManualOrderReply({
+            orderId: order.orderId,
+            credits,
+            productName
+        });
+        ctx.reply(reply.text, reply.extra);
     });
 
     bot.command(['pedidos', 'listarpedidos'], (ctx) => {
@@ -508,6 +787,180 @@ function startBot() {
         });
         msg += '\n💡 <i>Usa /pedido &lt;créditos&gt; para crear uno nuevo.</i>';
         ctx.reply(msg, { parse_mode: 'HTML' });
+    });
+
+    // Atajos rápidos dinámicos: /pedido24, /pedido21, etc. (+ consumo FIFO de stock local)
+    bot.hears(/^\/pedido([a-z0-9_-]+)(?:@\w+)?(?:\s+(.*))?$/i, (ctx, next) => {
+        const code = String(ctx.match[1] || '').toLowerCase();
+        if (code === 's') return next();
+
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const preset = db.getProductPreset(code);
+        if (!preset) {
+            const all = db.getAllProductPresetsWithStock();
+            const availableList = all.map(p => `<code>/pedido${escapeHtml(p.code)}</code> (${escapeHtml(p.product_name)})`).join('\n') || 'Ninguno';
+            return ctx.reply(
+                `⚠️ No existe el producto rápido <code>/pedido${escapeHtml(code)}</code>.\n\n` +
+                `<b>Disponibles:</b>\n${availableList}\n\n` +
+                `💡 Crea uno nuevo con:\n<code>/addprod ${escapeHtml(code)} Nombre del Producto</code>`,
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        return sendPresetOrder(ctx, preset, ctx.match[2] || '');
+    });
+
+    // Carga directa de keys: /cargar24, /cargar21 (solo o con bloque multilínea)
+    bot.hears(/^\/cargar([a-z0-9_-]+)(?:@\w+)?(?:\s+([\s\S]*))?$/i, (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const code = String(ctx.match[1] || '').toLowerCase();
+        const preset = db.getProductPreset(code);
+        if (!preset) {
+            return ctx.reply(
+                `⚠️ No existe el producto <code>${escapeHtml(code)}</code>.\n` +
+                `Primero créalo con <code>/addprod ${escapeHtml(code)} Nombre del Producto</code> o revisa /stock.`,
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        const rawPayload = (ctx.match[2] || '').trim();
+        if (rawPayload) {
+            const { added, remaining } = db.addKeysToStock(preset.code, rawPayload);
+            return ctx.reply(
+                `✅ Se agregaron <b>${added}</b> key(s) a <b>${escapeHtml(preset.product_name)}</b> (<code>/pedido${escapeHtml(preset.code)}</code>).\n` +
+                `📦 Stock disponible ahora: <b>${remaining}</b>`,
+                {
+                    parse_mode: 'HTML',
+                    ...Markup.inlineKeyboard([[Markup.button.callback(`👁️ Ver Cola ${preset.code}`, `view_stock_${preset.code}`)]])
+                }
+            );
+        }
+
+        return startPendingStockUpload(ctx, preset);
+    });
+
+    bot.command('cargar', (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const m = ctx.message.text.match(/^\/cargar(?:@\w+)?(?:\s+([a-z0-9_-]+))?(?:\s+([\s\S]*))?$/i);
+        const code = m?.[1]?.toLowerCase();
+        if (!code) {
+            const payload = buildStockOverviewPayload();
+            return ctx.reply(
+                `📥 <b>¿A qué producto deseas cargar keys?</b>\n\nUso rápido: <code>/cargar24</code> o <code>/cargar21</code> (luego pegas 1 key por línea / ENTER).\n\n${payload.text}`,
+                payload.extra
+            );
+        }
+
+        const preset = db.getProductPreset(code);
+        if (!preset) {
+            return ctx.reply(`⚠️ Producto <code>${escapeHtml(code)}</code> no encontrado. Usa /stock para ver los disponibles.`, { parse_mode: 'HTML' });
+        }
+
+        const rawPayload = (m?.[2] || '').trim();
+        if (rawPayload) {
+            const { added, remaining } = db.addKeysToStock(preset.code, rawPayload);
+            return ctx.reply(
+                `✅ Se agregaron <b>${added}</b> key(s) a <b>${escapeHtml(preset.product_name)}</b> (<code>/pedido${escapeHtml(preset.code)}</code>).\n` +
+                `📦 Stock disponible ahora: <b>${remaining}</b>`,
+                {
+                    parse_mode: 'HTML',
+                    ...Markup.inlineKeyboard([[Markup.button.callback(`👁️ Ver Cola ${preset.code}`, `view_stock_${preset.code}`)]])
+                }
+            );
+        }
+
+        return startPendingStockUpload(ctx, preset);
+    });
+
+    bot.hears(/^\/stock([a-z0-9_-]+)(?:@\w+)?$/i, (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const preset = db.getProductPreset(ctx.match[1]);
+        if (!preset) {
+            return ctx.reply(`⚠️ Producto <code>${escapeHtml(ctx.match[1])}</code> no encontrado. Usa /stock para ver la lista.`, { parse_mode: 'HTML' });
+        }
+
+        const payload = buildStockQueuePayload(preset);
+        return ctx.reply(payload.text, payload.extra);
+    });
+
+    bot.command(['stock', 'productos'], (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const args = ctx.message.text.split(/\s+/).slice(1).filter(Boolean);
+        if (args.length > 0) {
+            const preset = db.getProductPreset(args[0]);
+            if (!preset) {
+                return ctx.reply(`⚠️ Producto <code>${escapeHtml(args[0])}</code> no encontrado.`, { parse_mode: 'HTML' });
+            }
+            const payload = buildStockQueuePayload(preset);
+            return ctx.reply(payload.text, payload.extra);
+        }
+
+        const payload = buildStockOverviewPayload();
+        return ctx.reply(payload.text, payload.extra);
+    });
+
+    bot.command('addprod', (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const m = ctx.message.text.match(/^\/addprod(?:@\w+)?\s+([a-z0-9_-]+)\s+(.+)$/i);
+        if (!m) {
+            return ctx.reply(
+                '➕ <b>Crear / Editar Producto Rápido</b>\n\n' +
+                'Uso: <code>/addprod &lt;codigo&gt; &lt;Nombre del Producto&gt;</code>\n\n' +
+                '💡 Ejemplo:\n<code>/addprod 11 Windows 11 Pro</code>\n' +
+                'Luego podrás usar <code>/pedido11</code>, <code>/cargar11</code> y <code>/stock11</code>.',
+                { parse_mode: 'HTML' }
+            );
+        }
+
+        try {
+            const preset = db.upsertProductPreset(m[1], m[2], 1);
+            return ctx.reply(
+                `✅ <b>Producto configurado:</b>\n\n` +
+                `• Comando pedido: <code>/pedido${escapeHtml(preset.code)}</code>\n` +
+                `• Producto: <b>${escapeHtml(preset.product_name)}</b>\n` +
+                `• Cargar stock: <code>/cargar${escapeHtml(preset.code)}</code>\n` +
+                `• Ver cola: <code>/stock${escapeHtml(preset.code)}</code>`,
+                { parse_mode: 'HTML' }
+            );
+        } catch (err) {
+            return ctx.reply(`❌ ${escapeHtml(err.message)}`, { parse_mode: 'HTML' });
+        }
+    });
+
+    bot.command('delprod', (ctx) => {
+        const tgId = String(ctx.from.id);
+        if (!isAdmin(tgId)) return ctx.reply('❌ No tienes permisos de admin.');
+
+        const code = ctx.message.text.split(/\s+/)[1];
+        if (!code) {
+            return ctx.reply('Uso: <code>/delprod &lt;codigo&gt;</code> (ej: <code>/delprod 11</code>)', { parse_mode: 'HTML' });
+        }
+
+        const deleted = db.deleteProductPreset(code);
+        return ctx.reply(
+            deleted
+                ? `🗑️ Producto <code>${escapeHtml(code)}</code> eliminado.`
+                : `⚠️ No existe el producto <code>${escapeHtml(code)}</code>.`,
+            { parse_mode: 'HTML' }
+        );
+    });
+
+    bot.command('cancelar', (ctx) => {
+        const tgId = String(ctx.from.id);
+        pendingStockUpload.delete(tgId);
+        return ctx.reply('✅ Operación cancelada.', { parse_mode: 'HTML' });
     });
 
     bot.command('stats', (ctx) => {
@@ -856,6 +1309,38 @@ function startBot() {
 
     bot.on('text', async (ctx) => {
         if (ctx.message.text.startsWith('/')) return;
+
+        const tgId = String(ctx.from.id);
+        const pending = pendingStockUpload.get(tgId);
+        if (isAdmin(tgId) && pending) {
+            if (Date.now() > pending.expiresAt) {
+                pendingStockUpload.delete(tgId);
+                return ctx.reply(
+                    `⏱️ La sesión de carga para <b>${escapeHtml(pending.productName)}</b> expiró. Ejecuta <code>/cargar${escapeHtml(pending.code)}</code> nuevamente.`,
+                    { parse_mode: 'HTML' }
+                );
+            }
+
+            const { added, remaining } = db.addKeysToStock(pending.code, ctx.message.text);
+            pendingStockUpload.delete(tgId);
+
+            if (added === 0) {
+                return ctx.reply('⚠️ No se detectaron keys válidas. Envía al menos una línea de texto.', { parse_mode: 'HTML' });
+            }
+
+            return ctx.reply(
+                `✅ Se agregaron <b>${added}</b> key(s) a <b>${escapeHtml(pending.productName)}</b> (<code>/pedido${escapeHtml(pending.code)}</code>).\n` +
+                `📦 Stock disponible ahora: <b>${remaining}</b>`,
+                {
+                    parse_mode: 'HTML',
+                    ...Markup.inlineKeyboard([[
+                        Markup.button.callback(`👁️ Ver Cola ${pending.code}`, `view_stock_${pending.code}`),
+                        Markup.button.callback(`⚡ Generar /pedido${pending.code}`, `gen_preset_${pending.code}`)
+                    ]])
+                }
+            );
+        }
+
         await handleDirectIID(ctx, ctx.message.text);
     });
 
@@ -916,7 +1401,13 @@ function startBot() {
         { command: 'cid', description: 'Obtener CID (uso: /cid [IID])' },
         { command: 'check', description: 'Revisar Key' },
         { command: 'balance', description: 'Ver tus créditos' },
-        { command: 'pedido', description: 'Admin: Crear pedido con créditos' },
+        { command: 'pedido24', description: 'Admin: Pedido Office LTSC 2024 + key' },
+        { command: 'pedido21', description: 'Admin: Pedido Office 2021 + key' },
+        { command: 'pedido', description: 'Admin: Crear pedido genérico' },
+        { command: 'cargar24', description: 'Admin: Cargar keys Office 2024' },
+        { command: 'cargar21', description: 'Admin: Cargar keys Office 2021' },
+        { command: 'stock', description: 'Admin: Ver colas de stock FIFO' },
+        { command: 'addprod', description: 'Admin: Nuevo atajo /pedido<cod>' },
         { command: 'pedidos', description: 'Admin: Listar pedidos y saldo' },
         { command: 'addcredits', description: 'Admin: Agregar créditos a usuario' },
         { command: 'systemstatus', description: 'Admin: Ver estado servidor' },

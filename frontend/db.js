@@ -66,6 +66,32 @@ db.exec(`
         order_id TEXT PRIMARY KEY,
         claimed_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Presets de productos rápidos para bot (/pedido21, /pedido24, etc.)
+    CREATE TABLE IF NOT EXISTS product_presets (
+        code TEXT PRIMARY KEY,
+        product_name TEXT NOT NULL,
+        default_credits INTEGER NOT NULL DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Cola FIFO local de keys por producto (cada ENTER = 1 fila, permite repetidas o únicas)
+    CREATE TABLE IF NOT EXISTS key_stock (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_code TEXT NOT NULL,
+        license_key TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'available',
+        assigned_order_id TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        used_at DATETIME
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_key_stock_lookup ON key_stock(product_code, status, id);
+
+    INSERT OR IGNORE INTO product_presets (code, product_name, default_credits)
+    VALUES
+        ('21', 'Office Pro Plus 2021', 1),
+        ('24', 'Office Pro Plus LTSC 2024', 1);
 `);
 
 // ============================================================
@@ -344,6 +370,151 @@ function markOrderUsed(orderId) {
     db.prepare('INSERT OR IGNORE INTO used_orders (order_id) VALUES (?)').run(String(orderId));
 }
 
+// ============================================================
+// PRESETS DE PRODUCTOS Y STOCK LOCAL DE KEYS (FIFO)
+// ============================================================
+
+function normalizeProductCode(code) {
+    return String(code || '').trim().toLowerCase().replace(/^\/?(pedido|cargar|stock)/i, '');
+}
+
+function getProductPreset(code) {
+    const clean = normalizeProductCode(code);
+    if (!clean) return null;
+    return db.prepare('SELECT code, product_name, default_credits FROM product_presets WHERE code = ?').get(clean) || null;
+}
+
+function getAllProductPresetsWithStock() {
+    return db.prepare(`
+        SELECT p.code, p.product_name, p.default_credits,
+               COALESCE(SUM(CASE WHEN k.status = 'available' THEN 1 ELSE 0 END), 0) AS available_count,
+               COALESCE(SUM(CASE WHEN k.status = 'used' THEN 1 ELSE 0 END), 0) AS used_count
+        FROM product_presets p
+        LEFT JOIN key_stock k ON k.product_code = p.code
+        GROUP BY p.code, p.product_name, p.default_credits
+        ORDER BY p.code ASC
+    `).all();
+}
+
+function upsertProductPreset(code, productName, defaultCredits = 1) {
+    const clean = normalizeProductCode(code);
+    if (!clean || !/^[a-z0-9_-]+$/i.test(clean) || clean === 's') {
+        throw new Error('Código de producto inválido (usa ej. 21, 24, 11, win11).');
+    }
+    const name = String(productName || '').trim();
+    if (!name) throw new Error('Nombre del producto vacío.');
+    const credits = Math.max(1, parseInt(defaultCredits, 10) || 1);
+
+    db.prepare(`
+        INSERT INTO product_presets (code, product_name, default_credits)
+        VALUES (?, ?, ?)
+        ON CONFLICT(code) DO UPDATE SET
+            product_name = excluded.product_name,
+            default_credits = excluded.default_credits
+    `).run(clean, name, credits);
+
+    return getProductPreset(clean);
+}
+
+function deleteProductPreset(code) {
+    const clean = normalizeProductCode(code);
+    const info = db.prepare('DELETE FROM product_presets WHERE code = ?').run(clean);
+    return info.changes > 0;
+}
+
+function countAvailableStock(productCode) {
+    const clean = normalizeProductCode(productCode);
+    const row = db.prepare(`SELECT COUNT(*) as c FROM key_stock WHERE product_code = ? AND status = 'available'`).get(clean);
+    return row ? row.c : 0;
+}
+
+/**
+ * Agrega una lista de keys al stock FIFO respetando el orden exacto del arreglo (cada ENTER = 1 fila).
+ */
+function addKeysToStock(productCode, rawKeys) {
+    const clean = normalizeProductCode(productCode);
+    const keys = (Array.isArray(rawKeys) ? rawKeys : String(rawKeys || '').split(/\r?\n/))
+        .map(k => k.trim())
+        .filter(Boolean);
+
+    if (keys.length === 0) return { added: 0, remaining: countAvailableStock(clean) };
+
+    const insertStmt = db.prepare(`
+        INSERT INTO key_stock (product_code, license_key, status)
+        VALUES (?, ?, 'available')
+    `);
+
+    const insertMany = db.transaction((items) => {
+        for (const k of items) {
+            insertStmt.run(clean, k);
+        }
+    });
+    insertMany(keys);
+
+    return { added: keys.length, remaining: countAvailableStock(clean) };
+}
+
+/**
+ * Extrae atómicamente hasta `count` keys en estricto orden FIFO (ORDER BY id ASC).
+ * Si hay menos keys que `count`, entrega las disponibles sin fallar.
+ */
+function popKeysFromStock(productCode, count = 1, orderId = null) {
+    const clean = normalizeProductCode(productCode);
+    const qty = Math.max(1, parseInt(count, 10) || 1);
+
+    const txn = db.transaction(() => {
+        const rows = db.prepare(`
+            SELECT id, license_key FROM key_stock
+            WHERE product_code = ? AND status = 'available'
+            ORDER BY id ASC
+            LIMIT ?
+        `).all(clean, qty);
+
+        if (rows.length > 0) {
+            const updateStmt = db.prepare(`
+                UPDATE key_stock
+                SET status = 'used', assigned_order_id = ?, used_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            `);
+            for (const row of rows) {
+                updateStmt.run(orderId || null, row.id);
+            }
+        }
+
+        const remaining = countAvailableStock(clean);
+        return {
+            keys: rows.map(r => r.license_key),
+            remaining
+        };
+    });
+
+    return txn();
+}
+
+function getStockQueue(productCode, limit = 15) {
+    const clean = normalizeProductCode(productCode);
+    const available = countAvailableStock(clean);
+    const usedRow = db.prepare(`SELECT COUNT(*) as c FROM key_stock WHERE product_code = ? AND status = 'used'`).get(clean);
+    const nextKeys = db.prepare(`
+        SELECT id, license_key FROM key_stock
+        WHERE product_code = ? AND status = 'available'
+        ORDER BY id ASC
+        LIMIT ?
+    `).all(clean, limit);
+
+    return {
+        available,
+        used: usedRow ? usedRow.c : 0,
+        nextKeys: nextKeys.map(r => r.license_key)
+    };
+}
+
+function clearAvailableStock(productCode) {
+    const clean = normalizeProductCode(productCode);
+    const info = db.prepare(`DELETE FROM key_stock WHERE product_code = ? AND status = 'available'`).run(clean);
+    return info.changes;
+}
+
 module.exports = {
     findUserByEmail, findUserByTelegram, createUser, setAdmin,
     getBalance, addCredits, debitCredit,
@@ -354,5 +525,9 @@ module.exports = {
     // Transacciones
     logTransaction, getTransactions,
     getAllUsers, getAllTransactions, getStats,
-    isOrderUsed, markOrderUsed
+    isOrderUsed, markOrderUsed,
+    // Presets y stock local FIFO
+    getProductPreset, getAllProductPresetsWithStock,
+    upsertProductPreset, deleteProductPreset,
+    addKeysToStock, popKeysFromStock, getStockQueue, clearAvailableStock
 };

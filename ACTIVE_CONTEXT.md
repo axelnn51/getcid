@@ -1,22 +1,18 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-01 | Versión: Estable v4.0 | Estado: ✅ PUSHEADO A GITHUB Y OPERATIVO EN PRODUCCIÓN
+> Última Actualización: 2026-11-10 | Versión: Estable v4.1 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
-- **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`).
-- **Bot de Telegram:** Generador de pedidos manuales (`/pedido <créditos> [producto]`, `/pedidos`).
-- **Formato Oficial 1-Click WhatsApp:**
-  - Botón nativo de Telegram `copy_text`: `[ 📋 Copiar Formato WhatsApp (1 Clic) ]` para copia instantánea de las 4 líneas al portapapeles sin cajas negras ni código oscuro.
-  - Mensaje claro, legible y estético con cabeceras `✅ ¡PEDIDO GENERADO CON ÉXITO!`, `<code>${order.orderId}</code>` clickeable individualmente, y plantilla limpia.
-  - Sin previsualizaciones invasivas (`disable_web_page_preview: true`).
-  - Formato exacto copiado al portapapeles:
-    ```text
-    📦 N° de Pedido: CDK-XXXXX
-    💰 Créditos CID: X
-    🌐 Portal Web CID: https://getcid.cdkeysperu.com/
-    🛒 Producto: 
-    ```
-- **Control de Tasa y Balance:** Rate limiters desacoplados (balance permisivo 60 req/min vs portal 30 fallos/10 min). Normalización integral de códigos de pedido (`CDK-XXXXX`, `#CDK-XXXXX`, dígitos directos).
+- **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`, `product_presets`, `key_stock`).
+- **Bot de Telegram:**
+  - Generador genérico (`/pedido <créditos> [producto]`, `/pedidos`).
+  - Atajos rápidos con stock local FIFO (`/pedido21` → `Office Pro Plus 2021`, `/pedido24` → `Office Pro Plus LTSC 2024`, ampliable vía `/addprod <cod> <Nombre>`).
+  - Cola local FIFO persistente en SQLite (`/app/data/getcid.db` en volumen `./frontend/data`): cargar con `/cargar24`, `/cargar21` o botones de `/stock` (cada `ENTER` = 1 key; permite keys repetidas o únicas; consume 1 key por crédito en estricto orden `ORDER BY id ASC`).
+  - Formato WhatsApp 1-Click:
+    - Con stock: añade `🔑 Key: <key>` (o `🔑 Keys:` si >1) debajo de `🛒 Producto: <Producto>`.
+    - Sin stock: deja línea vacía debajo de `🛒 Producto: <Producto>` para pegar manualmente y alerta en cabecera.
+    - Guard automático de 256 caracteres en `copy_text` (divide en botones separados si un lote supera el límite de Telegram Bot API).
+- **Lógica GETCID / OCR:** **100% intacta**, sin modificaciones en `index.js`, `cid_helper.js`, `ocr.js`, `main.py`, `bot.on('photo')` ni `handleDirectIID`.
 - **Git Push:** Sincronizado a `https://axelnn51@github.com/axelnn51/getcid.git`.
 
 ---
@@ -46,8 +42,13 @@
 6. **Conflicto de Credenciales Git en Windows (Colisión entre `cdkeysperu-com` y `axelnn51`):**
    - *Causa:* En Windows Credential Manager existían dos credenciales para GitHub: una de `cdkeysperu-com` y otra de `axelnn51`. Git intentaba autenticar con `cdkeysperu-com`, el cual no tenía permisos sobre `axelnn51/getcid`, recibiendo HTTP 401 y congelando el push en subshells sin GUI.
    - *Solución:* Configurar explícitamente `remote.origin.url` con `https://axelnn51@github.com/axelnn51/getcid.git` y `git config credential.username "axelnn51"`. Git selecciona de inmediato la credencial correcta de `axelnn51` y el push completa en 2 segundos.
+7. **Protección de Cola FIFO Local vs Detector de IID y Límite 256c de Telegram:**
+   - *Causa auditada:* (1) Pegar varias keys con dígitos en el chat normal activaría `handleDirectIID` (falso `IID incompleto` o llamada errónea a Microsoft); (2) `/pedidos` colisionaba con regex `/pedido<codigo>` si no se excluía `'s'`; (3) `copy_text.text > 256` caracteres en lotes multi-key provocaba rechazo HTTP 400 en Telegram Bot API.
+   - *Solución:* Interceptor `pendingStockUpload` con TTL en `bot.on('text')` antes de `handleDirectIID`, exclusión explícita de `'s'` y orden de registro tras `/pedidos`, consumo atómico en `db.transaction`, y división automática de botones `copy_text` si el bloque supera 256 caracteres.
 
 ### ❌ Caminos Técnicos Descartados (Prohibido reintentar)
+- **Descartado:** Guardar stock local en memoria RAM o archivos JSON fuera de `/app/data` (se perdería en cada redeploy de Portainer).
+- **Descartado:** Restricción `UNIQUE` en `key_stock.license_key` (impediría cargar varias filas de una misma key MAK multi-activación).
 - **Descartado:** Usar bloque `<pre>` aislado (genera recuadro negro poco estético en Telegram Desktop con barra superior de depuración).
 - **Descartado:** Permitir previsualizaciones de enlaces web en el bot (la tarjeta de cdkeysperu satura visualmente el chat).
 - **Descartado:** Compartir un rate limiter de fallos de generación CID con el endpoint de consulta de balance (bloquea la lectura de saldos legítimos).
