@@ -195,15 +195,17 @@ function startBot() {
         );
     }
 
-    function buildCompactGuideText(guideUrl) {
-        return (
-            `📥 *GUÍA DE INSTALACIÓN Y DESCARGA*\n\n` +
-            `👉 ${guideUrl}\n\n` +
-            `🔐 *ACTIVACIÓN*\n` +
-            `Ingresa al portal CID y usa tu N.º de pedido.\n\n` +
-            `⚠️ Aplica Office Pro Plus 2016–2024.\n` +
-            `💬 ¿Necesitas ayuda? Escríbenos 😊`
-        );
+    function replyWhatsAppPreBlock(ctx, fullPlainText, waButtonLabel = '💬 Enviar Completo por WhatsApp') {
+        const waUrl = `https://wa.me/?text=${encodeURIComponent(fullPlainText)}`;
+        const rows = waUrl.length <= 2000
+            ? [[{ text: waButtonLabel, url: waUrl }]]
+            : [];
+
+        return ctx.reply(`<pre><code class="language-WhatsApp">${escapeHtml(fullPlainText)}</code></pre>`, {
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...(rows.length > 0 ? { reply_markup: { inline_keyboard: rows } } : {})
+        });
     }
 
     function buildStockStatusLine(presetCode, credits, keysCount, stockRemaining) {
@@ -337,7 +339,7 @@ function startBot() {
             `🛒 <b>Producto:</b> ${escapeHtml(preset.product_name)}\n` +
             stockStatusLine +
             `📅 <b>Fecha:</b> ${new Date().toLocaleString('es-PE')}\n\n` +
-            `👇 <i>Copia el mensaje de abajo completo (clic derecho → Copiar texto en PC) o usa los botones:</i>`;
+            `👇 <i>Toca el ícono de copiar arriba a la derecha del recuadro para copiar TODO en 1 clic:</i>`;
 
         const adminButtons = popped.remaining === 0 ? [[
             Markup.button.callback(`📥 Cargar Stock (${preset.code})`, `load_stock_${preset.code}`),
@@ -350,17 +352,11 @@ function startBot() {
             ...(adminButtons.length > 0 ? Markup.inlineKeyboard(adminButtons) : {})
         });
 
-        // Mensaje 2: Plantilla pura unificada lista para cliente en WhatsApp (sin cabeceras admin)
+        // Mensaje 2: Bloque completo 1-Clic con Pedido + Key (o espacio vacío) + Guía exacta
         const keysPlainLine = popped.keys.length === 1
             ? `🔑 Key: ${popped.keys[0]}`
             : (popped.keys.length > 1
                 ? `🔑 Keys:\n${popped.keys.join('\n')}`
-                : `🔑 Key: `);
-
-        const keysHtmlLine = popped.keys.length === 1
-            ? `🔑 Key: <code>${escapeHtml(popped.keys[0])}</code>`
-            : (popped.keys.length > 1
-                ? `🔑 Keys:\n<code>${escapeHtml(popped.keys.join('\n'))}</code>`
                 : `🔑 Key: `);
 
         const orderAndKeyPlain =
@@ -373,55 +369,7 @@ function startBot() {
         const fullGuidePlain = buildFullGuideText(preset.guide_url);
         const fullUnifiedPlain = `${orderAndKeyPlain}\n\n━━━━━━━━━━━━━━\n\n${fullGuidePlain}`;
 
-        const fullUnifiedHtml =
-            `📦 N° de Pedido: <code>${escapeHtml(order.orderId)}</code>\n` +
-            `💰 Créditos CID: ${parsed.credits}\n` +
-            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
-            `🛒 Producto: ${escapeHtml(preset.product_name)}\n` +
-            `${keysHtmlLine}\n\n` +
-            `━━━━━━━━━━━━━━\n\n` +
-            `${escapeHtml(fullGuidePlain)}`;
-
-        const copyButtonsRow = [];
-        if (orderAndKeyPlain.length <= 256) {
-            copyButtonsRow.push({
-                text: '📋 Copiar Pedido + Key',
-                copy_text: { text: orderAndKeyPlain }
-            });
-        } else {
-            const keysOnly = popped.keys.join('\n');
-            if (keysOnly && keysOnly.length <= 256) {
-                copyButtonsRow.push({
-                    text: `🔑 Copiar ${popped.keys.length} Keys`,
-                    copy_text: { text: keysOnly }
-                });
-            }
-        }
-
-        const compactGuidePlain = buildCompactGuideText(preset.guide_url);
-        if (compactGuidePlain.length <= 256) {
-            copyButtonsRow.push({
-                text: '📘 Copiar Guía',
-                copy_text: { text: compactGuidePlain }
-            });
-        }
-
-        const msg2Rows = [];
-        if (copyButtonsRow.length > 0) msg2Rows.push(copyButtonsRow);
-
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(fullUnifiedPlain)}`;
-        if (waUrl.length <= 2000) {
-            msg2Rows.push([{
-                text: '💬 Enviar Completo por WhatsApp',
-                url: waUrl
-            }]);
-        }
-
-        return ctx.reply(fullUnifiedHtml, {
-            parse_mode: 'HTML',
-            disable_web_page_preview: true,
-            ...(msg2Rows.length > 0 ? { reply_markup: { inline_keyboard: msg2Rows } } : {})
-        });
+        return replyWhatsAppPreBlock(ctx, fullUnifiedPlain, '💬 Enviar Completo por WhatsApp');
     }
 
     function buildStockOverviewPayload() {
@@ -1039,22 +987,7 @@ function startBot() {
         }
 
         const fullGuide = buildFullGuideText(preset.guide_url);
-        const compactGuide = buildCompactGuideText(preset.guide_url);
-        const rows = [];
-
-        if (compactGuide.length <= 256) {
-            rows.push([{ text: `📘 Copiar Guía ${preset.code} (1 Clic)`, copy_text: { text: compactGuide } }]);
-        }
-        const waUrl = `https://wa.me/?text=${encodeURIComponent(fullGuide)}`;
-        if (waUrl.length <= 2000) {
-            rows.push([{ text: '💬 Enviar Guía Completa por WhatsApp', url: waUrl }]);
-        }
-
-        return ctx.reply(escapeHtml(fullGuide), {
-            parse_mode: 'HTML',
-            disable_web_page_preview: true,
-            ...(rows.length > 0 ? { reply_markup: { inline_keyboard: rows } } : {})
-        });
+        return replyWhatsAppPreBlock(ctx, fullGuide, '💬 Enviar Guía Completa por WhatsApp');
     }
 
     bot.hears(/^\/guia([a-z0-9_-]+)(?:@\w+)?$/i, (ctx) => {

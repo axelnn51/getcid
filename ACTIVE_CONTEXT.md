@@ -1,16 +1,16 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-10 | Versión: Estable v4.2 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
+> Última Actualización: 2026-11-10 | Versión: Estable v4.3 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
 - **Backend / DB:** Node.js + Express con base de datos SQLite (`order_credits`, `product_presets` con `guide_url`, `key_stock`).
 - **Bot de Telegram:**
-  - Generador genérico (`/pedido <créditos> [producto]`, `/pedidos`).
-  - Atajos rápidos con stock local FIFO + Guía integrada: `/pedido21` (`Office Pro Plus 2021` + `office-2021`) y `/pedido24` (`Office Pro Plus LTSC 2024` + `office-2024`), ampliable con `/addprod <cod> <Nombre> | [url_guia]`. También comandos independientes `/guia21`, `/guia24` y `/guia`.
+  - Generador genérico (`/pedido <créditos> [producto]`, `/pedidos`): usa botón nativo `copy_text` (`<= 256` caracteres).
+  - Atajos rápidos con stock local FIFO + Guía integrada: `/pedido21` (`Office Pro Plus 2021` + `office-2021`) y `/pedido24` (`Office Pro Plus LTSC 2024` + `office-2024`), ampliable con `/addprod <cod> <Nombre> | [url_guia]`. También `/guia21`, `/guia24` y `/guia`.
   - Cola local FIFO persistente en SQLite (`/app/data/getcid.db` en volumen `./frontend/data`): cargar con `/cargar24`, `/cargar21` o botones de `/stock` (cada `ENTER` = 1 key; permite keys repetidas o únicas; consume 1 key por crédito en estricto orden `ORDER BY id ASC`).
   - Flujo de entrega WhatsApp para presets con guía (`/pedido21`, `/pedido24`):
     - **Mensaje 1 (Admin):** Resumen del pedido + stock restante (y botón rápido de recarga si llega a 0).
-    - **Mensaje 2 (Cliente puro):** Mensaje unificado exacto (Pedido + Key FIFO o `🔑 Key: ` vacío si no hay stock + separador + Guía específica 2021/2024), listo para clic derecho → Copiar texto en PC, botones 1-clic separados (`Copiar Pedido + Key` y `Copiar Guía` <=256c) o envío directo completo con `wa.me/?text=`.
+    - **Mensaje 2 (Cliente 1-Clic Completo):** Bloque `<pre><code class="language-WhatsApp">...</code></pre>` con el mensaje unificado exacto (462–491 chars: Pedido + Key FIFO o `🔑 Key: ` vacío + separador + Guía completa 2021/2024 con `*negritas*` de WhatsApp) para copiar **TODO en 1 clic** (superando el límite de 256c de `copy_text`), más botón `[ 💬 Enviar Completo por WhatsApp ]` (`wa.me/?text=`).
 - **Lógica GETCID / OCR:** **100% intacta**, sin modificaciones en `index.js`, `cid_helper.js`, `ocr.js`, `main.py`, `bot.on('photo')` ni `handleDirectIID`.
 - **Git Push:** Sincronizado a `https://axelnn51@github.com/axelnn51/getcid.git`.
 
@@ -46,9 +46,10 @@
    - *Solución:* Interceptor `pendingStockUpload` con TTL en `bot.on('text')` antes de `handleDirectIID`, exclusión explícita de `'s'` y orden de registro tras `/pedidos`, consumo atómico en `db.transaction`, y división automática de botones `copy_text` si el bloque supera 256 caracteres.
 
 ### ❌ Caminos Técnicos Descartados (Prohibido reintentar)
+- **Descartado:** Intentar pasar mensajes largos (>256 caracteres, como Pedido + Guía completa ~462-491c) dentro de botones `copy_text` de Telegram (Telegram API rechaza estrictamente con `400 BUTTON_COPY_TEXT_INVALID` por encima de 256c).
+- **Descartado:** Enviar `<pre>` suelto sin cabecera para pedidos cortos `/pedido` (en mensajes cortos `<=256c` es mejor el botón nativo `copy_text`; para mensajes completos `>256c` como `/pedido21` y `/pedido24` con guía completa se usa Mensaje 1 Admin + Mensaje 2 `<pre><code class="language-WhatsApp">`).
 - **Descartado:** Guardar stock local en memoria RAM o archivos JSON fuera de `/app/data` (se perdería en cada redeploy de Portainer).
 - **Descartado:** Restricción `UNIQUE` en `key_stock.license_key` (impediría cargar varias filas de una misma key MAK multi-activación).
-- **Descartado:** Usar bloque `<pre>` aislado (genera recuadro negro poco estético en Telegram Desktop con barra superior de depuración).
 - **Descartado:** Permitir previsualizaciones de enlaces web en el bot (la tarjeta de cdkeysperu satura visualmente el chat).
 - **Descartado:** Compartir un rate limiter de fallos de generación CID con el endpoint de consulta de balance (bloquea la lectura de saldos legítimos).
 - **Descartado:** Asumir que cualquier respuesta sin `data.found === true` significa que la orden no existe (confunde rate limits 429 y errores de red con cuentas inexistentes).
