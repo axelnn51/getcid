@@ -47,6 +47,9 @@
 7. **Protección de Cola FIFO Local vs Detector de IID y Límite 256c de Telegram:**
    - *Causa auditada:* (1) Pegar varias keys con dígitos en el chat normal activaría `handleDirectIID` (falso `IID incompleto` o llamada errónea a Microsoft); (2) `/pedidos` colisionaba con regex `/pedido<codigo>` si no se excluía `'s'`; (3) `copy_text.text > 256` caracteres en lotes multi-key provocaba rechazo HTTP 400 en Telegram Bot API.
    - *Solución:* Interceptor `pendingStockUpload` con TTL en `bot.on('text')` antes de `handleDirectIID`, exclusión explícita de `'s'` y orden de registro tras `/pedidos`, consumo atómico en `db.transaction`, y división automática de botones `copy_text` si el bloque supera 256 caracteres.
+8. **Cambios Web Invisibles tras Redeploy por Caché CDN de Cloudflare (`cf-cache-status: HIT`):**
+   - *Causa:* Tras hacer redeploy en Portainer, Cloudflare seguía sirviendo `index.html` (`age: 7860s`) y `style.css` (`age: 592s`) cacheados con `Cache-Control: public, max-age=14400` (4h), mientras `?nocache=...` sí mostraba el servidor actualizado.
+   - *Solución:* `express.static` en `frontend/index.js` envía `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`, `CDN-Cache-Control: no-store` y `Cloudflare-CDN-Cache-Control: no-store` para archivos `.html`, y `index.html` carga `style.css?v=20261110` para cache-busting inmediato. En Cloudflare, ejecutar **Purge Everything** si había caché previa.
 
 ### ❌ Caminos Técnicos Descartados (Prohibido reintentar)
 - **Descartado:** Intentar pasar mensajes largos (>256 caracteres, como Pedido + Guía completa ~462-491c) dentro de botones `copy_text` de Telegram (Telegram API rechaza estrictamente con `400 BUTTON_COPY_TEXT_INVALID` por encima de 256c).
