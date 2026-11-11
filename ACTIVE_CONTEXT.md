@@ -1,5 +1,5 @@
 # 📍 ACTIVE_CONTEXT: GETCID Final (Portal y Backend Activación Licencias)
-> Última Actualización: 2026-11-10 | Versión: Estable v4.4 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
+> Última Actualización: 2026-11-11 | Versión: Estable v4.5 | Estado: ✅ PUSHEADO A GITHUB Y LISTO PARA PORTAINER
 
 ## 1. 🚦 Estado Actual Inmediato
 - **Servicio Web:** `getcid.cdkeysperu.com` (Frontend simétrico de 3 columnas alineado a 525px).
@@ -13,7 +13,7 @@
   - Cola local FIFO persistente en SQLite (`/app/data/getcid.db` en volumen `./frontend/data`): cargar con `/cargar24`, `/cargar21` o botones de `/stock` (cada `ENTER` = 1 key; permite keys repetidas o únicas; consume 1 key por crédito en estricto orden `ORDER BY id ASC`).
   - Flujo de entrega WhatsApp para presets con guía (`/pedido21`, `/pedido24`):
     - **Mensaje 1 (Admin):** Resumen del pedido + stock restante (y botón rápido de recarga si llega a 0).
-    - **Mensaje 2 (Cliente 1-Clic Completo):** Bloque `<pre><code class="language-WhatsApp">...</code></pre>` con el mensaje unificado exacto (462–491 chars: Pedido + Key FIFO o `🔑 Key: ` vacío + separador + Guía completa 2021/2024 con `*negritas*` de WhatsApp) para copiar **TODO en 1 clic** (superando el límite de 256c de `copy_text`), más botón `[ 💬 Enviar Completo por WhatsApp ]` (`wa.me/?text=`).
+    - **Mensaje 2 (Cliente 1-Clic Completo):** Bloque `<pre><code class="language-WhatsApp">...</code></pre>` con plantilla estructurada (`📦 *N.º de Pedido: ...*`, `🛒 *Producto: ...*`, `🔑 *CLAVE DE PRODUCTO:*` con key FIFO o espacio vacío si no hay stock, `📥 *GUÍA DE INSTALACIÓN:*`, `🔐 *ACTIVACIÓN CID:*`, `💰 Créditos disponibles: ...`) + botón `[ 💬 Enviar Completo por WhatsApp ]` (`wa.me/?text=`).
 - **Lógica GETCID / OCR:** **100% intacta**, sin modificaciones en `index.js`, `cid_helper.js`, `ocr.js`, `main.py`, `bot.on('photo')` ni `handleDirectIID`.
 - **Git Push:** Sincronizado a `https://axelnn51@github.com/axelnn51/getcid.git`.
 

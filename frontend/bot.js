@@ -184,13 +184,15 @@ function startBot() {
         return { credits, customOrderId, productName };
     }
 
-    function buildFullGuideText(guideUrl) {
+    function buildFullGuideText(guideUrl, creditsLine = null) {
+        const creditsSection = creditsLine ? `\n\n${creditsLine}` : '';
         return (
-            `📥 *GUÍA DE INSTALACIÓN Y DESCARGA*\n\n` +
-            `👉 ${guideUrl}\n\n` +
-            `🔐 *ACTIVACIÓN*\n` +
-            `Ingresa al portal CID y utiliza tu N.º de pedido para generar tu código de activación (CID).\n\n` +
-            `⚠️ Aplica para Office Pro Plus 2016–2024.\n\n` +
+            `📥 *GUÍA DE INSTALACIÓN:*\n` +
+            `${guideUrl}\n\n` +
+            `🔐 *ACTIVACIÓN CID:*\n` +
+            `https://getcid.cdkeysperu.com/\n` +
+            `👉 Utiliza tu N.º de pedido para generar tu CID.${creditsSection}\n\n` +
+            `━━━━━━━━━━━━━━\n\n` +
             `💬 ¿Necesitas ayuda? Escríbenos, estamos para asistirte. 😊`
         );
     }
@@ -352,21 +354,17 @@ function startBot() {
             ...(adminButtons.length > 0 ? Markup.inlineKeyboard(adminButtons) : {})
         });
 
-        // Mensaje 2: Bloque completo 1-Clic con Pedido + Key (o espacio vacío) + Guía exacta
-        const keysPlainLine = popped.keys.length === 1
-            ? `🔑 Key: ${popped.keys[0]}`
-            : (popped.keys.length > 1
-                ? `🔑 Keys:\n${popped.keys.join('\n')}`
-                : `🔑 Key: `);
+        // Mensaje 2: Bloque completo 1-Clic con Pedido + Key (o espacio vacío) + Guía estructurada
+        const keyHeader = popped.keys.length > 1 ? '🔑 *CLAVES DE PRODUCTO:*' : '🔑 *CLAVE DE PRODUCTO:*';
+        const keyBody = popped.keys.length > 0 ? popped.keys.join('\n') : '';
 
         const orderAndKeyPlain =
-            `📦 N° de Pedido: ${order.orderId}\n` +
-            `💰 Créditos CID: ${parsed.credits}\n` +
-            `🌐 Portal Web CID: https://getcid.cdkeysperu.com/\n` +
-            `🛒 Producto: ${preset.product_name}\n` +
-            keysPlainLine;
+            `📦 *N.º de Pedido: ${order.orderId}*\n` +
+            `🛒 *Producto: ${preset.product_name}*\n\n` +
+            `${keyHeader}\n` +
+            `${keyBody}`;
 
-        const fullGuidePlain = buildFullGuideText(preset.guide_url);
+        const fullGuidePlain = buildFullGuideText(preset.guide_url, `💰 Créditos disponibles: ${parsed.credits}`);
         const fullUnifiedPlain = `${orderAndKeyPlain}\n\n━━━━━━━━━━━━━━\n\n${fullGuidePlain}`;
 
         return replyWhatsAppPreBlock(ctx, fullUnifiedPlain, '💬 Enviar Completo por WhatsApp');
